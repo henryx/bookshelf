@@ -9,6 +9,7 @@ from bookshelf.db.schema import init_db
 from bookshelf.models.users import (
     Role,
     User,
+    admin_exists,
     authenticate,
     create_user,
     delete_user,
@@ -33,8 +34,10 @@ def init_db_command() -> None:
 @click.argument("email")
 @with_appcontext
 def create_admin_command(email: str) -> None:
-    """Create an admin user."""
+    """Create the first admin user. Refused once any admin exists."""
     conn = get_db()
+    if admin_exists(conn):
+        raise click.ClickException("An admin already exists")
     if find_by_email(conn, email) is not None:
         raise click.ClickException(f"User {email} already exists")
 

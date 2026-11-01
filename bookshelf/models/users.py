@@ -8,6 +8,7 @@ from firebird.driver import Connection
 __all__ = [
     "Role",
     "User",
+    "admin_exists",
     "authenticate",
     "create_user",
     "delete_user",
@@ -84,6 +85,15 @@ def find_by_id(conn: Connection, user_id: int) -> User | None:
 
 def find_by_email(conn: Connection, email: str) -> User | None:
     return _find_one(conn, "EMAIL", _normalise(email))
+
+
+def admin_exists(conn: Connection) -> bool:
+    """
+    True if any admin exists, locked or not.
+    """
+    with conn.cursor() as cur:
+        cur.execute("SELECT FIRST 1 1 FROM USERS WHERE ROLE = ?", (Role.ADMIN.value,))
+        return cur.fetchone() is not None
 
 
 def list_users(conn: Connection) -> list[User]:

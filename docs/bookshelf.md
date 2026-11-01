@@ -44,7 +44,7 @@ Status: the web admin area is not built yet. These operations are available as C
 
 | Operation | CLI command |
 |---|---|
-| Create the first admin | `create-admin` (no admin credentials needed) |
+| Create the first admin | `create-admin` (no admin credentials needed; refused once any admin exists, locked or not) |
 | Create a regular user | `create-user` |
 | List users | `list-users` |
 | Reset a password | `reset-user-password` (the admin sets the new password; no email is available) |

@@ -43,15 +43,36 @@ def test_create_admin_does_not_accept_password_option(db_app: Flask):
         assert find_by_email(get_db(), "admin@example.com") is None
 
 
-def test_create_admin_rejects_existing_email(db_app: Flask):
-    runner = db_app.test_cli_runner()
-    args = ["create-admin", "admin@example.com"]
-    runner.invoke(args=args, input="pw\npw\n")
-
-    rv = runner.invoke(args=args, input="pw\npw\n")
+def test_create_admin_rejects_existing_email(db_app: Flask, user: User):
+    rv = db_app.test_cli_runner().invoke(
+        args=["create-admin", user.email], input="pw\npw\n"
+    )
 
     assert rv.exit_code != 0
-    assert "already exists" in rv.output
+    assert f"User {user.email} already exists" in rv.output
+
+
+def test_create_admin_refused_when_admin_exists(db_app: Flask, admin: User):
+    rv = db_app.test_cli_runner().invoke(
+        args=["create-admin", "second@example.com"], input="pw\npw\n"
+    )
+
+    assert rv.exit_code != 0
+    assert "An admin already exists" in rv.output
+    assert not _exists(db_app, "second@example.com")
+
+
+def test_create_admin_refused_when_only_locked_admin_exists(
+    db_app: Flask, admin: User, lock_user: Callable[[User], None]
+):
+    lock_user(admin)
+
+    rv = db_app.test_cli_runner().invoke(
+        args=["create-admin", "second@example.com"], input="pw\npw\n"
+    )
+
+    assert rv.exit_code != 0
+    assert "An admin already exists" in rv.output
 
 
 ADMIN_EMAIL = "admin@example.com"

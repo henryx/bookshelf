@@ -8,6 +8,7 @@ from bookshelf.db import get_db
 from bookshelf.models.users import (
     Role,
     User,
+    admin_exists,
     authenticate,
     create_user,
     delete_user,
@@ -121,3 +122,12 @@ def test_delete_user_removes_row(db_app: Flask, user: User):
         delete_user(conn, user)
 
         assert find_by_email(conn, user.email) is None
+
+
+def test_admin_exists(db_app: Flask, user: User, password: str):
+    with db_app.app_context():
+        conn = get_db()
+        assert not admin_exists(conn)
+
+        create_user(conn, "boss@example.com", password, role=Role.ADMIN)
+        assert admin_exists(conn)
