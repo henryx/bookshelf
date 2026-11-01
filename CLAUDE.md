@@ -1,7 +1,7 @@
-# Bookhelf library webapp
+# Bookshelf library webapp
 
 ## Project Overview
-Bookhelf library webapp is a webapp to manage a book library built with Flask using Python.
+Bookshelf library webapp is a webapp to manage a book library built with Flask using Python.
 
 ## Stack
 - **Frontend**: HTMX
@@ -11,20 +11,20 @@ Bookhelf library webapp is a webapp to manage a book library built with Flask us
 - **Styling**: Plain CSS
 - **Database**: Firebird
 - **Hosting**: Self-hosted
-- **Testing**: tox
+- **Testing**: tox (run via `uv run tox`)
 
 ## Common Commands
-- `flask run --debug`: Start the development server
+- `uv run flask --app bookshelf run --debug`: Start the development server
 - `uv sync`: Install dependencies
-- `tox -e py3`: Run the test suite
-- `tox -e lint`: Run linter
-- `tox -e format`: Run formatter
-- `tox -e type`: Run type check
-- `tox -e audit`: Run auditing
-- `tox -e report`: Run report coverage
+- `uv run tox -e py3`: Run the test suite
+- `uv run tox -e lint`: Run linter
+- `uv run tox -e format`: Run formatter
+- `uv run tox -e type`: Run type check
+- `uv run tox -e audit`: Run auditing
+- `uv run tox -e report`: Run report coverage
 
 ## Code Style
-- Python 3.12 or greater. Use modern syntax:
+- Python 3.14 or greater (see `requires-python` in `pyproject.toml`). Use modern syntax:
   - `X | None` instead of `Optional[X]`
   - `list[str]` instead of `List[str]`
   - `dict[str, Any]` instead of `Dict[str, Any]`
@@ -68,8 +68,8 @@ Bookhelf library webapp is a webapp to manage a book library built with Flask us
 - Handle `HX-Request` header for partial vs full page responses
 
 ### Forms
-- Use ModelForm for model-backed forms
-- Validate in `clean()` and `clean_<field>()` methods
+- Use Flask-WTF (`FlaskForm`) for forms; keep CSRF protection enabled
+- Validate with WTForms validators and `validate_<field>()` methods
 - Always handle form errors in templates
 - Disable submit buttons during HTMX requests
 
