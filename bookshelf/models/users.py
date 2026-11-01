@@ -24,8 +24,6 @@ _hasher = PasswordHasher()
 # Verified against unknown emails so a failed login takes the same time either way.
 _DUMMY_HASH = _hasher.hash("dummy password for timing")
 
-_COLUMNS = "ID, EMAIL, PASSWORD_HASH, ROLE, IS_LOCKED"
-
 
 class Role(StrEnum):
     """Values allowed by the CHK_USERS_ROLE constraint on USERS.ROLE."""
@@ -73,19 +71,27 @@ def _row_to_user(row: tuple[int, str, str, str, bool]) -> User:
     )
 
 
-def _find_one(conn: Connection, where: str, value: int | str) -> User | None:
+def _fetch_user(conn: Connection, query: str, params: tuple[int | str]) -> User | None:
     with conn.cursor() as cur:
-        cur.execute(f"SELECT {_COLUMNS} FROM USERS WHERE {where} = ?", (value,))
+        cur.execute(query, params)
         row = cur.fetchone()
     return _row_to_user(row) if row else None
 
 
 def find_by_id(conn: Connection, user_id: int) -> User | None:
-    return _find_one(conn, "ID", user_id)
+    return _fetch_user(
+        conn,
+        "SELECT ID, EMAIL, PASSWORD_HASH, ROLE, IS_LOCKED FROM USERS WHERE ID = ?",
+        (user_id,),
+    )
 
 
 def find_by_email(conn: Connection, email: str) -> User | None:
-    return _find_one(conn, "EMAIL", _normalise(email))
+    return _fetch_user(
+        conn,
+        "SELECT ID, EMAIL, PASSWORD_HASH, ROLE, IS_LOCKED FROM USERS WHERE EMAIL = ?",
+        (_normalise(email),),
+    )
 
 
 def admin_exists(conn: Connection) -> bool:
@@ -99,7 +105,9 @@ def admin_exists(conn: Connection) -> bool:
 
 def list_users(conn: Connection) -> list[User]:
     with conn.cursor() as cur:
-        cur.execute(f"SELECT {_COLUMNS} FROM USERS ORDER BY EMAIL")
+        cur.execute(
+            "SELECT ID, EMAIL, PASSWORD_HASH, ROLE, IS_LOCKED FROM USERS ORDER BY EMAIL"
+        )
         return [_row_to_user(row) for row in cur.fetchall()]
 
 
@@ -109,7 +117,7 @@ def create_user(
     with conn.cursor() as cur:
         cur.execute(
             "INSERT INTO USERS (EMAIL, PASSWORD_HASH, ROLE) VALUES (?, ?, ?) "
-            f"RETURNING {_COLUMNS}",
+            "RETURNING ID, EMAIL, PASSWORD_HASH, ROLE, IS_LOCKED",
             (_normalise(email), _hasher.hash(password), role.value),
         )
         row = cur.fetchone()
