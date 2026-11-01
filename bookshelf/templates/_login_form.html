@@ -1,0 +1,19 @@
+<form id="login-form" class="card" method="post" action="{{ url_for('auth.login') }}"
+      hx-post="{{ url_for('auth.login') }}" hx-target="this" hx-swap="outerHTML"
+      hx-indicator="#login-indicator" hx-disabled-elt="find button">
+  {{ form.hidden_tag() }}
+  {% for error in form.form_errors %}
+    <p class="error" role="alert">{{ error }}</p>
+  {% endfor %}
+
+  <label for="email">{{ form.email.label.text }}</label>
+  {{ form.email(id="email", autocomplete="username", required=True, autofocus=True) }}
+  {% for error in form.email.errors %}<p class="error">{{ error }}</p>{% endfor %}
+
+  <label for="password">{{ form.password.label.text }}</label>
+  {{ form.password(id="password", autocomplete="current-password", required=True) }}
+  {% for error in form.password.errors %}<p class="error">{{ error }}</p>{% endfor %}
+
+  <button type="submit">Log in</button>
+  <span id="login-indicator" class="htmx-indicator">Logging in…</span>
+</form>

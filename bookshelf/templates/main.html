@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block content %}
+  <header class="topbar">
+    <h1>Bookshelf</h1>
+    <form method="post" action="{{ url_for('auth.logout') }}"
+          hx-post="{{ url_for('auth.logout') }}"
+          hx-indicator="#logout-indicator" hx-disabled-elt="find button">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <span>{{ current_user.email }}</span>
+      <button type="submit">Log out</button>
+      <span id="logout-indicator" class="htmx-indicator">…</span>
+    </form>
+  </header>
+  <p>This is the main page.</p>
+{% endblock %}
