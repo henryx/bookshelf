@@ -1,8 +1,9 @@
 import logging
+from collections.abc import Mapping
 from logging.config import dictConfig
 
 import json_logging
-from flask import Flask, Response, request
+from flask import Flask, Response, current_app, request
 from flask_cors import CORS
 from werkzeug.exceptions import HTTPException
 
@@ -10,20 +11,15 @@ from bookshelf.routes.index import index_route
 from bookshelf.utils import Config
 from bookshelf.utils.mappers import KoResponse
 
-__all__ = ["app", "routes", "utils"]
-
-app = Flask("bookshelf")
-CORS(app)
-
-json_logging.init_flask(enable_json=True)
-json_logging.init_request_instrument(app)
+__all__ = ["create_app", "routes", "utils"]
 
 
-def config() -> None:
+def configure_logging() -> None:
     """
-    Function used to configure FLASK web application
+    Configure process-wide logging. Must run once per process.
     """
     cfg = Config()
+    json_logging.init_flask(enable_json=True)
     dictConfig(
         {
             "version": 1,
@@ -43,13 +39,34 @@ def config() -> None:
         }
     )
 
+
+def create_app(overrides: Mapping[str, object] | None = None) -> Flask:
+    """
+    Build and configure the Flask application.
+    :param overrides: config values applied after the environment (e.g. in tests)
+    """
+    cfg = Config()
+    app = Flask("bookshelf")
+    app.config["SECRET_KEY"] = cfg.secret_key
+    if overrides:
+        app.config.update(overrides)
+
+    CORS(app)
+    json_logging.init_request_instrument(app)
+
     app.url_map.strict_slashes = False
     gunicorn_logger = logging.getLogger("gunicorn.error")
     app.logger.handlers = gunicorn_logger.handlers
     app.logger.setLevel(gunicorn_logger.level)
 
+    app.register_error_handler(404, not_found)
+    app.register_error_handler(405, not_allowed)
+    app.register_error_handler(406, not_acceptable)
+    app.register_error_handler(Exception, internal_server_error)
+    app.register_blueprint(index_route)
+    return app
 
-@app.errorhandler(404)
+
 def not_found(e) -> Response:
     """
     Handler for 404 error (not found)
@@ -61,7 +78,6 @@ def not_found(e) -> Response:
     )
 
 
-@app.errorhandler(405)
 def not_allowed(e) -> Response:
     """
     Handler for 405 error (method not allowed)
@@ -73,7 +89,6 @@ def not_allowed(e) -> Response:
     )
 
 
-@app.errorhandler(406)
 def not_acceptable(e) -> Response:
     """
     Handler for 406 error (media type not acceptable)
@@ -86,7 +101,6 @@ def not_acceptable(e) -> Response:
     )
 
 
-@app.errorhandler(Exception)
 def internal_server_error(e: Exception) -> Response:
     """
     Handler for unhandled exceptions. HTTP errors keep their status code;
@@ -99,7 +113,9 @@ def internal_server_error(e: Exception) -> Response:
             mimetype="application/json",
         )
 
-    app.logger.exception("Unhandled exception on %s %s", request.method, request.path)
+    current_app.logger.exception(
+        "Unhandled exception on %s %s", request.method, request.path
+    )
     return Response(
         str(KoResponse(operation="error", message="Internal server error")),
         status=500,
@@ -107,5 +123,4 @@ def internal_server_error(e: Exception) -> Response:
     )
 
 
-config()
-app.register_blueprint(index_route)
+configure_logging()

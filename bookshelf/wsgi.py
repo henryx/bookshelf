@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 
-from bookshelf import app
+from bookshelf import create_app
 from bookshelf.utils import Config
+
+app = create_app()
 
 if __name__ == "__main__":
     cfg = Config()
