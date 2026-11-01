@@ -4,7 +4,7 @@ from datetime import timedelta
 from logging.config import dictConfig
 
 import json_logging
-from flask import Flask, Response, current_app, request
+from flask import Flask, Response, current_app, make_response, render_template, request
 from flask_cors import CORS
 from flask_wtf import CSRFProtect
 from werkzeug.exceptions import HTTPException
@@ -13,7 +13,7 @@ from bookshelf import cli, db
 from bookshelf.routes.auth import auth_route, login_manager
 from bookshelf.routes.main import main_route
 from bookshelf.utils import Config
-from bookshelf.utils.mappers import KoResponse
+from bookshelf.utils.htmx import is_htmx
 
 __all__ = ["create_app", "routes", "utils"]
 
@@ -73,10 +73,7 @@ def create_app(overrides: Mapping[str, object] | None = None) -> Flask:
     app.logger.handlers = gunicorn_logger.handlers
     app.logger.setLevel(gunicorn_logger.level)
 
-    app.register_error_handler(404, not_found)
-    app.register_error_handler(405, not_allowed)
-    app.register_error_handler(406, not_acceptable)
-    app.register_error_handler(Exception, internal_server_error)
+    app.register_error_handler(Exception, handle_error)
     db.init_app(app)
     cli.init_app(app)
     login_manager.init_app(app)
@@ -86,60 +83,35 @@ def create_app(overrides: Mapping[str, object] | None = None) -> Flask:
     return app
 
 
-def not_found(e) -> Response:
-    """
-    Handler for 404 error (not found)
-    """
-    return Response(
-        str(KoResponse(operation="error", message="Endpoint not found")),
-        status=404,
-        mimetype="application/json",
-    )
+GENERIC_ERROR = "Something went wrong. Please try again."
 
 
-def not_allowed(e) -> Response:
+def handle_error(e: Exception) -> Response:
     """
-    Handler for 405 error (method not allowed)
-    """
-    return Response(
-        str(KoResponse(operation="error", message="Method not allowed")),
-        status=405,
-        mimetype="application/json",
-    )
-
-
-def not_acceptable(e) -> Response:
-    """
-    Handler for 406 error (media type not acceptable)
-    """
-
-    return Response(
-        str(KoResponse(operation="error", message="Media type not acceptable")),
-        status=406,
-        mimetype="application/json",
-    )
-
-
-def internal_server_error(e: Exception) -> Response:
-    """
-    Handler for unhandled exceptions. HTTP errors keep their status code;
-    anything else is logged and returned as a generic 500.
+    Render every error as HTML, keeping its status code. Unexpected exceptions
+    are logged and shown as a generic 500 without details. For htmx requests
+    the message is swapped into the page's #error-banner.
     """
     if isinstance(e, HTTPException):
-        return Response(
-            str(KoResponse(operation="error", message=e.description or e.name)),
-            status=e.code,
-            mimetype="application/json",
-        )
+        return _render_error(e.code or 500, e.name, e.description or e.name)
 
     current_app.logger.exception(
         "Unhandled exception on %s %s", request.method, request.path
     )
-    return Response(
-        str(KoResponse(operation="error", message="Internal server error")),
-        status=500,
-        mimetype="application/json",
+    return _render_error(500, "Internal Server Error", GENERIC_ERROR)
+
+
+def _render_error(status: int, title: str, message: str) -> Response:
+    if not is_htmx():
+        html = render_template("error.html", title=title, message=message)
+        return make_response(html, status)
+
+    resp = make_response(
+        render_template("_error.html", title=title, message=message), status
     )
+    resp.headers["HX-Retarget"] = "#error-banner"
+    resp.headers["HX-Reswap"] = "innerHTML"
+    return resp
 
 
 configure_logging()

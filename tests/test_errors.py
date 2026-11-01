@@ -1,13 +1,15 @@
-import json
 from typing import NoReturn
 
 import pytest
 from flask import Flask, abort
 from flask.testing import FlaskClient
 
+from bookshelf import create_app
+
 # Any GET-only route works; the view is replaced, so login is not involved.
 ROUTE = "/"
 ENDPOINT = "main.index"
+HTMX = {"HX-Request": "true"}
 
 
 def _raise_runtime_error() -> NoReturn:
@@ -18,23 +20,24 @@ def _raise_bad_request() -> NoReturn:
     abort(400)
 
 
-def test_not_found(client: FlaskClient):
+def test_not_found_renders_error_page(client: FlaskClient):
     rv = client.get("/notfound")
-    body = json.loads(rv.data)
+    html = rv.get_data(as_text=True)
 
     assert rv.status_code == 404
-    assert body.get("result") == "ko"
+    assert rv.mimetype == "text/html"
+    assert "<html" in html
+    assert "Not Found" in html
 
 
-def test_method_not_allowed(client: FlaskClient):
+def test_method_not_allowed_renders_error_page(client: FlaskClient):
     rv = client.post(ROUTE)
-    body = json.loads(rv.data)
 
     assert rv.status_code == 405
-    assert body.get("result") == "ko"
+    assert "Method Not Allowed" in rv.get_data(as_text=True)
 
 
-def test_internal_error_hides_traceback_and_logs(
+def test_internal_error_hides_details_and_logs(
     app: Flask,
     client: FlaskClient,
     monkeypatch: pytest.MonkeyPatch,
@@ -43,12 +46,12 @@ def test_internal_error_hides_traceback_and_logs(
     monkeypatch.setitem(app.view_functions, ENDPOINT, _raise_runtime_error)
 
     rv = client.get(ROUTE)
-    body = json.loads(rv.data)
+    html = rv.get_data(as_text=True)
 
     assert rv.status_code == 500
-    assert body.get("result") == "ko"
-    assert "traceback" not in body
-    assert "secret internals" not in rv.get_data(as_text=True)
+    assert "Something went wrong" in html
+    assert "secret internals" not in html
+    assert "Traceback" not in html
     assert "secret internals" in caplog.text
 
 
@@ -58,7 +61,51 @@ def test_http_error_keeps_status_code(
     monkeypatch.setitem(app.view_functions, ENDPOINT, _raise_bad_request)
 
     rv = client.get(ROUTE)
-    body = json.loads(rv.data)
 
     assert rv.status_code == 400
-    assert body.get("result") == "ko"
+    assert "Bad Request" in rv.get_data(as_text=True)
+
+
+def test_htmx_error_is_retargeted_to_banner(client: FlaskClient):
+    rv = client.get("/notfound", headers=HTMX)
+    html = rv.get_data(as_text=True)
+
+    assert rv.status_code == 404
+    assert rv.headers["HX-Retarget"] == "#error-banner"
+    assert rv.headers["HX-Reswap"] == "innerHTML"
+    assert "<html" not in html
+    assert "Not Found" in html
+
+
+def test_htmx_internal_error_hides_details(
+    app: Flask, client: FlaskClient, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setitem(app.view_functions, ENDPOINT, _raise_runtime_error)
+
+    rv = client.get(ROUTE, headers=HTMX)
+    html = rv.get_data(as_text=True)
+
+    assert rv.status_code == 500
+    assert rv.headers["HX-Retarget"] == "#error-banner"
+    assert "Something went wrong" in html
+    assert "secret internals" not in html
+
+
+def test_htmx_csrf_failure_is_shown_to_user():
+    client = create_app({"TESTING": True}).test_client()
+
+    rv = client.post(
+        "/login", data={"email": "a@example.com", "password": "pw"}, headers=HTMX
+    )
+
+    assert rv.status_code == 400
+    assert rv.headers["HX-Retarget"] == "#error-banner"
+    assert "CSRF" in rv.get_data(as_text=True)
+
+
+def test_pages_have_error_banner_and_swap_errors(client: FlaskClient):
+    html = client.get("/login").get_data(as_text=True)
+
+    assert 'id="error-banner"' in html
+    assert "responseHandling" in html
+    assert "app.js" in html

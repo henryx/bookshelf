@@ -1,8 +1,6 @@
 import os
 
-__all__ = ["Config", "clean_nones", "mappers"]
-
-from typing import Any
+__all__ = ["Config", "htmx"]
 
 
 class Config:
@@ -44,23 +42,3 @@ def _required(name: str) -> str:
     if not value:
         raise RuntimeError(f"{name} environment variable is not set")
     return value
-
-
-def clean_nones(
-    value: dict | list,
-) -> (
-    dict[Any, list[dict[Any, Any]] | dict[Any, Any]]
-    | list[list[dict[Any, Any]] | dict[Any, Any]]
-    | dict[Any, Any]
-    | list[Any]
-):
-    """
-    Recursively remove all None values from dictionaries and lists, and returns
-    the result as a new dictionary or list.
-    """
-    if isinstance(value, list):
-        return [clean_nones(x) for x in value if x is not None]
-    elif isinstance(value, dict):
-        return {key: clean_nones(val) for key, val in value.items() if val is not None}
-    else:
-        return value

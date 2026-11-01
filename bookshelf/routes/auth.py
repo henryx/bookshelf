@@ -21,6 +21,7 @@ from wtforms.validators import DataRequired, Length
 
 from bookshelf.db import get_db
 from bookshelf.models.users import User, authenticate, find_by_id
+from bookshelf.utils.htmx import is_htmx
 
 __all__ = ["auth_route", "login_manager"]
 
@@ -48,15 +49,11 @@ def load_user(user_id: str) -> User | None:
     return user
 
 
-def _is_htmx() -> bool:
-    return request.headers.get("HX-Request") == "true"
-
-
 def _redirect(url: str) -> BaseResponse:
     """
     Redirect that works for both HTMX and plain requests.
     """
-    if not _is_htmx():
+    if not is_htmx():
         return redirect(url)
     resp = Response(status=204)
     resp.headers["HX-Redirect"] = url
@@ -64,7 +61,7 @@ def _redirect(url: str) -> BaseResponse:
 
 
 def _render_login(form: LoginForm) -> str:
-    template = "_login_form.html" if _is_htmx() else "login.html"
+    template = "_login_form.html" if is_htmx() else "login.html"
     return render_template(template, form=form)
 
 

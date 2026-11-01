@@ -87,3 +87,16 @@ button:disabled {
 .htmx-request.htmx-indicator {
   display: inline;
 }
+
+.error-banner {
+  max-width: 40rem;
+  margin: 1rem auto 0;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--error);
+  border-radius: 0.5rem;
+  color: var(--error);
+}
+
+.error-banner:empty {
+  display: none;
+}
