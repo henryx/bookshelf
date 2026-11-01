@@ -11,6 +11,7 @@ from bookshelf.models.users import (
     User,
     authenticate,
     create_user,
+    delete_user,
     find_by_email,
     list_users,
     set_locked,
@@ -115,6 +116,26 @@ def unlock_user_command(email: str, admin_email: str) -> None:
     click.echo(f"User {user.email} unlocked.")
 
 
+@click.command("delete-user")
+@click.argument("email")
+@admin_email_option
+@click.option("--yes", is_flag=True, help="Do not ask for confirmation.")
+@with_appcontext
+def delete_user_command(email: str, admin_email: str, yes: bool) -> None:
+    """Permanently delete a user. Requires admin credentials."""
+    conn = get_db()
+    admin = _require_admin(conn, admin_email, "Delete")
+    user = _require_user(conn, email)
+    if user.id == admin.id:
+        raise click.ClickException("You cannot delete your own account")
+    if not yes:
+        click.confirm(f"Delete user {user.email}? This cannot be undone", abort=True)
+
+    delete_user(conn, user)
+    current_app.logger.info("User %s deleted by admin %s", user.email, admin.email)
+    click.echo(f"User {user.email} deleted.")
+
+
 @click.command("list-users")
 @admin_email_option
 @with_appcontext
@@ -136,4 +157,5 @@ def init_app(app: Flask) -> None:
     app.cli.add_command(reset_user_password_command)
     app.cli.add_command(lock_user_command)
     app.cli.add_command(unlock_user_command)
+    app.cli.add_command(delete_user_command)
     app.cli.add_command(list_users_command)

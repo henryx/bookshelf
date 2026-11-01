@@ -238,3 +238,78 @@ def test_list_users_requires_admin(db_app: Flask, user: User, password: str):
     assert rv.exit_code != 0
     assert "Invalid admin credentials" in rv.output
     assert "REGULAR" not in rv.output
+
+
+def _delete(db_app: Flask, email: str, admin_password: str, confirm: str = "y"):
+    return db_app.test_cli_runner().invoke(
+        args=["delete-user", email, "--admin-email", ADMIN_EMAIL],
+        input=f"{admin_password}\n{confirm}\n",
+    )
+
+
+def _exists(db_app: Flask, email: str) -> bool:
+    with db_app.app_context():
+        return find_by_email(get_db(), email) is not None
+
+
+def test_delete_user(db_app: Flask, admin: User, user: User):
+    rv = _delete(db_app, user.email, ADMIN_PASSWORD)
+
+    assert rv.exit_code == 0, rv.output
+    assert not _exists(db_app, user.email)
+
+
+def test_delete_user_can_be_cancelled(db_app: Flask, admin: User, user: User):
+    rv = _delete(db_app, user.email, ADMIN_PASSWORD, confirm="n")
+
+    assert rv.exit_code != 0
+    assert _exists(db_app, user.email)
+
+
+def test_delete_user_yes_skips_confirmation(db_app: Flask, admin: User, user: User):
+    rv = db_app.test_cli_runner().invoke(
+        args=["delete-user", user.email, "--admin-email", ADMIN_EMAIL, "--yes"],
+        input=f"{ADMIN_PASSWORD}\n",
+    )
+
+    assert rv.exit_code == 0, rv.output
+    assert not _exists(db_app, user.email)
+
+
+def test_delete_user_rejects_wrong_admin_password(
+    db_app: Flask, admin: User, user: User
+):
+    rv = _delete(db_app, user.email, "wrong")
+
+    assert rv.exit_code != 0
+    assert "Invalid admin credentials" in rv.output
+    assert _exists(db_app, user.email)
+
+
+def test_delete_user_rejects_non_admin(db_app: Flask, user: User, password: str):
+    with db_app.app_context():
+        other = create_user(get_db(), "other@example.com", "pw")
+
+    rv = db_app.test_cli_runner().invoke(
+        args=["delete-user", other.email, "--admin-email", user.email],
+        input=f"{password}\ny\n",
+    )
+
+    assert rv.exit_code != 0
+    assert "Invalid admin credentials" in rv.output
+    assert _exists(db_app, other.email)
+
+
+def test_delete_user_rejects_unknown_email(db_app: Flask, admin: User):
+    rv = _delete(db_app, "nobody@example.com", ADMIN_PASSWORD)
+
+    assert rv.exit_code != 0
+    assert "not found" in rv.output
+
+
+def test_admin_cannot_delete_themselves(db_app: Flask, admin: User):
+    rv = _delete(db_app, ADMIN_EMAIL, ADMIN_PASSWORD)
+
+    assert rv.exit_code != 0
+    assert "cannot delete your own account" in rv.output
+    assert _exists(db_app, ADMIN_EMAIL)

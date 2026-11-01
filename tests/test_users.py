@@ -10,6 +10,8 @@ from bookshelf.models.users import (
     User,
     authenticate,
     create_user,
+    delete_user,
+    find_by_email,
     list_users,
     set_locked,
     set_password,
@@ -111,3 +113,11 @@ def test_list_users_sorted_by_email(db_app: Flask, user: User, password: str):
         emails = [u.email for u in list_users(conn)]
 
     assert emails == ["aaa@example.com", user.email]
+
+
+def test_delete_user_removes_row(db_app: Flask, user: User):
+    with db_app.app_context():
+        conn = get_db()
+        delete_user(conn, user)
+
+        assert find_by_email(conn, user.email) is None

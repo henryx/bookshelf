@@ -10,6 +10,7 @@ __all__ = [
     "User",
     "authenticate",
     "create_user",
+    "delete_user",
     "find_by_email",
     "find_by_id",
     "list_users",
@@ -111,6 +112,12 @@ def set_password(conn: Connection, user: User, password: str) -> None:
             "UPDATE USERS SET PASSWORD_HASH = ? WHERE ID = ?",
             (_hasher.hash(password), user.id),
         )
+    conn.commit()
+
+
+def delete_user(conn: Connection, user: User) -> None:
+    with conn.cursor() as cur:
+        cur.execute("DELETE FROM USERS WHERE ID = ?", (user.id,))
     conn.commit()
 
 
