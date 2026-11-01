@@ -11,6 +11,13 @@ class Config:
         return os.environ.get("APP_VERSION", "0.0.0")
 
     @property
+    def secret_key(self) -> str:
+        key = os.environ.get("APP_SECRET_KEY")
+        if not key:
+            raise RuntimeError("APP_SECRET_KEY environment variable is not set")
+        return key
+
+    @property
     def log_level(self) -> str:
         return os.environ.get("APP_LOG_LEVEL", "debug")
 
