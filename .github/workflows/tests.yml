@@ -1,0 +1,46 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tox:
+    name: ${{ matrix.env }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        env: [lint, type, audit, py3]
+        include:
+          # check only: fail on unformatted files instead of rewriting them
+          - env: format
+            args: -- --check .
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v10
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      # py3 starts Firebird via testcontainers (Docker is preinstalled on
+      # ubuntu-latest).
+      - name: Run tox -e ${{ matrix.env }}
+        run: uv run tox -e ${{ matrix.env }} ${{ matrix.args }}
