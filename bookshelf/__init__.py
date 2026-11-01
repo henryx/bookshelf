@@ -1,13 +1,18 @@
 import logging
 from collections.abc import Mapping
+from datetime import timedelta
 from logging.config import dictConfig
 
 import json_logging
 from flask import Flask, Response, current_app, request
 from flask_cors import CORS
+from flask_wtf import CSRFProtect
 from werkzeug.exceptions import HTTPException
 
+from bookshelf import cli, db
+from bookshelf.routes.auth import auth_route, login_manager
 from bookshelf.routes.index import index_route
+from bookshelf.routes.main import main_route
 from bookshelf.utils import Config
 from bookshelf.utils.mappers import KoResponse
 
@@ -47,7 +52,17 @@ def create_app(overrides: Mapping[str, object] | None = None) -> Flask:
     """
     cfg = Config()
     app = Flask("bookshelf")
-    app.config["SECRET_KEY"] = cfg.secret_key
+    app.config.update(
+        SECRET_KEY=cfg.secret_key,
+        DATABASE_DSN=cfg.db_dsn,
+        DATABASE_USER=cfg.db_user,
+        DATABASE_PASSWORD=cfg.db_password,
+        SESSION_COOKIE_SECURE=cfg.cookie_secure,
+        SESSION_COOKIE_SAMESITE="Lax",
+        REMEMBER_COOKIE_SECURE=cfg.cookie_secure,
+        REMEMBER_COOKIE_SAMESITE="Lax",
+        REMEMBER_COOKIE_DURATION=timedelta(days=30),
+    )
     if overrides:
         app.config.update(overrides)
 
@@ -63,7 +78,13 @@ def create_app(overrides: Mapping[str, object] | None = None) -> Flask:
     app.register_error_handler(405, not_allowed)
     app.register_error_handler(406, not_acceptable)
     app.register_error_handler(Exception, internal_server_error)
+    db.init_app(app)
+    cli.init_app(app)
+    login_manager.init_app(app)
+    CSRFProtect(app)
     app.register_blueprint(index_route)
+    app.register_blueprint(auth_route)
+    app.register_blueprint(main_route)
     return app
 
 
