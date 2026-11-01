@@ -10,7 +10,7 @@ from testcontainers.core.wait_strategies import LogMessageWaitStrategy
 from bookshelf import create_app
 from bookshelf.db import get_db
 from bookshelf.db.schema import init_db
-from bookshelf.users import User, create_user
+from bookshelf.models.users import User, create_user
 
 PASSWORD = "correct horse battery staple"
 FIREBIRD_IMAGE = "firebirdsql/firebird:5.0.4"
