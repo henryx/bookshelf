@@ -1,6 +1,6 @@
 # Bookshelf
 
-This is the bookshelf application  
+This is the bookshelf application.
 
 # Features
 
@@ -14,7 +14,8 @@ Frontend is developed using HTMX library as PWA, to permit to install on mobile 
 
 Data for login are email and password. They are stored in a database table called USERS. Password is hashed with Argon2id
 using a random per-password salt (e.g. `argon2-cffi` `PasswordHasher`); the salt and parameters are stored inside the
-hash string, so no separate salt column is needed. Users can be two roles: regular and admin. Admin role permit to user
+hash string, so no separate salt column is needed. Users can be two roles: regular and admin
+(column `ROLE`, values `REGULAR` and `ADMIN`, enforced by a `CHECK` constraint). Admin role permit to user
 to made admin operations such add or delete new users.
 
 ### Login page
@@ -22,6 +23,14 @@ to made admin operations such add or delete new users.
 When user open for the first time the webapp, a login page is shown. If login and password are correct, main page is
 shown, otherwise login page show an error. A persistent cookie is saved to permit user to navigate in the webapp without
 repeat login. If cookie is expired, or user made a logout action, next page showed is login page.
+
+Decisions:
+
+ - The persistent login cookie lasts 30 days. Cookies are `Secure`, `HttpOnly` and `SameSite=Lax`.
+ - Email addresses are case-insensitive (stored lowercase).
+ - Wrong password, unknown email and locked account all show the same error, "Invalid email or password", so the
+   page does not reveal which accounts exist.
+ - Locking a user ends their open sessions on the next request.
 
 ### Admin area
 
@@ -31,12 +40,25 @@ Admin area is accessible only to admin users. In this area, are shown all users 
  - lock an user.
  - reset the password for the user.
 
+Status: the web admin area is not built yet. These operations are available as CLI commands (see README):
+
+| Operation | CLI command |
+|---|---|
+| Create the first admin | `create-admin` (no admin credentials needed) |
+| List users | `list-users` |
+| Reset a password | `reset-user-password` (the admin sets the new password; no email is available) |
+| Lock / unlock a user | `lock-user`, `unlock-user` |
+| Delete a user | `delete-user` (asks for confirmation) |
+
+Every CLI operation except `create-admin` requires valid admin credentials (correct password, `ADMIN` role, not
+locked) and is logged with the admin who performed it. An admin cannot lock or delete their own account.
+
+Not implemented yet: creating regular users and promoting a user to admin.
+
 ### Open questions
 
- - How is the first admin created (CLI command, env-seeded user, setup page)?
- - Can an admin delete, demote, or lock themselves or the last remaining admin?
- - Password reset: admin sets a temporary password, or another mechanism (no email is available)?
- - What does a locked user see on the login page?
+ - Should the last remaining admin be protected from being locked, demoted or deleted by another admin?
+ - Can an admin demote themselves?
  - Is there a limit on failed login attempts?
 
 ## Main page

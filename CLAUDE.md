@@ -14,14 +14,27 @@ Bookshelf library webapp is a webapp to manage a book library built with Flask u
 - **Testing**: tox (run via `uv run tox`)
 
 ## Common Commands
-- `uv run flask --app bookshelf run --debug`: Start the development server
 - `uv sync`: Install dependencies
-- `uv run tox -e py3`: Run the test suite
+- `uv run dotenv -f dev.env run flask --app bookshelf run --debug`: Start the development server (needs the local Firebird from README.md)
+- `uv run dotenv -f dev.env run flask --app bookshelf <command>`: Run a CLI command (`init-db`, `create-admin`, `list-users`, …)
+- `uv run tox -e py3`: Run the test suite (Docker must be running: tests start Firebird via testcontainers)
 - `uv run tox -e lint`: Run linter
-- `uv run tox -e format`: Run formatter
+- `uv run tox -e format`: Run formatter (`-- --check .` to only check, as CI does)
 - `uv run tox -e type`: Run type check
 - `uv run tox -e audit`: Run auditing
 - `uv run tox -e report`: Run report coverage
+
+## Project Layout
+- `bookshelf/__init__.py`: `create_app()` factory, error handlers, logging
+- `bookshelf/cli.py`: Flask CLI commands; admin operations go through `_require_admin`
+- `bookshelf/db/`: connection per app context (`get_db`); `schema.py` holds table DDL and `init_db`
+- `bookshelf/models/`: data access and domain logic (`users.py`)
+- `bookshelf/routes/`: blueprints (`auth`, `main`)
+- `bookshelf/templates/`, `bookshelf/static/`: Jinja templates and CSS; htmx is vendored in `static/`
+- `bookshelf/utils/`: `Config` (environment variables) and response mappers
+- `tests/conftest.py`: session Firebird container, `app`/`db_app` fixtures
+- `docs/bookshelf.md`: requirements, decisions and open questions
+- `dev.env` (dev server) and `test.env` (tests) are deliberately separate: tests wipe tables
 
 ## Code Style
 - Python 3.14 or greater (see `requires-python` in `pyproject.toml`). Use modern syntax:
