@@ -2,6 +2,7 @@ import click
 from firebird.driver import Connection
 from flask import Flask, current_app
 from flask.cli import with_appcontext
+from prettytable import PrettyTable
 
 from bookshelf.db import get_db
 from bookshelf.db.schema import init_db
@@ -11,6 +12,7 @@ from bookshelf.models.users import (
     authenticate,
     create_user,
     find_by_email,
+    list_users,
     set_locked,
     set_password,
 )
@@ -113,9 +115,25 @@ def unlock_user_command(email: str, admin_email: str) -> None:
     click.echo(f"User {user.email} unlocked.")
 
 
+@click.command("list-users")
+@admin_email_option
+@with_appcontext
+def list_users_command(admin_email: str) -> None:
+    """List all users. Requires admin credentials."""
+    conn = get_db()
+    _require_admin(conn, admin_email, "List users")
+
+    table = PrettyTable(["Email", "Role", "Status"], align="l")
+    for user in list_users(conn):
+        status = "locked" if user.is_locked else "active"
+        table.add_row([user.email, user.role.value, status])
+    click.echo(table)
+
+
 def init_app(app: Flask) -> None:
     app.cli.add_command(init_db_command)
     app.cli.add_command(create_admin_command)
     app.cli.add_command(reset_user_password_command)
     app.cli.add_command(lock_user_command)
     app.cli.add_command(unlock_user_command)
+    app.cli.add_command(list_users_command)

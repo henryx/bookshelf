@@ -12,6 +12,7 @@ __all__ = [
     "create_user",
     "find_by_email",
     "find_by_id",
+    "list_users",
     "set_locked",
     "set_password",
 ]
@@ -82,6 +83,12 @@ def find_by_id(conn: Connection, user_id: int) -> User | None:
 
 def find_by_email(conn: Connection, email: str) -> User | None:
     return _find_one(conn, "EMAIL", _normalise(email))
+
+
+def list_users(conn: Connection) -> list[User]:
+    with conn.cursor() as cur:
+        cur.execute(f"SELECT {_COLUMNS} FROM USERS ORDER BY EMAIL")
+        return [_row_to_user(row) for row in cur.fetchall()]
 
 
 def create_user(

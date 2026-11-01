@@ -10,6 +10,7 @@ from bookshelf.models.users import (
     User,
     authenticate,
     create_user,
+    list_users,
     set_locked,
     set_password,
 )
@@ -100,3 +101,13 @@ def test_set_locked_toggles_lock(db_app: Flask, user: User, password: str):
 
         set_locked(conn, user, locked=False)
         assert authenticate(conn, user.email, password) is not None
+
+
+def test_list_users_sorted_by_email(db_app: Flask, user: User, password: str):
+    with db_app.app_context():
+        conn = get_db()
+        create_user(conn, "aaa@example.com", password)
+
+        emails = [u.email for u in list_users(conn)]
+
+    assert emails == ["aaa@example.com", user.email]

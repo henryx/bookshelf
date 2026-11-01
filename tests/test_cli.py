@@ -203,3 +203,38 @@ def test_admin_cannot_lock_themselves(db_app: Flask, admin: User):
     assert "cannot lock your own account" in rv.output
     with db_app.app_context():
         assert authenticate(get_db(), ADMIN_EMAIL, ADMIN_PASSWORD) is not None
+
+
+def test_list_users(
+    db_app: Flask, admin: User, user: User, lock_user: Callable[[User], None]
+):
+    lock_user(user)
+
+    rv = db_app.test_cli_runner().invoke(
+        args=["list-users", "--admin-email", ADMIN_EMAIL],
+        input=f"{ADMIN_PASSWORD}\n",
+    )
+
+    assert rv.exit_code == 0, rv.output
+    lines = rv.output.splitlines()
+    assert any(
+        all(column in line for column in ("Email", "Role", "Status")) for line in lines
+    )
+    admin_line = next(line for line in lines if ADMIN_EMAIL in line)
+    user_line = next(line for line in lines if user.email in line)
+    assert "ADMIN" in admin_line
+    assert "active" in admin_line
+    assert "REGULAR" in user_line
+    assert "locked" in user_line
+    assert lines.index(admin_line) < lines.index(user_line)
+
+
+def test_list_users_requires_admin(db_app: Flask, user: User, password: str):
+    rv = db_app.test_cli_runner().invoke(
+        args=["list-users", "--admin-email", user.email],
+        input=f"{password}\n",
+    )
+
+    assert rv.exit_code != 0
+    assert "Invalid admin credentials" in rv.output
+    assert "REGULAR" not in rv.output
