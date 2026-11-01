@@ -2,8 +2,6 @@ import json
 
 from flask import abort
 
-from bookshelf import app
-
 
 def test_index_route(client):
     rv = client.get("/")
@@ -37,7 +35,7 @@ def _raise_bad_request():
     abort(400)
 
 
-def test_internal_error_hides_traceback_and_logs(client, monkeypatch, caplog):
+def test_internal_error_hides_traceback_and_logs(app, client, monkeypatch, caplog):
     monkeypatch.setitem(app.view_functions, "index_route.index", _raise_runtime_error)
 
     rv = client.get("/")
@@ -50,7 +48,7 @@ def test_internal_error_hides_traceback_and_logs(client, monkeypatch, caplog):
     assert "secret internals" in caplog.text
 
 
-def test_http_error_keeps_status_code(client, monkeypatch):
+def test_http_error_keeps_status_code(app, client, monkeypatch):
     monkeypatch.setitem(app.view_functions, "index_route.index", _raise_bad_request)
 
     rv = client.get("/")
