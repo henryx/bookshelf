@@ -32,9 +32,5 @@ class IndexResponse(Responses):
 
 @dataclass
 class KoResponse(Responses):
-    traceback: str | None = None
-
-    def __init__(self, operation: str, message: str, traceback: str | None = None):
-        super().__init__(operation=operation, result="ko")
-        self.message = message
-        self.traceback = traceback
+    def __init__(self, operation: str, message: str):
+        super().__init__(operation=operation, result="ko", message=message)

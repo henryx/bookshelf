@@ -13,14 +13,12 @@ ENV APP_VERSION=${app_version}
 WORKDIR /app
 COPY ./dist/bookshelf-${app_version}-py3-none-any.whl /app
 
-RUN apt-get update \
-    && apt-get -y upgrade \
-    && python -m venv /app/venv \
+RUN python -m venv /app/venv \
     && /app/venv/bin/pip install --no-cache-dir bookshelf-${app_version}-py3-none-any.whl \
-    && useradd -u 8877 appuser \
+    && useradd -m -u 8877 appuser \
     && chown -R appuser:appuser /app \
     && rm -rf /var/lib/apt/lists/*
 
 USER appuser
 
-CMD ["sh", "-c", "/app/venv/bin/gunicorn --timeout 600 --access-logfile - --error-logfile - --log-level ${APP_LOG_LEVEL} -b ${APP_HOST}:${APP_PORT} restapi.wsgi:app"]
+CMD ["sh", "-c", "/app/venv/bin/gunicorn --timeout 600 --access-logfile - --error-logfile - --log-level ${APP_LOG_LEVEL} -b ${APP_HOST}:${APP_PORT} bookshelf.wsgi:app"]

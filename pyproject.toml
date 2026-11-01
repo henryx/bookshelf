@@ -12,10 +12,10 @@ classifiers = [
 ]
 requires-python = ">=3.14"
 dependencies = [
-    "flask>=2.2.3,<3",
-    "flask-cors>=3.0.10,<4",
+    "flask>=3.1.3,<4",
+    "flask-cors>=6.0.0,<7",
     "flask-httpauth>=4.7.0,<5",
-    "gunicorn>=20.1.0,<21",
+    "gunicorn>=26.0.0,<27",
     "json-logging>=1.3.0,<2",
 ]
 
@@ -25,9 +25,10 @@ dev = [
     "ruff>=0.16.0,<0.17.0",
     "ty>=0.0.95",
     "python-dotenv[cli]>=1.0.0,<2",
-    "pytest>=7.2.2,<8",
-    "pytest-sugar>=0.9.7,<0.10",
-    "pytest-cov>=4.0.0,<5",
+    "pytest>=9.0.3,<10",
+    "pytest-sugar>=1.1.0,<2",
+    "pytest-cov>=7.0.0,<8",
+    "pip-audit>=2.10.0,<3",
 ]
 
 [build-system]
@@ -35,5 +36,5 @@ requires = ["uv_build>=0.12.24,<0.13"]
 build-backend = "uv_build"
 
 [tool.uv.build-backend]
-module-name = "restapi"
+module-name = "bookshelf"
 module-root = ""

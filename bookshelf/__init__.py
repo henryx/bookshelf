@@ -1,10 +1,10 @@
 import logging
-import traceback
 from logging.config import dictConfig
 
 import json_logging
-from flask import Flask, Response
+from flask import Flask, Response, request
 from flask_cors import CORS
+from werkzeug.exceptions import HTTPException
 
 from bookshelf.routes.index import index_route
 from bookshelf.utils import Config
@@ -12,7 +12,7 @@ from bookshelf.utils.mappers import KoResponse
 
 __all__ = ["app", "routes", "utils"]
 
-app = Flask("ssot-bookshelf")
+app = Flask("bookshelf")
 CORS(app)
 
 json_logging.init_flask(enable_json=True)
@@ -87,21 +87,21 @@ def not_acceptable(e) -> Response:
 
 
 @app.errorhandler(Exception)
-def internal_server_error(e) -> Response:
+def internal_server_error(e: Exception) -> Response:
     """
-    Handler for 500 error (internal server error)
+    Handler for unhandled exceptions. HTTP errors keep their status code;
+    anything else is logged and returned as a generic 500.
     """
+    if isinstance(e, HTTPException):
+        return Response(
+            str(KoResponse(operation="error", message=e.description or e.name)),
+            status=e.code,
+            mimetype="application/json",
+        )
 
+    app.logger.exception("Unhandled exception on %s %s", request.method, request.path)
     return Response(
-        str(
-            KoResponse(
-                operation="error",
-                message="Internal server error",
-                traceback="".join(
-                    traceback.TracebackException.from_exception(e).format()
-                ),
-            )
-        ),
+        str(KoResponse(operation="error", message="Internal server error")),
         status=500,
         mimetype="application/json",
     )
