@@ -37,24 +37,31 @@ Bookshelf library webapp is a webapp to manage a book library built with Flask u
 - `dev.env` (dev server) and `test.env` (tests) are deliberately separate: tests wipe tables
 
 ## Code Style
-- Python 3.14 or greater (see `requires-python` in `pyproject.toml`). Use modern syntax:
-  - `X | None` instead of `Optional[X]`
-  - `list[str]` instead of `List[str]`
-  - `dict[str, Any]` instead of `Dict[str, Any]`
-  - `tuple[int, str]` instead of `Tuple[int, str]`
-  - `type X = ...` for type aliases (Python 3.12)
-- Follow PEP 8 style guidelines
-- Use type hints for function signatures
-- Prefer f-strings for string formatting
-- Write clear, descriptive commit messages
-- Keep functions small and focused on a single responsibility
-- Remove imports, variables, or functions made unused by your own changes.
-- Avoid speculative abstractions for single-use code.
-- Match statements for enum/type dispatch where appropriate
-- No `Any` types - use proper type hints or `object`
-- Use early returns, avoid nested conditionals
-- Prefer composition to inheritance
-- Limit layers in Dockerfile
+- Python:
+  - Project uses 3.14 or greater (see `requires-python` in `pyproject.toml`). Use modern syntax:
+    - `X | None` instead of `Optional[X]`
+    - `list[str]` instead of `List[str]`
+    - `dict[str, Any]` instead of `Dict[str, Any]`
+    - `tuple[int, str]` instead of `Tuple[int, str]`
+    - `type X = ...` for type aliases (Python 3.12)
+  - Follow PEP 8 style guidelines
+  - Use type hints for function signatures
+  - Prefer f-strings for string formatting
+  - Keep functions small and focused on a single responsibility
+  - Remove imports, variables, or functions made unused by your own changes.
+  - Avoid speculative abstractions for single-use code.
+  - Match statements for enum/type dispatch where appropriate
+  - No `Any` types - use proper type hints or `object`
+  - Use early returns, avoid nested conditionals
+  - Prefer composition to inheritance
+- Docker:
+  - Limit layers in Dockerfile
+- SQL:
+  - Write each query as a complete literal string.
+  - Never use f-strings or other interpolation for column names, table names or clauses.
+  - Pass values only as `?` parameters.
+- Other:
+  - Write clear, descriptive commit messages
 
 ## Working Style
 - State assumptions before editing.
