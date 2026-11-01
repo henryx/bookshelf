@@ -31,13 +31,14 @@ def init_db_command() -> None:
 
 @click.command("create-admin")
 @click.argument("email")
-@click.password_option()
 @with_appcontext
-def create_admin_command(email: str, password: str) -> None:
+def create_admin_command(email: str) -> None:
     """Create an admin user."""
     conn = get_db()
     if find_by_email(conn, email) is not None:
         raise click.ClickException(f"User {email} already exists")
+
+    password = click.prompt("Password", hide_input=True, confirmation_prompt=True)
     user = create_user(conn, email, password, role=Role.ADMIN)
     click.echo(f"Admin {user.email} created.")
 
