@@ -11,7 +11,6 @@ from werkzeug.exceptions import HTTPException
 
 from bookshelf import cli, db
 from bookshelf.routes.auth import auth_route, login_manager
-from bookshelf.routes.index import index_route
 from bookshelf.routes.main import main_route
 from bookshelf.utils import Config
 from bookshelf.utils.mappers import KoResponse
@@ -82,7 +81,6 @@ def create_app(overrides: Mapping[str, object] | None = None) -> Flask:
     cli.init_app(app)
     login_manager.init_app(app)
     CSRFProtect(app)
-    app.register_blueprint(index_route)
     app.register_blueprint(auth_route)
     app.register_blueprint(main_route)
     return app

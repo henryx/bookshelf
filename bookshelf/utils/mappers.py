@@ -3,7 +3,7 @@ from dataclasses import asdict, dataclass
 
 from bookshelf.utils import clean_nones
 
-__all__ = ["IndexResponse", "KoResponse", "Responses"]
+__all__ = ["KoResponse", "Responses"]
 
 
 @dataclass(kw_only=True)
@@ -23,11 +23,6 @@ class Responses:
     def __str__(self):
         d = asdict(self)
         return json.dumps(clean_nones(d))
-
-
-@dataclass
-class IndexResponse(Responses):
-    version: str = "0.0.0"
 
 
 @dataclass

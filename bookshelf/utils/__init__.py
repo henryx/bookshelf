@@ -7,10 +7,6 @@ from typing import Any
 
 class Config:
     @property
-    def version(self) -> str:
-        return os.environ.get("APP_VERSION", "0.0.0")
-
-    @property
     def secret_key(self) -> str:
         return _required("APP_SECRET_KEY")
 
