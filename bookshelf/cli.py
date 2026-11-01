@@ -17,6 +17,7 @@ from bookshelf.models.users import (
     list_users,
     set_locked,
     set_password,
+    set_role,
 )
 
 __all__ = ["init_app"]
@@ -105,6 +106,44 @@ def reset_user_password_command(email: str, admin_email: str) -> None:
     click.echo(f"Password for {user.email} reset.")
 
 
+@click.command("promote-user")
+@click.argument("email")
+@admin_email_option
+@with_appcontext
+def promote_user_command(email: str, admin_email: str) -> None:
+    """Give a user the admin role. Requires admin credentials."""
+    conn = get_db()
+    admin = _require_admin(conn, admin_email, "Promote")
+    user = _require_user(conn, email)
+    if user.is_admin:
+        click.echo(f"User {user.email} is already an admin.")
+        return
+
+    set_role(conn, user, Role.ADMIN)
+    current_app.logger.info("User %s promoted by admin %s", user.email, admin.email)
+    click.echo(f"User {user.email} is now an admin.")
+
+
+@click.command("demote-user")
+@click.argument("email")
+@admin_email_option
+@with_appcontext
+def demote_user_command(email: str, admin_email: str) -> None:
+    """Remove the admin role from a user. Requires admin credentials."""
+    conn = get_db()
+    admin = _require_admin(conn, admin_email, "Demote")
+    user = _require_user(conn, email)
+    if user.id == admin.id:
+        raise click.ClickException("You cannot demote your own account")
+    if not user.is_admin:
+        click.echo(f"User {user.email} is not an admin.")
+        return
+
+    set_role(conn, user, Role.REGULAR)
+    current_app.logger.info("User %s demoted by admin %s", user.email, admin.email)
+    click.echo(f"User {user.email} is now a regular user.")
+
+
 @click.command("lock-user")
 @click.argument("email")
 @admin_email_option
@@ -177,6 +216,8 @@ def init_app(app: Flask) -> None:
     app.cli.add_command(create_admin_command)
     app.cli.add_command(create_user_command)
     app.cli.add_command(reset_user_password_command)
+    app.cli.add_command(promote_user_command)
+    app.cli.add_command(demote_user_command)
     app.cli.add_command(lock_user_command)
     app.cli.add_command(unlock_user_command)
     app.cli.add_command(delete_user_command)

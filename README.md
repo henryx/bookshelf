@@ -65,12 +65,13 @@ production environment set. Passwords are always prompted, never passed as argum
 | `create-user EMAIL` | Create a regular user |
 | `list-users` | Show all users with role and lock status |
 | `reset-user-password EMAIL` | Set a new password for a user |
+| `promote-user EMAIL` / `demote-user EMAIL` | Give or remove the admin role |
 | `lock-user EMAIL` / `unlock-user EMAIL` | Block or allow a user's login; locking ends open sessions |
 | `delete-user EMAIL [--yes]` | Permanently delete a user (asks for confirmation) |
 
 All commands except `init-db` and `create-admin` require admin credentials
-(`--admin-email`, or prompted, plus the admin password). Admins cannot lock or delete
-their own account.
+(`--admin-email`, or prompted, plus the admin password). Admins cannot lock, demote or
+delete their own account.
 
 ## Tests and checks
 

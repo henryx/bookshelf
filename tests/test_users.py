@@ -16,6 +16,7 @@ from bookshelf.models.users import (
     list_users,
     set_locked,
     set_password,
+    set_role,
 )
 
 
@@ -131,3 +132,13 @@ def test_admin_exists(db_app: Flask, user: User, password: str):
 
         create_user(conn, "boss@example.com", password, role=Role.ADMIN)
         assert admin_exists(conn)
+
+
+def test_set_role(db_app: Flask, user: User):
+    with db_app.app_context():
+        conn = get_db()
+        set_role(conn, user, Role.ADMIN)
+
+        updated = find_by_email(conn, user.email)
+    assert updated is not None
+    assert updated.role is Role.ADMIN

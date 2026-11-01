@@ -389,3 +389,125 @@ def test_create_user_rejects_non_admin(db_app: Flask, user: User, password: str)
     assert rv.exit_code != 0
     assert "Invalid admin credentials" in rv.output
     assert not _exists(db_app, "new@example.com")
+
+
+def test_promote_user(db_app: Flask, admin: User, user: User, password: str):
+    rv = _run_as_admin(db_app, "promote-user", user.email, ADMIN_PASSWORD)
+
+    assert rv.exit_code == 0, rv.output
+    with db_app.app_context():
+        promoted = find_by_email(get_db(), user.email)
+    assert promoted is not None
+    assert promoted.role is Role.ADMIN
+
+    # the promoted user can now authorise admin commands
+    rv = db_app.test_cli_runner().invoke(
+        args=["list-users", "--admin-email", user.email], input=f"{password}\n"
+    )
+    assert rv.exit_code == 0, rv.output
+
+
+def test_promote_user_already_admin(db_app: Flask, admin: User):
+    rv = _run_as_admin(db_app, "promote-user", ADMIN_EMAIL, ADMIN_PASSWORD)
+
+    assert rv.exit_code == 0, rv.output
+    assert "already an admin" in rv.output
+
+
+def test_promote_user_rejects_wrong_admin_password(
+    db_app: Flask, admin: User, user: User
+):
+    rv = _run_as_admin(db_app, "promote-user", user.email, "wrong")
+
+    assert rv.exit_code != 0
+    assert "Invalid admin credentials" in rv.output
+    with db_app.app_context():
+        unchanged = find_by_email(get_db(), user.email)
+    assert unchanged is not None
+    assert unchanged.role is Role.REGULAR
+
+
+def test_promote_user_rejects_non_admin(db_app: Flask, user: User, password: str):
+    rv = db_app.test_cli_runner().invoke(
+        args=["promote-user", user.email, "--admin-email", user.email],
+        input=f"{password}\n",
+    )
+
+    assert rv.exit_code != 0
+    assert "Invalid admin credentials" in rv.output
+
+
+def test_promote_user_rejects_unknown_email(db_app: Flask, admin: User):
+    rv = _run_as_admin(db_app, "promote-user", "nobody@example.com", ADMIN_PASSWORD)
+
+    assert rv.exit_code != 0
+    assert "not found" in rv.output
+
+
+def _role(db_app: Flask, email: str) -> Role:
+    with db_app.app_context():
+        found = find_by_email(get_db(), email)
+    assert found is not None
+    return found.role
+
+
+def test_demote_user(db_app: Flask, admin: User, password: str):
+    with db_app.app_context():
+        other = create_user(
+            get_db(), "other.admin@example.com", password, role=Role.ADMIN
+        )
+
+    rv = _run_as_admin(db_app, "demote-user", other.email, ADMIN_PASSWORD)
+
+    assert rv.exit_code == 0, rv.output
+    assert _role(db_app, other.email) is Role.REGULAR
+
+
+def test_demote_user_already_regular(db_app: Flask, admin: User, user: User):
+    rv = _run_as_admin(db_app, "demote-user", user.email, ADMIN_PASSWORD)
+
+    assert rv.exit_code == 0, rv.output
+    assert "not an admin" in rv.output
+
+
+def test_admin_cannot_demote_themselves(db_app: Flask, admin: User):
+    rv = _run_as_admin(db_app, "demote-user", ADMIN_EMAIL, ADMIN_PASSWORD)
+
+    assert rv.exit_code != 0
+    assert "cannot demote your own account" in rv.output
+    assert _role(db_app, ADMIN_EMAIL) is Role.ADMIN
+
+
+def test_demote_user_rejects_wrong_admin_password(
+    db_app: Flask, admin: User, password: str
+):
+    with db_app.app_context():
+        other = create_user(
+            get_db(), "other.admin@example.com", password, role=Role.ADMIN
+        )
+
+    rv = _run_as_admin(db_app, "demote-user", other.email, "wrong")
+
+    assert rv.exit_code != 0
+    assert "Invalid admin credentials" in rv.output
+    assert _role(db_app, other.email) is Role.ADMIN
+
+
+def test_demote_user_rejects_non_admin(
+    db_app: Flask, admin: User, user: User, password: str
+):
+    rv = db_app.test_cli_runner().invoke(
+        args=["demote-user", ADMIN_EMAIL, "--admin-email", user.email],
+        input=f"{password}\n",
+    )
+
+    assert rv.exit_code != 0
+    assert "Invalid admin credentials" in rv.output
+    assert _role(db_app, ADMIN_EMAIL) is Role.ADMIN
+
+
+def test_demote_user_rejects_unknown_email(db_app: Flask, admin: User):
+    rv = _run_as_admin(db_app, "demote-user", "nobody@example.com", ADMIN_PASSWORD)
+
+    assert rv.exit_code != 0
+    assert "not found" in rv.output

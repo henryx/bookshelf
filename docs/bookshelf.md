@@ -47,19 +47,20 @@ Status: the web admin area is not built yet. These operations are available as C
 | Create the first admin | `create-admin` (no admin credentials needed; refused once any admin exists, locked or not) |
 | Create a regular user | `create-user` |
 | List users | `list-users` |
+| Promote / demote a user | `promote-user`, `demote-user` |
 | Reset a password | `reset-user-password` (the admin sets the new password; no email is available) |
 | Lock / unlock a user | `lock-user`, `unlock-user` |
 | Delete a user | `delete-user` (asks for confirmation) |
 
 Every CLI operation except `create-admin` requires valid admin credentials (correct password, `ADMIN` role, not
-locked) and is logged with the admin who performed it. An admin cannot lock or delete their own account.
+locked) and is logged with the admin who performed it. An admin cannot lock, demote or delete their own account.
 
-Not implemented yet: promoting a user to admin.
+Because every admin operation needs an active (not locked) admin, and no admin can lock, demote or delete
+themselves, the admin performing an operation always remains an active admin. The CLI therefore can never leave
+the system without an active admin, so the last admin needs no separate protection.
 
 ### Open questions
 
- - Should the last remaining admin be protected from being locked, demoted or deleted by another admin?
- - Can an admin demote themselves?
  - Is there a limit on failed login attempts?
 
 ## Main page

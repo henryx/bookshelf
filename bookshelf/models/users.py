@@ -17,6 +17,7 @@ __all__ = [
     "list_users",
     "set_locked",
     "set_password",
+    "set_role",
 ]
 
 _hasher = PasswordHasher()
@@ -128,6 +129,12 @@ def set_password(conn: Connection, user: User, password: str) -> None:
 def delete_user(conn: Connection, user: User) -> None:
     with conn.cursor() as cur:
         cur.execute("DELETE FROM USERS WHERE ID = ?", (user.id,))
+    conn.commit()
+
+
+def set_role(conn: Connection, user: User, role: Role) -> None:
+    with conn.cursor() as cur:
+        cur.execute("UPDATE USERS SET ROLE = ? WHERE ID = ?", (role.value, user.id))
     conn.commit()
 
 
