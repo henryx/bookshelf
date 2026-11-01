@@ -62,6 +62,7 @@ production environment set. Passwords are always prompted, never passed as argum
 |---|---|
 | `init-db` | Create missing tables (safe to rerun) |
 | `create-admin EMAIL` | Create an admin user |
+| `create-user EMAIL` | Create a regular user |
 | `list-users` | Show all users with role and lock status |
 | `reset-user-password EMAIL` | Set a new password for a user |
 | `lock-user EMAIL` / `unlock-user EMAIL` | Block or allow a user's login; locking ends open sessions |

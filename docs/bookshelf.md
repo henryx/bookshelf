@@ -45,6 +45,7 @@ Status: the web admin area is not built yet. These operations are available as C
 | Operation | CLI command |
 |---|---|
 | Create the first admin | `create-admin` (no admin credentials needed) |
+| Create a regular user | `create-user` |
 | List users | `list-users` |
 | Reset a password | `reset-user-password` (the admin sets the new password; no email is available) |
 | Lock / unlock a user | `lock-user`, `unlock-user` |
@@ -53,7 +54,7 @@ Status: the web admin area is not built yet. These operations are available as C
 Every CLI operation except `create-admin` requires valid admin credentials (correct password, `ADMIN` role, not
 locked) and is logged with the admin who performed it. An admin cannot lock or delete their own account.
 
-Not implemented yet: creating regular users and promoting a user to admin.
+Not implemented yet: promoting a user to admin.
 
 ### Open questions
 

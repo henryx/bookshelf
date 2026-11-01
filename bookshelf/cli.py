@@ -66,6 +66,23 @@ admin_email_option = click.option(
 )
 
 
+@click.command("create-user")
+@click.argument("email")
+@admin_email_option
+@with_appcontext
+def create_user_command(email: str, admin_email: str) -> None:
+    """Create a regular user. Requires admin credentials."""
+    conn = get_db()
+    admin = _require_admin(conn, admin_email, "Create user")
+    if find_by_email(conn, email) is not None:
+        raise click.ClickException(f"User {email} already exists")
+
+    password = click.prompt("Password", hide_input=True, confirmation_prompt=True)
+    user = create_user(conn, email, password)
+    current_app.logger.info("User %s created by admin %s", user.email, admin.email)
+    click.echo(f"User {user.email} created.")
+
+
 @click.command("reset-user-password")
 @click.argument("email")
 @admin_email_option
@@ -154,6 +171,7 @@ def list_users_command(admin_email: str) -> None:
 def init_app(app: Flask) -> None:
     app.cli.add_command(init_db_command)
     app.cli.add_command(create_admin_command)
+    app.cli.add_command(create_user_command)
     app.cli.add_command(reset_user_password_command)
     app.cli.add_command(lock_user_command)
     app.cli.add_command(unlock_user_command)

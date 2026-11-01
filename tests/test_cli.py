@@ -32,6 +32,17 @@ def test_create_admin(db_app: Flask):
     assert admin.role is Role.ADMIN
 
 
+def test_create_admin_does_not_accept_password_option(db_app: Flask):
+    rv = db_app.test_cli_runner().invoke(
+        args=["create-admin", "admin@example.com", "--password", "pw"]
+    )
+
+    assert rv.exit_code != 0
+    assert "No such option" in rv.output
+    with db_app.app_context():
+        assert find_by_email(get_db(), "admin@example.com") is None
+
+
 def test_create_admin_rejects_existing_email(db_app: Flask):
     runner = db_app.test_cli_runner()
     args = ["create-admin", "admin@example.com"]
@@ -313,3 +324,47 @@ def test_admin_cannot_delete_themselves(db_app: Flask, admin: User):
     assert rv.exit_code != 0
     assert "cannot delete your own account" in rv.output
     assert _exists(db_app, ADMIN_EMAIL)
+
+
+def _create(db_app: Flask, email: str, admin_password: str, password: str = "user-pw"):
+    return db_app.test_cli_runner().invoke(
+        args=["create-user", email, "--admin-email", ADMIN_EMAIL],
+        input=f"{admin_password}\n{password}\n{password}\n",
+    )
+
+
+def test_create_user(db_app: Flask, admin: User):
+    rv = _create(db_app, "New.Reader@Example.com", ADMIN_PASSWORD)
+
+    assert rv.exit_code == 0, rv.output
+    with db_app.app_context():
+        conn = get_db()
+        created = authenticate(conn, "new.reader@example.com", "user-pw")
+    assert created is not None
+    assert created.role is Role.REGULAR
+
+
+def test_create_user_rejects_existing_email(db_app: Flask, admin: User, user: User):
+    rv = _create(db_app, user.email.upper(), ADMIN_PASSWORD)
+
+    assert rv.exit_code != 0
+    assert "already exists" in rv.output
+
+
+def test_create_user_rejects_wrong_admin_password(db_app: Flask, admin: User):
+    rv = _create(db_app, "new@example.com", "wrong")
+
+    assert rv.exit_code != 0
+    assert "Invalid admin credentials" in rv.output
+    assert not _exists(db_app, "new@example.com")
+
+
+def test_create_user_rejects_non_admin(db_app: Flask, user: User, password: str):
+    rv = db_app.test_cli_runner().invoke(
+        args=["create-user", "new@example.com", "--admin-email", user.email],
+        input=f"{password}\npw\npw\n",
+    )
+
+    assert rv.exit_code != 0
+    assert "Invalid admin credentials" in rv.output
+    assert not _exists(db_app, "new@example.com")
