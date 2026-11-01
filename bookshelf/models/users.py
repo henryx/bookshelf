@@ -12,6 +12,7 @@ __all__ = [
     "create_user",
     "find_by_email",
     "find_by_id",
+    "set_locked",
     "set_password",
 ]
 
@@ -103,6 +104,12 @@ def set_password(conn: Connection, user: User, password: str) -> None:
             "UPDATE USERS SET PASSWORD_HASH = ? WHERE ID = ?",
             (_hasher.hash(password), user.id),
         )
+    conn.commit()
+
+
+def set_locked(conn: Connection, user: User, *, locked: bool) -> None:
+    with conn.cursor() as cur:
+        cur.execute("UPDATE USERS SET IS_LOCKED = ? WHERE ID = ?", (locked, user.id))
     conn.commit()
 
 

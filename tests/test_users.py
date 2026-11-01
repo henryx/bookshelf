@@ -10,6 +10,7 @@ from bookshelf.models.users import (
     User,
     authenticate,
     create_user,
+    set_locked,
     set_password,
 )
 
@@ -88,3 +89,14 @@ def test_set_password_replaces_hash(db_app: Flask, user: User, password: str):
 
         assert authenticate(conn, user.email, "brand new password") is not None
         assert authenticate(conn, user.email, password) is None
+
+
+def test_set_locked_toggles_lock(db_app: Flask, user: User, password: str):
+    with db_app.app_context():
+        conn = get_db()
+
+        set_locked(conn, user, locked=True)
+        assert authenticate(conn, user.email, password) is None
+
+        set_locked(conn, user, locked=False)
+        assert authenticate(conn, user.email, password) is not None
