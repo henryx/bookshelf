@@ -19,3 +19,15 @@ Dockerfile*
 
 # IDE
 .idea/
+
+# Local build and test artefacts (images are built from source)
+.venv/
+.tox/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+htmlcov/
+.coverage
+dist/
+build/
+tests/
