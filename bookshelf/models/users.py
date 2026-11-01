@@ -5,7 +5,15 @@ from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
 from firebird.driver import Connection
 
-__all__ = ["Role", "User", "authenticate", "create_user", "find_by_email", "find_by_id"]
+__all__ = [
+    "Role",
+    "User",
+    "authenticate",
+    "create_user",
+    "find_by_email",
+    "find_by_id",
+    "set_password",
+]
 
 _hasher = PasswordHasher()
 # Verified against unknown emails so a failed login takes the same time either way.
@@ -87,6 +95,15 @@ def create_user(
         row = cur.fetchone()
     conn.commit()
     return _row_to_user(row)
+
+
+def set_password(conn: Connection, user: User, password: str) -> None:
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE USERS SET PASSWORD_HASH = ? WHERE ID = ?",
+            (_hasher.hash(password), user.id),
+        )
+    conn.commit()
 
 
 def _password_matches(password_hash: str, password: str) -> bool:

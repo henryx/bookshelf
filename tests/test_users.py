@@ -5,7 +5,13 @@ from firebird.driver import DatabaseError
 from flask import Flask
 
 from bookshelf.db import get_db
-from bookshelf.models.users import Role, User, authenticate, create_user
+from bookshelf.models.users import (
+    Role,
+    User,
+    authenticate,
+    create_user,
+    set_password,
+)
 
 
 def test_password_is_stored_as_argon2id_hash(user: User, password: str):
@@ -73,3 +79,12 @@ def test_database_rejects_unknown_role(db_app: Flask, user: User):
         ):
             cur.execute("UPDATE USERS SET ROLE = 'SUPERUSER' WHERE ID = ?", (user.id,))
         conn.rollback()
+
+
+def test_set_password_replaces_hash(db_app: Flask, user: User, password: str):
+    with db_app.app_context():
+        conn = get_db()
+        set_password(conn, user, "brand new password")
+
+        assert authenticate(conn, user.email, "brand new password") is not None
+        assert authenticate(conn, user.email, password) is None
