@@ -34,6 +34,7 @@ dev = [
     "pytest-cov>=7.0.0,<8",
     "pip-audit>=2.10.0,<3",
     "testcontainers>=4.15.0,<5",
+    "tox-uv>=1.37.3,<2",
 ]
 
 [build-system]
