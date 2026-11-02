@@ -102,6 +102,10 @@ docker run -p 8080:8080 \
 The image is built from source in three stages (dependencies, wheel, release) and runs
 gunicorn as a non-root user, configured by `gunicorn.conf.py`. All logs, gunicorn's
 included, are written to stderr as JSON lines. Serve it over HTTPS: cookies are `Secure` by default.
+Behind a reverse proxy that terminates HTTPS, set `APP_TRUSTED_PROXIES` to the number of proxies
+(usually `1`) so logs show the client IP and the app sees the request as HTTPS.
+
+After upgrading, run `init-db` again: it adds any new tables and indexes to an existing database.
 
 ## CI and releases
 
