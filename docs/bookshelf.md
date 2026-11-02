@@ -37,9 +37,13 @@ Decisions:
    not reveal which accounts exist. Refused attempts are not counted, and a successful login clears the failures.
    Failures are stored in the `LOGIN_FAILURES` table. The CLI is not limited. Both limits are configurable
    (`APP_LOGIN_MAX_FAILURES`, `APP_LOGIN_BLOCK_MINUTES`; see README); 5 and 15 are the defaults.
- - Failed and blocked logins are logged with the email as typed and the client IP, like the CLI logs emails
-   for every admin operation. The email is logged unvalidated, so a password typed into the email field ends up
-   in the logs.
+ - Emails must be valid addresses (checked with `email-validator`, no DNS lookup), on the login form and when
+   creating users with `create-user` / `create-admin`, so every account created can log in. Reserved and LAN-style
+   domains such as `user@bookshelf.local` or `user@nas` are rejected. Spaces around the email are ignored. An
+   invalid email on the login form is refused before the credentials are checked, so it is neither counted as a
+   failed login nor logged. Other CLI commands accept any email, so older accounts can still be managed.
+ - Failed and blocked logins are logged with the email and the client IP, like the CLI logs emails for every admin
+   operation. Only valid emails reach the log, so a password typed into the email field is not logged.
 
 ### Admin area
 

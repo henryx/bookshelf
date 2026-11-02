@@ -258,3 +258,21 @@ def test_blocked_login_logs_email_and_ip(db_client: FlaskClient, user: User, cap
         m.startswith(f"Blocked login for {user.email} from 127.0.0.1")
         for m in caplog.messages
     )
+
+
+def test_login_rejects_invalid_email_without_counting_it(
+    db_client: FlaskClient, caplog
+):
+    rv = _login(db_client, "correct horse battery staple", "wrong")
+
+    assert rv.status_code == 200
+    assert "Invalid email address" in rv.get_data(as_text=True)
+    assert not any("Failed login" in m for m in caplog.messages)
+
+
+def test_login_ignores_spaces_around_email(
+    db_client: FlaskClient, user: User, password: str
+):
+    rv = _login(db_client, f"  {user.email}  ", password)
+
+    assert rv.status_code == 302

@@ -77,7 +77,8 @@ production environment set. Passwords are always prompted, never passed as argum
 
 All commands except `init-db` and `create-admin` require admin credentials
 (`--admin-email`, or prompted, plus the admin password). Admins cannot lock, demote or
-delete their own account.
+delete their own account. `create-admin` and `create-user` only accept valid email
+addresses (no reserved or LAN-style domains such as `.local`), the same rule as the login form.
 
 ## Tests and checks
 

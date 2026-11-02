@@ -1,4 +1,5 @@
 import click
+from email_validator import EmailNotValidError, validate_email
 from firebird.driver import Connection
 from flask import Flask, current_app
 from flask.cli import with_appcontext
@@ -32,8 +33,17 @@ def init_db_command() -> None:
     click.echo("Database initialised.")
 
 
+def _valid_email(_ctx: click.Context, _param: click.Parameter, value: str) -> str:
+    """Same rules as the login form, so every new account can log in."""
+    try:
+        validate_email(value, check_deliverability=False)
+    except EmailNotValidError as e:
+        raise click.BadParameter(str(e)) from e
+    return value
+
+
 @click.command("create-admin")
-@click.argument("email")
+@click.argument("email", callback=_valid_email)
 @with_appcontext
 def create_admin_command(email: str) -> None:
     """Create the first admin user. Refused once any admin exists."""
@@ -76,7 +86,7 @@ admin_email_option = click.option(
 
 
 @click.command("create-user")
-@click.argument("email")
+@click.argument("email", callback=_valid_email)
 @admin_email_option
 @with_appcontext
 def create_user_command(email: str, admin_email: str) -> None:

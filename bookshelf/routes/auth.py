@@ -17,7 +17,7 @@ from flask_login import (
 from flask_wtf import FlaskForm
 from werkzeug.wrappers import Response as BaseResponse
 from wtforms import EmailField, PasswordField
-from wtforms.validators import DataRequired, Length
+from wtforms.validators import DataRequired, Email, Length
 
 from bookshelf.db import get_db
 from bookshelf.models.users import (
@@ -41,8 +41,16 @@ INVALID_CREDENTIALS = "Invalid email or password"
 TOO_MANY_ATTEMPTS = "Too many failed login attempts. Please try again later."
 
 
+def _strip(value: str | None) -> str | None:
+    return value.strip() if value else value
+
+
 class LoginForm(FlaskForm):
-    email = EmailField("Email", validators=[DataRequired(), Length(max=254)])
+    email = EmailField(
+        "Email",
+        filters=[_strip],
+        validators=[DataRequired(), Length(max=254), Email()],
+    )
     password = PasswordField("Password", validators=[DataRequired()])
 
 

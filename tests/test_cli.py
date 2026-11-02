@@ -540,3 +540,20 @@ def test_create_admin_reports_user_created_concurrently(
 
     assert rv.exit_code == 1
     assert f"User {user.email} already exists" in rv.output
+
+
+@pytest.mark.parametrize("email", ["not-an-email", "admin@bookshelf.local", "x@nas"])
+def test_create_admin_rejects_invalid_email(db_app: Flask, email: str):
+    rv = db_app.test_cli_runner().invoke(args=["create-admin", email], input="pw\npw\n")
+
+    assert rv.exit_code == 2
+    assert "Invalid value for 'EMAIL'" in rv.output
+    assert not _exists(db_app, email)
+
+
+def test_create_user_rejects_invalid_email(db_app: Flask, admin: User):
+    rv = _create(db_app, "reader@bookshelf.local", ADMIN_PASSWORD)
+
+    assert rv.exit_code == 2
+    assert "Invalid value for 'EMAIL'" in rv.output
+    assert not _exists(db_app, "reader@bookshelf.local")
