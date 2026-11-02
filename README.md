@@ -55,6 +55,7 @@ All settings come from environment variables:
 | `APP_LOG_LEVEL` | no | `debug` | Log level |
 | `APP_HOST` / `APP_PORT` | no | `localhost` / `8000` | Bind address (Docker image: `0.0.0.0` / `8080`) |
 | `APP_DB_POOL_SIZE` | no | `5` | Idle database connections kept for reuse, per process |
+| `APP_TRUSTED_PROXIES` | no | `0` | Reverse proxies in front of the app; set it (usually `1`) behind a proxy so client IP and HTTPS come from `X-Forwarded-*`. Leave `0` when exposed directly, or clients can fake their IP |
 | `APP_WORKERS` | no | 2 × CPUs + 1 | gunicorn worker processes; set it in containers with a CPU limit |
 | `APP_TIMEOUT` | no | `30` | Seconds before gunicorn restarts a worker stuck on a request |
 

@@ -1,4 +1,5 @@
 import pytest
+from flask import request
 
 from bookshelf import create_app
 
@@ -80,3 +81,34 @@ def test_cross_origin_requests_are_not_allowed(client):
     rv = client.get("/login", headers={"Origin": "https://evil.example.com"})
 
     assert "Access-Control-Allow-Origin" not in rv.headers
+
+
+FORWARDED = {"X-Forwarded-For": "203.0.113.7", "X-Forwarded-Proto": "https"}
+
+
+def _client_seen_by(app):
+    @app.route("/_whoami")
+    def whoami():
+        return f"{request.remote_addr} {request.scheme}"
+
+    return app.test_client().get("/_whoami", headers=FORWARDED).text
+
+
+def test_forwarded_headers_ignored_by_default(monkeypatch):
+    monkeypatch.delenv("APP_TRUSTED_PROXIES", raising=False)
+
+    assert _client_seen_by(create_app()) == "127.0.0.1 http"
+
+
+def test_forwarded_headers_trusted_behind_proxy(monkeypatch):
+    monkeypatch.setenv("APP_TRUSTED_PROXIES", "1")
+
+    assert _client_seen_by(create_app()) == "203.0.113.7 https"
+
+
+@pytest.mark.parametrize("value", ["-1", "abc"])
+def test_invalid_trusted_proxies_fails(monkeypatch, value):
+    monkeypatch.setenv("APP_TRUSTED_PROXIES", value)
+
+    with pytest.raises(RuntimeError, match="APP_TRUSTED_PROXIES"):
+        create_app()

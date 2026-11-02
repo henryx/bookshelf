@@ -50,6 +50,11 @@ class Config:
         return _positive_int("APP_TIMEOUT", 30)
 
     @property
+    def trusted_proxies(self) -> int:
+        """Reverse proxies in front of the app whose X-Forwarded-* headers are trusted."""
+        return _non_negative_int("APP_TRUSTED_PROXIES", 0)
+
+    @property
     def log_level(self) -> str:
         return os.environ.get("APP_LOG_LEVEL", "debug")
 
@@ -68,6 +73,15 @@ def _positive_int(name: str, default: int) -> int:
         return default
     if not value.isdigit() or int(value) == 0:
         raise RuntimeError(f"{name} must be a positive integer, got {value!r}")
+    return int(value)
+
+
+def _non_negative_int(name: str, default: int) -> int:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    if not value.isdigit():
+        raise RuntimeError(f"{name} must be a non-negative integer, got {value!r}")
     return int(value)
 
 

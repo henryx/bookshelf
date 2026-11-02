@@ -5,6 +5,7 @@ from logging.config import dictConfig
 from flask import Flask, Response, current_app, make_response, render_template, request
 from flask_wtf import CSRFProtect
 from werkzeug.exceptions import HTTPException
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from bookshelf import cli, db
 from bookshelf.config import Config
@@ -48,6 +49,13 @@ def create_app(overrides: Mapping[str, object] | None = None) -> Flask:
         app.config.update(overrides)
 
     app.url_map.strict_slashes = False
+    if cfg.trusted_proxies:
+        # Client IP, scheme and host from X-Forwarded-*, set by that many proxies.
+        # Flask's documented pattern; ty rejects assigning to a method.
+        n = cfg.trusted_proxies
+        app.wsgi_app = ProxyFix(  # ty: ignore[invalid-assignment]
+            app.wsgi_app, x_for=n, x_proto=n, x_host=n
+        )
 
     app.register_error_handler(Exception, handle_error)
     db.init_app(app)
