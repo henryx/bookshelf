@@ -21,7 +21,7 @@ from wtforms.validators import DataRequired, Length
 
 from bookshelf.db import get_db
 from bookshelf.models.users import User, authenticate, find_by_id
-from bookshelf.utils.htmx import is_htmx
+from bookshelf.routes import is_htmx
 
 __all__ = ["auth_route", "login_manager"]
 

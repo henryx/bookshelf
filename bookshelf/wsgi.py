@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 from bookshelf import create_app
-from bookshelf.utils import Config
+from bookshelf.config import Config
 
 app = create_app()
 

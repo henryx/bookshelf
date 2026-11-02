@@ -1,6 +1,6 @@
 import os
 
-__all__ = ["Config", "htmx"]
+__all__ = ["Config"]
 
 
 class Config:

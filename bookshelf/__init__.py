@@ -10,12 +10,12 @@ from flask_wtf import CSRFProtect
 from werkzeug.exceptions import HTTPException
 
 from bookshelf import cli, db
+from bookshelf.config import Config
+from bookshelf.routes import is_htmx
 from bookshelf.routes.auth import auth_route, login_manager
 from bookshelf.routes.main import main_route
-from bookshelf.utils import Config
-from bookshelf.utils.htmx import is_htmx
 
-__all__ = ["create_app", "routes", "utils"]
+__all__ = ["config", "create_app", "routes"]
 
 
 def configure_logging() -> None:
