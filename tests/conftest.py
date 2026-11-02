@@ -13,7 +13,7 @@ from bookshelf.db.schema import init_db
 from bookshelf.models.users import User, create_user
 
 PASSWORD = "correct horse battery staple"
-FIREBIRD_IMAGE = "firebirdsql/firebird:5.0.4"
+FIREBIRD_IMAGE = "firebirdsql/firebird:3.0.14"
 FIREBIRD_PASSWORD = "masterkey"  # throwaway test container only
 
 

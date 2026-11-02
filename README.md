@@ -15,7 +15,7 @@ Requirements and decisions are in [docs/bookshelf.md](docs/bookshelf.md).
 uv sync
 ```
 
-Start a local Firebird 5 server for the dev server. `dev.env` already points to it:
+Start a local Firebird 3 server for the dev server. `dev.env` already points to it:
 
 ```sh
 docker run -d --name bookshelf-firebird \
@@ -26,7 +26,7 @@ docker run -d --name bookshelf-firebird \
   -e FIREBIRD_USER=bookshelf \
   -e FIREBIRD_PASSWORD=bookshelf \
   -v bookshelf-firebird-data:/var/lib/firebird/data \
-  firebirdsql/firebird:5.0.4
+  firebirdsql/firebird:3.0.14
 ```
 
 Create the tables and the first admin, then start the dev server:
