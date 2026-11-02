@@ -37,6 +37,9 @@ Decisions:
    not reveal which accounts exist. Refused attempts are not counted, and a successful login clears the failures.
    Failures are stored in the `LOGIN_FAILURES` table. The CLI is not limited. Both limits are configurable
    (`APP_LOGIN_MAX_FAILURES`, `APP_LOGIN_BLOCK_MINUTES`; see README); 5 and 15 are the defaults.
+ - Failed and blocked logins are logged with the email as typed and the client IP, like the CLI logs emails
+   for every admin operation. The email is logged unvalidated, so a password typed into the email field ends up
+   in the logs.
 
 ### Admin area
 

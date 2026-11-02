@@ -240,3 +240,21 @@ def test_login_requires_csrf_token(user: User, password: str):
     rv = _login(client, user.email, password)
 
     assert rv.status_code == 400
+
+
+def test_failed_login_logs_email_and_ip(db_client: FlaskClient, user: User, caplog):
+    _login(db_client, user.email, "wrong")
+
+    assert f"Failed login for {user.email} from 127.0.0.1" in caplog.messages
+
+
+def test_blocked_login_logs_email_and_ip(db_client: FlaskClient, user: User, caplog):
+    _fail_logins(db_client, user.email, 5)
+    caplog.clear()
+
+    _login(db_client, user.email, "wrong")
+
+    assert any(
+        m.startswith(f"Blocked login for {user.email} from 127.0.0.1")
+        for m in caplog.messages
+    )

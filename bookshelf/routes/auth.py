@@ -111,7 +111,9 @@ def login() -> BaseResponse | str | tuple[str, int]:
 
     user = authenticate(conn, email, form.password.data or "")
     if user is None:
-        current_app.logger.info("Failed login attempt from %s", request.remote_addr)
+        current_app.logger.info(
+            "Failed login for %s from %s", email, request.remote_addr
+        )
         record_login_failure(conn, email, window_minutes=window_minutes)
         form.form_errors.append(INVALID_CREDENTIALS)
         return _render_login(form)
