@@ -54,6 +54,8 @@ All settings come from environment variables:
 | `APP_LOGIN_BLOCK_MINUTES` | no | `15` | Window in which failed logins are counted, and so how long logins stay refused |
 | `APP_LOG_LEVEL` | no | `debug` | Log level |
 | `APP_HOST` / `APP_PORT` | no | `localhost` / `8000` | Bind address (Docker image: `0.0.0.0` / `8080`) |
+| `APP_WORKERS` | no | 2 × CPUs + 1 | gunicorn worker processes; set it in containers with a CPU limit |
+| `APP_TIMEOUT` | no | `30` | Seconds before gunicorn restarts a worker stuck on a request |
 
 ## User management (CLI)
 

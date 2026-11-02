@@ -35,6 +35,16 @@ class Config:
         return _positive_int("APP_LOGIN_BLOCK_MINUTES", 15)
 
     @property
+    def workers(self) -> int:
+        """gunicorn worker processes; default 2 x CPUs + 1."""
+        return _positive_int("APP_WORKERS", (os.process_cpu_count() or 1) * 2 + 1)
+
+    @property
+    def timeout(self) -> int:
+        """Seconds before gunicorn kills a silent worker."""
+        return _positive_int("APP_TIMEOUT", 30)
+
+    @property
     def log_level(self) -> str:
         return os.environ.get("APP_LOG_LEVEL", "debug")
 

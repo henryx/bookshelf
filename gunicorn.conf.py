@@ -10,6 +10,7 @@ _cfg = Config()
 
 bind = f"{_cfg.host}:{_cfg.port}"
 loglevel = _cfg.log_level
-timeout = 600
+workers = _cfg.workers
+timeout = _cfg.timeout
 # Same JSON logging as the app, so the master's own lines are JSON too.
 logconfig_dict = logging_config(_cfg.log_level)
