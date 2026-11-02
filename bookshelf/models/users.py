@@ -1,3 +1,5 @@
+import hashlib
+import hmac
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -14,6 +16,7 @@ __all__ = [
     "delete_user",
     "find_by_email",
     "find_by_id",
+    "find_by_session_id",
     "list_users",
     "set_locked",
     "set_password",
@@ -53,7 +56,12 @@ class User:
         return not self.is_locked
 
     def get_id(self) -> str:
-        return str(self.id)
+        """
+        Session ID: the user ID plus a fingerprint of the password hash, so
+        changing the password invalidates every open session and remember cookie.
+        """
+        fingerprint = hashlib.sha256(self.password_hash.encode()).hexdigest()[:16]
+        return f"{self.id}:{fingerprint}"
 
 
 def _normalise(email: str) -> str:
@@ -84,6 +92,20 @@ def find_by_id(conn: Connection, user_id: int) -> User | None:
         "SELECT ID, EMAIL, PASSWORD_HASH, ROLE, IS_LOCKED FROM USERS WHERE ID = ?",
         (user_id,),
     )
+
+
+def find_by_session_id(conn: Connection, session_id: str) -> User | None:
+    """
+    Return the user a session ID belongs to, or None if it is malformed or
+    stale (the password changed since it was issued).
+    """
+    user_id, _, _ = session_id.partition(":")
+    if not user_id.isdigit():
+        return None
+    user = find_by_id(conn, int(user_id))
+    if user is None or not hmac.compare_digest(user.get_id(), session_id):
+        return None
+    return user
 
 
 def find_by_email(conn: Connection, email: str) -> User | None:

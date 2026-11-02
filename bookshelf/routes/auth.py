@@ -20,7 +20,7 @@ from wtforms import EmailField, PasswordField
 from wtforms.validators import DataRequired, Length
 
 from bookshelf.db import get_db
-from bookshelf.models.users import User, authenticate, find_by_id
+from bookshelf.models.users import User, authenticate, find_by_session_id
 from bookshelf.routes import is_htmx
 
 __all__ = ["auth_route", "login_manager"]
@@ -39,11 +39,12 @@ class LoginForm(FlaskForm):
 
 
 @login_manager.user_loader
-def load_user(user_id: str) -> User | None:
+def load_user(session_id: str) -> User | None:
     """
-    Reload the user on every request; locked users lose their session.
+    Reload the user on every request; locked users, and sessions issued
+    before a password change, are logged out.
     """
-    user = find_by_id(get_db(), int(user_id))
+    user = find_by_session_id(get_db(), session_id)
     if user is None or not user.is_active:
         return None
     return user

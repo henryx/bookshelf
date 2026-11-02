@@ -1,9 +1,11 @@
 from collections.abc import Callable
 
+from flask import Flask
 from flask.testing import FlaskClient
 
 from bookshelf import create_app
-from bookshelf.models.users import User
+from bookshelf.db import get_db
+from bookshelf.models.users import Role, User, set_password, set_role
 
 HTMX = {"HX-Request": "true"}
 
@@ -114,6 +116,26 @@ def test_locking_user_ends_existing_session(
     lock_user(user)
 
     assert db_client.get("/").status_code == 302
+
+
+def test_password_reset_ends_existing_session(
+    db_client: FlaskClient, db_app: Flask, user: User, password: str
+):
+    _login(db_client, user.email, password)
+    with db_app.app_context():
+        set_password(get_db(), user, "a brand new password")
+
+    assert db_client.get("/").status_code == 302
+
+
+def test_role_change_keeps_existing_session(
+    db_client: FlaskClient, db_app: Flask, user: User, password: str
+):
+    _login(db_client, user.email, password)
+    with db_app.app_context():
+        set_role(get_db(), user, Role.ADMIN)
+
+    assert db_client.get("/").status_code == 200
 
 
 def test_login_requires_csrf_token(user: User, password: str):

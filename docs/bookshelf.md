@@ -31,6 +31,7 @@ Decisions:
  - Wrong password, unknown email and locked account all show the same error, "Invalid email or password", so the
    page does not reveal which accounts exist.
  - Locking a user ends their open sessions on the next request.
+ - Resetting a user's password ends their open sessions (including the persistent login cookie) on the next request.
 
 ### Admin area
 
