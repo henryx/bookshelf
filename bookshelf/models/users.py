@@ -2,6 +2,7 @@ import hashlib
 import hmac
 from dataclasses import dataclass
 from enum import StrEnum
+from uuid import UUID, uuid4
 
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
@@ -40,7 +41,7 @@ class Role(StrEnum):
 
 @dataclass(frozen=True, kw_only=True)
 class User:
-    id: int
+    id: UUID
     email: str
     password_hash: str
     role: Role
@@ -71,10 +72,10 @@ def _normalise(email: str) -> str:
     return email.strip().lower()
 
 
-def _row_to_user(row: tuple[int, str, str, str, bool]) -> User:
+def _row_to_user(row: tuple[bytes, str, str, str, bool]) -> User:
     user_id, email, password_hash, role, is_locked = row
     return User(
-        id=user_id,
+        id=UUID(bytes=user_id),
         email=email,
         password_hash=password_hash,
         role=Role(role),
@@ -82,18 +83,20 @@ def _row_to_user(row: tuple[int, str, str, str, bool]) -> User:
     )
 
 
-def _fetch_user(conn: Connection, query: str, params: tuple[int | str]) -> User | None:
+def _fetch_user(
+    conn: Connection, query: str, params: tuple[bytes | str]
+) -> User | None:
     with conn.cursor() as cur:
         cur.execute(query, params)
         row = cur.fetchone()
     return _row_to_user(row) if row else None
 
 
-def find_by_id(conn: Connection, user_id: int) -> User | None:
+def find_by_id(conn: Connection, user_id: UUID) -> User | None:
     return _fetch_user(
         conn,
         "SELECT ID, EMAIL, PASSWORD_HASH, ROLE, IS_LOCKED FROM USERS WHERE ID = ?",
-        (user_id,),
+        (user_id.bytes,),
     )
 
 
@@ -102,10 +105,12 @@ def find_by_session_id(conn: Connection, session_id: str) -> User | None:
     Return the user a session ID belongs to, or None if it is malformed or
     stale (the password changed since it was issued).
     """
-    user_id, _, _ = session_id.partition(":")
-    if not user_id.isdigit():
+    raw_id, _, _ = session_id.partition(":")
+    try:
+        user_id = UUID(raw_id)
+    except ValueError:
         return None
-    user = find_by_id(conn, int(user_id))
+    user = find_by_id(conn, user_id)
     if user is None or not hmac.compare_digest(user.get_id(), session_id):
         return None
     return user
@@ -141,9 +146,9 @@ def create_user(
 ) -> User:
     with conn.cursor() as cur:
         cur.execute(
-            "INSERT INTO USERS (EMAIL, PASSWORD_HASH, ROLE) VALUES (?, ?, ?) "
+            "INSERT INTO USERS (ID, EMAIL, PASSWORD_HASH, ROLE) VALUES (?, ?, ?, ?) "
             "RETURNING ID, EMAIL, PASSWORD_HASH, ROLE, IS_LOCKED",
-            (_normalise(email), _hasher.hash(password), role.value),
+            (uuid4().bytes, _normalise(email), _hasher.hash(password), role.value),
         )
         row = cur.fetchone()
     conn.commit()
@@ -154,26 +159,30 @@ def set_password(conn: Connection, user: User, password: str) -> None:
     with conn.cursor() as cur:
         cur.execute(
             "UPDATE USERS SET PASSWORD_HASH = ? WHERE ID = ?",
-            (_hasher.hash(password), user.id),
+            (_hasher.hash(password), user.id.bytes),
         )
     conn.commit()
 
 
 def delete_user(conn: Connection, user: User) -> None:
     with conn.cursor() as cur:
-        cur.execute("DELETE FROM USERS WHERE ID = ?", (user.id,))
+        cur.execute("DELETE FROM USERS WHERE ID = ?", (user.id.bytes,))
     conn.commit()
 
 
 def set_role(conn: Connection, user: User, role: Role) -> None:
     with conn.cursor() as cur:
-        cur.execute("UPDATE USERS SET ROLE = ? WHERE ID = ?", (role.value, user.id))
+        cur.execute(
+            "UPDATE USERS SET ROLE = ? WHERE ID = ?", (role.value, user.id.bytes)
+        )
     conn.commit()
 
 
 def set_locked(conn: Connection, user: User, *, locked: bool) -> None:
     with conn.cursor() as cur:
-        cur.execute("UPDATE USERS SET IS_LOCKED = ? WHERE ID = ?", (locked, user.id))
+        cur.execute(
+            "UPDATE USERS SET IS_LOCKED = ? WHERE ID = ?", (locked, user.id.bytes)
+        )
     conn.commit()
 
 
@@ -228,7 +237,8 @@ def record_login_failure(conn: Connection, email: str, *, window_minutes: int) -
             (-window_minutes,),
         )
         cur.execute(
-            "INSERT INTO LOGIN_FAILURES (EMAIL) VALUES (?)", (_normalise(email),)
+            "INSERT INTO LOGIN_FAILURES (ID, EMAIL) VALUES (?, ?)",
+            (uuid4().bytes, _normalise(email)),
         )
     conn.commit()
 

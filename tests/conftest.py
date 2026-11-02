@@ -94,7 +94,7 @@ def lock_user(db_app: Flask) -> Callable[[User], None]:
             conn = get_db()
             with conn.cursor() as cur:
                 cur.execute(
-                    "UPDATE USERS SET IS_LOCKED = TRUE WHERE ID = ?", (user.id,)
+                    "UPDATE USERS SET IS_LOCKED = TRUE WHERE ID = ?", (user.id.bytes,)
                 )
             conn.commit()
 

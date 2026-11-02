@@ -1,4 +1,5 @@
 from collections.abc import Callable
+from uuid import UUID
 
 import pytest
 from firebird.driver import DatabaseError
@@ -30,6 +31,11 @@ def test_same_password_gets_different_salts(db_app: Flask, user: User, password:
         other = create_user(get_db(), "other@example.com", password)
 
     assert other.password_hash != user.password_hash
+
+
+def test_user_id_is_uuid4(user: User):
+    assert isinstance(user.id, UUID)
+    assert user.id.version == 4
 
 
 def test_email_is_normalised(user: User):
@@ -83,7 +89,9 @@ def test_database_rejects_unknown_role(db_app: Flask, user: User):
             pytest.raises(DatabaseError, match="CHK_USERS_ROLE"),
             conn.cursor() as cur,
         ):
-            cur.execute("UPDATE USERS SET ROLE = 'SUPERUSER' WHERE ID = ?", (user.id,))
+            cur.execute(
+                "UPDATE USERS SET ROLE = 'SUPERUSER' WHERE ID = ?", (user.id.bytes,)
+            )
         conn.rollback()
 
 

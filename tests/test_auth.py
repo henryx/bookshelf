@@ -1,4 +1,5 @@
 from collections.abc import Callable
+from uuid import uuid4
 
 from flask import Flask
 from flask.testing import FlaskClient
@@ -120,9 +121,9 @@ def _add_old_failures(app: Flask, email: str, times: int, minutes_ago: int) -> N
         with conn.cursor() as cur:
             for _ in range(times):
                 cur.execute(
-                    "INSERT INTO LOGIN_FAILURES (EMAIL, ATTEMPTED_AT) "
-                    "VALUES (?, DATEADD(? MINUTE TO CURRENT_TIMESTAMP))",
-                    (email, -minutes_ago),
+                    "INSERT INTO LOGIN_FAILURES (ID, EMAIL, ATTEMPTED_AT) "
+                    "VALUES (?, ?, DATEADD(? MINUTE TO CURRENT_TIMESTAMP))",
+                    (uuid4().bytes, email, -minutes_ago),
                 )
         conn.commit()
 
