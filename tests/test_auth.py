@@ -77,6 +77,101 @@ def test_locked_user_cannot_login(
     assert "Invalid email or password" in rv.get_data(as_text=True)
 
 
+TOO_MANY_ATTEMPTS = "Too many failed login attempts"
+
+
+def _fail_logins(client: FlaskClient, email: str, times: int) -> None:
+    for _ in range(times):
+        _login(client, email, "wrong")
+
+
+def test_login_blocked_after_too_many_failures(
+    db_client: FlaskClient, user: User, password: str
+):
+    _fail_logins(db_client, user.email, 5)
+
+    rv = _login(db_client, user.email, password)
+
+    assert rv.status_code == 429
+    assert TOO_MANY_ATTEMPTS in rv.get_data(as_text=True)
+    assert db_client.get("/").status_code == 302
+
+
+def test_login_block_applies_to_unknown_email(db_client: FlaskClient):
+    _fail_logins(db_client, "nobody@example.com", 5)
+
+    rv = _login(db_client, "nobody@example.com", "wrong")
+
+    assert rv.status_code == 429
+    assert TOO_MANY_ATTEMPTS in rv.get_data(as_text=True)
+
+
+def test_login_block_is_per_email(db_client: FlaskClient, user: User, password: str):
+    _fail_logins(db_client, "nobody@example.com", 5)
+
+    rv = _login(db_client, user.email, password)
+
+    assert rv.status_code == 302
+
+
+def _add_old_failures(app: Flask, email: str, times: int, minutes_ago: int) -> None:
+    with app.app_context():
+        conn = get_db()
+        with conn.cursor() as cur:
+            for _ in range(times):
+                cur.execute(
+                    "INSERT INTO LOGIN_FAILURES (EMAIL, ATTEMPTED_AT) "
+                    "VALUES (?, DATEADD(? MINUTE TO CURRENT_TIMESTAMP))",
+                    (email, -minutes_ago),
+                )
+        conn.commit()
+
+
+def test_login_failures_expire(
+    db_client: FlaskClient, db_app: Flask, user: User, password: str
+):
+    _add_old_failures(db_app, user.email, 5, minutes_ago=16)
+
+    rv = _login(db_client, user.email, password)
+
+    assert rv.status_code == 302
+
+
+def test_login_block_uses_configured_max_failures(
+    db_client: FlaskClient, db_app: Flask, user: User, password: str
+):
+    db_app.config["LOGIN_MAX_FAILURES"] = 2
+    _fail_logins(db_client, user.email, 2)
+
+    rv = _login(db_client, user.email, password)
+
+    assert rv.status_code == 429
+
+
+def test_login_block_uses_configured_minutes(
+    db_client: FlaskClient, db_app: Flask, user: User, password: str
+):
+    db_app.config["LOGIN_BLOCK_MINUTES"] = 10
+    _add_old_failures(db_app, user.email, 5, minutes_ago=11)
+
+    rv = _login(db_client, user.email, password)
+
+    assert rv.status_code == 302
+
+
+def test_successful_login_clears_failures(
+    db_client: FlaskClient, user: User, password: str
+):
+    _fail_logins(db_client, user.email, 4)
+    _login(db_client, user.email, password)
+    db_client.post("/logout")
+    _fail_logins(db_client, user.email, 1)
+
+    rv = _login(db_client, user.email, password)
+
+    assert rv.status_code == 302
+
+
 def test_htmx_login_success_redirects_via_header(
     db_client: FlaskClient, user: User, password: str
 ):

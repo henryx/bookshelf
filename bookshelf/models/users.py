@@ -12,12 +12,15 @@ __all__ = [
     "User",
     "admin_exists",
     "authenticate",
+    "clear_login_failures",
     "create_user",
     "delete_user",
     "find_by_email",
     "find_by_id",
     "find_by_session_id",
+    "is_login_blocked",
     "list_users",
+    "record_login_failure",
     "set_locked",
     "set_password",
     "set_role",
@@ -194,3 +197,43 @@ def authenticate(conn: Connection, email: str, password: str) -> User | None:
     if user.is_locked:
         return None
     return user
+
+
+def is_login_blocked(
+    conn: Connection, email: str, *, max_failures: int, window_minutes: int
+) -> bool:
+    """
+    True if the email had at least max_failures failed logins in the last
+    window_minutes. Applies to unknown emails too, so a block does not reveal
+    which accounts exist.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT COUNT(*) FROM LOGIN_FAILURES WHERE EMAIL = ? "
+            "AND ATTEMPTED_AT > DATEADD(? MINUTE TO CURRENT_TIMESTAMP)",
+            (_normalise(email), -window_minutes),
+        )
+        (failures,) = cur.fetchone()
+    return failures >= max_failures
+
+
+def record_login_failure(conn: Connection, email: str, *, window_minutes: int) -> None:
+    """
+    Record a failed login and prune failures older than window_minutes.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            "DELETE FROM LOGIN_FAILURES "
+            "WHERE ATTEMPTED_AT <= DATEADD(? MINUTE TO CURRENT_TIMESTAMP)",
+            (-window_minutes,),
+        )
+        cur.execute(
+            "INSERT INTO LOGIN_FAILURES (EMAIL) VALUES (?)", (_normalise(email),)
+        )
+    conn.commit()
+
+
+def clear_login_failures(conn: Connection, email: str) -> None:
+    with conn.cursor() as cur:
+        cur.execute("DELETE FROM LOGIN_FAILURES WHERE EMAIL = ?", (_normalise(email),))
+    conn.commit()

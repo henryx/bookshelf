@@ -25,6 +25,16 @@ class Config:
         return os.environ.get("APP_COOKIE_SECURE", "true").lower() != "false"
 
     @property
+    def login_max_failures(self) -> int:
+        """Failed logins for an email before further logins are refused."""
+        return _positive_int("APP_LOGIN_MAX_FAILURES", 5)
+
+    @property
+    def login_block_minutes(self) -> int:
+        """Window in which failures are counted, and so how long a block lasts."""
+        return _positive_int("APP_LOGIN_BLOCK_MINUTES", 15)
+
+    @property
     def log_level(self) -> str:
         return os.environ.get("APP_LOG_LEVEL", "debug")
 
@@ -35,6 +45,15 @@ class Config:
     @property
     def port(self) -> int:
         return int(os.environ.get("APP_PORT", default="8000"))
+
+
+def _positive_int(name: str, default: int) -> int:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    if not value.isdigit() or int(value) == 0:
+        raise RuntimeError(f"{name} must be a positive integer, got {value!r}")
+    return int(value)
 
 
 def _required(name: str) -> str:

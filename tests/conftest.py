@@ -61,11 +61,12 @@ def client(app: Flask) -> FlaskClient:
 
 @pytest.fixture
 def db_app(app: Flask) -> Iterator[Flask]:
-    """App with an empty USERS table."""
+    """App with empty USERS and LOGIN_FAILURES tables."""
     with app.app_context():
         conn = get_db()
         with conn.cursor() as cur:
             cur.execute("DELETE FROM USERS")
+            cur.execute("DELETE FROM LOGIN_FAILURES")
         conn.commit()
     yield app
 

@@ -20,7 +20,14 @@ from wtforms import EmailField, PasswordField
 from wtforms.validators import DataRequired, Length
 
 from bookshelf.db import get_db
-from bookshelf.models.users import User, authenticate, find_by_session_id
+from bookshelf.models.users import (
+    User,
+    authenticate,
+    clear_login_failures,
+    find_by_session_id,
+    is_login_blocked,
+    record_login_failure,
+)
 from bookshelf.routes import is_htmx
 
 __all__ = ["auth_route", "login_manager"]
@@ -31,6 +38,7 @@ login_manager = LoginManager()
 login_manager.login_view = "auth.login"
 
 INVALID_CREDENTIALS = "Invalid email or password"
+TOO_MANY_ATTEMPTS = "Too many failed login attempts. Please try again later."
 
 
 class LoginForm(FlaskForm):
@@ -77,7 +85,7 @@ def _render_login(form: LoginForm) -> str:
 
 
 @auth_route.route("/login", methods=("GET", "POST"))
-def login() -> BaseResponse | str:
+def login() -> BaseResponse | str | tuple[str, int]:
     if current_user.is_authenticated:
         return _redirect(url_for("main.index"))
 
@@ -85,12 +93,30 @@ def login() -> BaseResponse | str:
     if not form.validate_on_submit():
         return _render_login(form)
 
-    user = authenticate(get_db(), form.email.data or "", form.password.data or "")
+    conn = get_db()
+    email = form.email.data or ""
+    max_failures = current_app.config["LOGIN_MAX_FAILURES"]
+    window_minutes = current_app.config["LOGIN_BLOCK_MINUTES"]
+    # Blocked attempts are not checked or counted, so retrying does not extend the block.
+    if is_login_blocked(
+        conn, email, max_failures=max_failures, window_minutes=window_minutes
+    ):
+        current_app.logger.warning(
+            "Blocked login for %s from %s: too many failed attempts",
+            email,
+            request.remote_addr,
+        )
+        form.form_errors.append(TOO_MANY_ATTEMPTS)
+        return _render_login(form), 429
+
+    user = authenticate(conn, email, form.password.data or "")
     if user is None:
         current_app.logger.info("Failed login attempt from %s", request.remote_addr)
+        record_login_failure(conn, email, window_minutes=window_minutes)
         form.form_errors.append(INVALID_CREDENTIALS)
         return _render_login(form)
 
+    clear_login_failures(conn, email)
     login_user(user, remember=True)
     return _redirect(url_for("main.index"))
 

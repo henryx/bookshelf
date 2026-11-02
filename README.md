@@ -50,6 +50,8 @@ All settings come from environment variables:
 | `APP_DB_USER` | yes | — | Firebird user |
 | `APP_DB_PASSWORD` | yes | — | Firebird password |
 | `APP_COOKIE_SECURE` | no | `true` | Set to `false` only for local HTTP |
+| `APP_LOGIN_MAX_FAILURES` | no | `5` | Failed logins for an email before further logins are refused |
+| `APP_LOGIN_BLOCK_MINUTES` | no | `15` | Window in which failed logins are counted, and so how long logins stay refused |
 | `APP_LOG_LEVEL` | no | `debug` | Log level |
 | `APP_HOST` / `APP_PORT` | no | `localhost` / `8000` | Bind address (Docker image: `0.0.0.0` / `8080`) |
 

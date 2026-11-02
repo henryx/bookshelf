@@ -32,6 +32,11 @@ Decisions:
    page does not reveal which accounts exist.
  - Locking a user ends their open sessions on the next request.
  - Resetting a user's password ends their open sessions (including the persistent login cookie) on the next request.
+ - After 5 failed logins for an email within 15 minutes, logins for that email are refused ("Too many failed login
+   attempts") until the failures are older than 15 minutes. Unknown emails are limited the same way, so the block does
+   not reveal which accounts exist. Refused attempts are not counted, and a successful login clears the failures.
+   Failures are stored in the `LOGIN_FAILURES` table. The CLI is not limited. Both limits are configurable
+   (`APP_LOGIN_MAX_FAILURES`, `APP_LOGIN_BLOCK_MINUTES`; see README); 5 and 15 are the defaults.
 
 ### Admin area
 
@@ -59,10 +64,6 @@ locked) and is logged with the admin who performed it. An admin cannot lock, dem
 Because every admin operation needs an active (not locked) admin, and no admin can lock, demote or delete
 themselves, the admin performing an operation always remains an active admin. The CLI therefore can never leave
 the system without an active admin, so the last admin needs no separate protection.
-
-### Open questions
-
- - Is there a limit on failed login attempts?
 
 ## Main page
 
