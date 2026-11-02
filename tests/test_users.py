@@ -9,6 +9,7 @@ from bookshelf.db import get_db
 from bookshelf.models.users import (
     Role,
     User,
+    UserExistsError,
     admin_exists,
     authenticate,
     create_user,
@@ -150,3 +151,11 @@ def test_set_role(db_app: Flask, user: User):
         updated = find_by_email(conn, user.email)
     assert updated is not None
     assert updated.role is Role.ADMIN
+
+
+def test_create_user_rejects_duplicate_email(db_app: Flask, user: User):
+    with (
+        db_app.app_context(),
+        pytest.raises(UserExistsError, match="reader@example.com"),
+    ):
+        create_user(get_db(), user.email.upper(), "another password")

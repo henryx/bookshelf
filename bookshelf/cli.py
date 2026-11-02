@@ -9,6 +9,7 @@ from bookshelf.db.schema import init_db
 from bookshelf.models.users import (
     Role,
     User,
+    UserExistsError,
     admin_exists,
     authenticate,
     create_user,
@@ -43,7 +44,10 @@ def create_admin_command(email: str) -> None:
         raise click.ClickException(f"User {email} already exists")
 
     password = click.prompt("Password", hide_input=True, confirmation_prompt=True)
-    user = create_user(conn, email, password, role=Role.ADMIN)
+    try:
+        user = create_user(conn, email, password, role=Role.ADMIN)
+    except UserExistsError as e:
+        raise click.ClickException(str(e)) from e
     click.echo(f"Admin {user.email} created.")
 
 
@@ -83,7 +87,10 @@ def create_user_command(email: str, admin_email: str) -> None:
         raise click.ClickException(f"User {email} already exists")
 
     password = click.prompt("Password", hide_input=True, confirmation_prompt=True)
-    user = create_user(conn, email, password)
+    try:
+        user = create_user(conn, email, password)
+    except UserExistsError as e:
+        raise click.ClickException(str(e)) from e
     current_app.logger.info("User %s created by admin %s", user.email, admin.email)
     click.echo(f"User {user.email} created.")
 

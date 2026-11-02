@@ -6,11 +6,12 @@ from uuid import UUID, uuid4
 
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
-from firebird.driver import Connection
+from firebird.driver import Connection, DatabaseError
 
 __all__ = [
     "Role",
     "User",
+    "UserExistsError",
     "admin_exists",
     "authenticate",
     "clear_login_failures",
@@ -27,6 +28,9 @@ __all__ = [
     "set_role",
 ]
 
+# Firebird GDS code for "violation of PRIMARY or UNIQUE KEY constraint".
+_UNIQUE_KEY_VIOLATION = 335544665
+
 _hasher = PasswordHasher()
 # Verified against unknown emails so a failed login takes the same time either way.
 _DUMMY_HASH = _hasher.hash("dummy password for timing")
@@ -37,6 +41,14 @@ class Role(StrEnum):
 
     ADMIN = "ADMIN"
     REGULAR = "REGULAR"
+
+
+class UserExistsError(Exception):
+    """A user with this email already exists."""
+
+    def __init__(self, email: str) -> None:
+        super().__init__(f"User {email} already exists")
+        self.email = email
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -144,12 +156,22 @@ def list_users(conn: Connection) -> list[User]:
 def create_user(
     conn: Connection, email: str, password: str, *, role: Role = Role.REGULAR
 ) -> User:
+    """
+    Raises UserExistsError if the email is taken, even by a user created
+    after the caller checked.
+    """
+    email = _normalise(email)
     with conn.cursor() as cur:
-        cur.execute(
-            "INSERT INTO USERS (ID, EMAIL, PASSWORD_HASH, ROLE) VALUES (?, ?, ?, ?) "
-            "RETURNING ID, EMAIL, PASSWORD_HASH, ROLE, IS_LOCKED",
-            (uuid4().bytes, _normalise(email), _hasher.hash(password), role.value),
-        )
+        try:
+            cur.execute(
+                "INSERT INTO USERS (ID, EMAIL, PASSWORD_HASH, ROLE) VALUES (?, ?, ?, ?) "
+                "RETURNING ID, EMAIL, PASSWORD_HASH, ROLE, IS_LOCKED",
+                (uuid4().bytes, email, _hasher.hash(password), role.value),
+            )
+        except DatabaseError as e:
+            if _UNIQUE_KEY_VIOLATION in e.gds_codes:
+                raise UserExistsError(email) from e
+            raise
         row = cur.fetchone()
     conn.commit()
     return _row_to_user(row)

@@ -511,3 +511,32 @@ def test_demote_user_rejects_unknown_email(db_app: Flask, admin: User):
 
     assert rv.exit_code != 0
     assert "not found" in rv.output
+
+
+def _skip_existence_check(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Simulate a user created by someone else after the CLI checked."""
+    monkeypatch.setattr("bookshelf.cli.find_by_email", lambda conn, email: None)
+
+
+def test_create_user_reports_user_created_concurrently(
+    db_app: Flask, admin: User, user: User, monkeypatch: pytest.MonkeyPatch
+):
+    _skip_existence_check(monkeypatch)
+
+    rv = _create(db_app, user.email, ADMIN_PASSWORD)
+
+    assert rv.exit_code == 1
+    assert f"User {user.email} already exists" in rv.output
+
+
+def test_create_admin_reports_user_created_concurrently(
+    db_app: Flask, user: User, monkeypatch: pytest.MonkeyPatch
+):
+    _skip_existence_check(monkeypatch)
+
+    rv = db_app.test_cli_runner().invoke(
+        args=["create-admin", user.email], input="pw\npw\n"
+    )
+
+    assert rv.exit_code == 1
+    assert f"User {user.email} already exists" in rv.output
