@@ -8,7 +8,7 @@ from testcontainers.core.container import DockerContainer
 from testcontainers.core.wait_strategies import LogMessageWaitStrategy
 
 from bookshelf import create_app
-from bookshelf.db import get_db
+from bookshelf.db import close_pool, get_db
 from bookshelf.db.schema import init_db
 from bookshelf.models.users import User, create_user
 
@@ -50,8 +50,10 @@ def firebird() -> Iterator[None]:
 
 
 @pytest.fixture
-def app() -> Flask:
-    return create_app({"TESTING": True, "WTF_CSRF_ENABLED": False})
+def app() -> Iterator[Flask]:
+    app = create_app({"TESTING": True, "WTF_CSRF_ENABLED": False})
+    yield app
+    close_pool(app)
 
 
 @pytest.fixture

@@ -49,6 +49,26 @@ def test_invalid_login_limit_fails(monkeypatch, name, value):
         create_app()
 
 
+def test_db_pool_size_default(monkeypatch):
+    monkeypatch.delenv("APP_DB_POOL_SIZE", raising=False)
+
+    assert create_app().config["DATABASE_POOL_SIZE"] == 5
+
+
+def test_db_pool_size_from_env(monkeypatch):
+    monkeypatch.setenv("APP_DB_POOL_SIZE", "2")
+
+    assert create_app().config["DATABASE_POOL_SIZE"] == 2
+
+
+@pytest.mark.parametrize("value", ["0", "-1", "abc"])
+def test_invalid_db_pool_size_fails(monkeypatch, value):
+    monkeypatch.setenv("APP_DB_POOL_SIZE", value)
+
+    with pytest.raises(RuntimeError, match="APP_DB_POOL_SIZE"):
+        create_app()
+
+
 def test_overrides_are_applied():
     app = create_app({"TESTING": True, "SECRET_KEY": "override"})
 

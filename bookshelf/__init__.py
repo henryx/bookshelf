@@ -35,6 +35,7 @@ def create_app(overrides: Mapping[str, object] | None = None) -> Flask:
         DATABASE_DSN=cfg.db_dsn,
         DATABASE_USER=cfg.db_user,
         DATABASE_PASSWORD=cfg.db_password,
+        DATABASE_POOL_SIZE=cfg.db_pool_size,
         SESSION_COOKIE_SECURE=cfg.cookie_secure,
         SESSION_COOKIE_SAMESITE="Lax",
         REMEMBER_COOKIE_SECURE=cfg.cookie_secure,

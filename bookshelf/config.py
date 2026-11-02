@@ -21,6 +21,11 @@ class Config:
         return _required("APP_DB_PASSWORD")
 
     @property
+    def db_pool_size(self) -> int:
+        """Idle database connections kept for reuse, per process."""
+        return _positive_int("APP_DB_POOL_SIZE", 5)
+
+    @property
     def cookie_secure(self) -> bool:
         return os.environ.get("APP_COOKIE_SECURE", "true").lower() != "false"
 

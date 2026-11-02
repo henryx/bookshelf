@@ -30,7 +30,7 @@ Bookshelf library webapp is a webapp to manage a book library built with Flask u
 - `bookshelf/logging_config.py`: JSON logging config shared by the app and gunicorn
 - `gunicorn.conf.py`: gunicorn settings (bind, log level, timeout, logging); loaded from the working directory
 - `bookshelf/cli.py`: Flask CLI commands; admin operations go through `_require_admin`
-- `bookshelf/db/`: connection per app context (`get_db`); `schema.py` holds table DDL and `init_db`
+- `bookshelf/db/`: per-process `ConnectionPool`; `get_db` takes a connection for the app context and teardown returns it (rolled back); `schema.py` holds table DDL and `init_db`
 - `bookshelf/models/`: data access and domain logic (`users.py`)
 - `bookshelf/routes/`: blueprints (`auth`, `main`); `__init__.py` has the `is_htmx()` request helper
 - `bookshelf/templates/`, `bookshelf/static/`: Jinja templates and CSS; htmx is vendored in `static/`
