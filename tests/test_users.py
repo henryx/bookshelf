@@ -83,6 +83,24 @@ def test_create_admin_user(db_app: Flask, password: str):
     assert admin.is_admin
 
 
+@pytest.mark.parametrize(
+    "email", ["Reader@example.com", " reader@example.com", "reader@example.com "]
+)
+def test_database_rejects_email_not_lowercase_and_trimmed(
+    db_app: Flask, user: User, email: str
+):
+    with db_app.app_context():
+        conn = get_db()
+        with (
+            pytest.raises(DatabaseError, match="CHK_USERS_EMAIL_NORMALISED"),
+            conn.cursor() as cur,
+        ):
+            cur.execute(
+                "UPDATE USERS SET EMAIL = ? WHERE ID = ?", (email, user.id.bytes)
+            )
+        conn.rollback()
+
+
 def test_database_rejects_unknown_role(db_app: Flask, user: User):
     with db_app.app_context():
         conn = get_db()

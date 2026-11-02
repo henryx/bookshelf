@@ -67,7 +67,7 @@ production environment set. Passwords are always prompted, never passed as argum
 
 | Command | What it does |
 |---|---|
-| `init-db` | Create missing tables, columns and indexes (safe to rerun) |
+| `init-db` | Create missing tables, columns, constraints and indexes (safe to rerun) |
 | `create-admin EMAIL` | Create the first admin (refused once any admin exists) |
 | `create-user EMAIL` | Create a regular user |
 | `list-users` | Show all users with role and lock status |
@@ -108,7 +108,8 @@ Behind a reverse proxy that terminates HTTPS, set `APP_TRUSTED_PROXIES` to the n
 optional: failed-login limits are per client IP, so without it every client shares the proxy's IP
 and 20 failed logins from anyone block logins for everyone.
 
-After upgrading, run `init-db` again: it adds any new tables, columns and indexes to an existing database.
+After upgrading, run `init-db` again: it adds any new tables, columns, constraints and indexes to an existing database.
+New check constraints apply to rows written from then on; Firebird does not recheck existing rows.
 
 ## CI and releases
 

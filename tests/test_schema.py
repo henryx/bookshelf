@@ -58,6 +58,24 @@ def test_init_db_adds_ip_column_to_existing_login_failures(db_app: Flask):
         ]
 
 
+def test_init_db_adds_email_check_to_existing_users(db_app: Flask):
+    """Databases created before CHK_USERS_EMAIL_NORMALISED get it from init-db."""
+    with db_app.app_context():
+        conn = get_db()
+        with conn.cursor() as cur:
+            cur.execute("ALTER TABLE USERS DROP CONSTRAINT CHK_USERS_EMAIL_NORMALISED")
+        conn.commit()
+
+        init_db(conn)
+
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT 1 FROM RDB$RELATION_CONSTRAINTS "
+                "WHERE RDB$CONSTRAINT_NAME = 'CHK_USERS_EMAIL_NORMALISED'"
+            )
+            assert cur.fetchone() is not None
+
+
 def test_init_db_can_run_again(db_app: Flask):
     with db_app.app_context():
         init_db(get_db())

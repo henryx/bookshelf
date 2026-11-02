@@ -27,7 +27,9 @@ repeat login. If cookie is expired, or user made a logout action, next page show
 Decisions:
 
  - The persistent login cookie lasts 30 days. Cookies are `Secure`, `HttpOnly` and `SameSite=Lax`.
- - Email addresses are case-insensitive (stored lowercase).
+ - Email addresses are case-insensitive: stored lowercase and trimmed, and unique. The database enforces both
+   (`UNIQUE` on `EMAIL`, plus the `CHK_USERS_EMAIL_NORMALISED` check), so even rows written outside the app cannot
+   create two accounts differing only in case or spaces.
  - Wrong password, unknown email and locked account all show the same error, "Invalid email or password", so the
    page does not reveal which accounts exist.
  - Locking a user ends their open sessions on the next request.
@@ -48,6 +50,8 @@ Decisions:
    domains such as `user@bookshelf.local` or `user@nas` are rejected. Spaces around the email are ignored. An
    invalid email on the login form is refused before the credentials are checked, so it is neither counted as a
    failed login nor logged. Other CLI commands accept any email, so older accounts can still be managed.
+ - A user's email cannot be changed. The email is the login, so an account with a wrong or invalid email is deleted
+   (`delete-user`) and created again with the right one.
  - Failed and blocked logins are logged with the email and the client IP, like the CLI logs emails for every admin
    operation. Only valid emails reach the log, so a password typed into the email field is not logged.
 

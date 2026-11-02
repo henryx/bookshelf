@@ -16,7 +16,12 @@ TABLES: dict[str, str] = {
             PASSWORD_HASH VARCHAR(255) NOT NULL,
             ROLE VARCHAR(16) DEFAULT 'REGULAR' NOT NULL,
             IS_LOCKED BOOLEAN DEFAULT FALSE NOT NULL,
-            CONSTRAINT CHK_USERS_ROLE CHECK (ROLE IN ('ADMIN', 'REGULAR'))
+            CONSTRAINT CHK_USERS_ROLE CHECK (ROLE IN ('ADMIN', 'REGULAR')),
+            -- Lowercase and trimmed, so UNIQUE also holds ignoring case. Lengths are
+            -- compared because Firebird ignores trailing spaces in string equality.
+            CONSTRAINT CHK_USERS_EMAIL_NORMALISED CHECK (
+                EMAIL = LOWER(EMAIL) AND CHAR_LENGTH(EMAIL) = CHAR_LENGTH(TRIM(EMAIL))
+            )
         )
     """,
     "LOGIN_FAILURES": """
@@ -37,6 +42,15 @@ COLUMNS: dict[tuple[str, str], str] = {
     ),
 }
 
+# Constraints added after their table was first released. Firebird does not
+# check existing rows when one is added.
+CONSTRAINTS: dict[str, str] = {
+    "CHK_USERS_EMAIL_NORMALISED": (
+        "ALTER TABLE USERS ADD CONSTRAINT CHK_USERS_EMAIL_NORMALISED CHECK ("
+        "EMAIL = LOWER(EMAIL) AND CHAR_LENGTH(EMAIL) = CHAR_LENGTH(TRIM(EMAIL)))"
+    ),
+}
+
 # Created after TABLES and COLUMNS, which they index.
 INDEXES: dict[str, str] = {
     # Login-failure count and clear: filter by email, then by time.
@@ -52,7 +66,8 @@ INDEXES: dict[str, str] = {
 
 def init_db(conn: Connection) -> None:
     """
-    Create missing domains, tables, columns and indexes. Safe to run more than once.
+    Create missing domains, tables, columns, constraints and indexes.
+    Safe to run more than once.
     """
     with conn.cursor() as cur:
         for name, ddl in DOMAINS.items():
@@ -70,6 +85,13 @@ def init_db(conn: Connection) -> None:
                 "SELECT 1 FROM RDB$RELATION_FIELDS "
                 "WHERE RDB$RELATION_NAME = ? AND RDB$FIELD_NAME = ?",
                 (table, column),
+            )
+            if cur.fetchone() is None:
+                cur.execute(ddl)
+        for name, ddl in CONSTRAINTS.items():
+            cur.execute(
+                "SELECT 1 FROM RDB$RELATION_CONSTRAINTS WHERE RDB$CONSTRAINT_NAME = ?",
+                (name,),
             )
             if cur.fetchone() is None:
                 cur.execute(ddl)
