@@ -74,13 +74,11 @@ dependencies = [
     { name = "click" },
     { name = "firebird-driver" },
     { name = "flask" },
-    { name = "flask-cors" },
-    { name = "flask-httpauth" },
     { name = "flask-login" },
     { name = "flask-wtf" },
     { name = "gunicorn" },
-    { name = "json-logging" },
     { name = "prettytable" },
+    { name = "python-json-logger" },
 ]
 
 [package.dev-dependencies]
@@ -99,16 +97,14 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "argon2-cffi", specifier = ">=25.1.0,<26" },
-    { name = "click", specifier = ">=8.5.0" },
+    { name = "click", specifier = ">=8.5.0,<9" },
     { name = "firebird-driver", specifier = ">=2.1.2,<3" },
     { name = "flask", specifier = ">=3.1.3,<4" },
-    { name = "flask-cors", specifier = ">=6.0.0,<7" },
-    { name = "flask-httpauth", specifier = ">=4.7.0,<5" },
     { name = "flask-login", specifier = ">=0.6.3,<0.7" },
     { name = "flask-wtf", specifier = ">=1.3.0,<2" },
     { name = "gunicorn", specifier = ">=26.0.0,<27" },
-    { name = "json-logging", specifier = ">=1.3.0,<2" },
     { name = "prettytable", specifier = ">=3.18.0,<4" },
+    { name = "python-json-logger", specifier = ">=4.2.0,<5" },
 ]
 
 [package.metadata.requires-dev]
@@ -516,31 +512,6 @@ wheels = [
 ]
 
 [[package]]
-name = "flask-cors"
-version = "6.0.5"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "flask" },
-    { name = "werkzeug" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/47/03/4e464a50860f9adf08b5c1d3479cb8ea1f12af2aa69535c7042c6e628135/flask_cors-6.0.5.tar.gz", hash = "sha256:30c5031552cd59f620ac0c8211dac45b345d3b2df310e7721879e4f46ef9c601", size = 101386, upload-time = "2026-06-08T20:20:17.765Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/49/55/5bb1a2d918e9f02f131e47a59032bae70e48050e986e941511fd737a935c/flask_cors-6.0.5-py3-none-any.whl", hash = "sha256:68fcf75693e961f3af26683b23c4b9a8fb6b64de17d20d0c37b95e8de7ab2ed8", size = 16692, upload-time = "2026-06-08T20:20:16.247Z" },
-]
-
-[[package]]
-name = "flask-httpauth"
-version = "4.8.1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "flask" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/ec/f4/6957215e827021eeb7d8de9f59b1864d73933b04851e59272708cb6e5d2b/flask_httpauth-4.8.1.tar.gz", hash = "sha256:88499b22f1353893743c3cd68f2ca561c4ad9ef75cd6bcc7f621161cd0e80744", size = 38993, upload-time = "2026-03-28T19:45:24.254Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/72/da/624c87bf6c13107ceab8ee23815d9468e47d89c7480c1dc9af39b08eb290/flask_httpauth-4.8.1-py3-none-any.whl", hash = "sha256:0080393d70e12327781f7509115175ec5e47209816489a620d4fd39e20cea2e8", size = 9651, upload-time = "2026-03-28T19:45:23.155Z" },
-]
-
-[[package]]
 name = "flask-login"
 version = "0.6.3"
 source = { registry = "https://pypi.org/simple" }
@@ -613,15 +584,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/df/bf/f7da0350254c0ed7c72f3e33cef02e048281fec7ecec5f032d4aac52226b/jinja2-3.1.6.tar.gz", hash = "sha256:0137fb05990d35f1275a587e9aee6d56da821fc83491a0fb838183be43f66d6d", size = 245115, upload-time = "2025-03-05T20:05:02.478Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/62/a1/3d680cbfd5f4b8f15abc1d571870c5fc3e594bb582bc3b64ea099db13e56/jinja2-3.1.6-py3-none-any.whl", hash = "sha256:85ece4451f492d0c13c5dd7c13a64681a86afae63a5f347908daf103ce6d2f67", size = 134899, upload-time = "2025-03-05T20:05:00.369Z" },
-]
-
-[[package]]
-name = "json-logging"
-version = "1.6.0"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/b5/67/1c37cff6d305dc2472cdc18109f4cac7358d47c58caa7c7d410bbeb8a75f/json_logging-1.6.0.tar.gz", hash = "sha256:d708f7ce02fea741b9f41b61fc8e9fdcb14a86092f2ff53061cdb07e1e11241a", size = 47342, upload-time = "2026-10-21T20:27:13.445Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/34/d1/9a6cc57d796aad69b8d36d3205c944f1458403fdec37c3ffe5f944225a5e/json_logging-1.6.0-py2.py3-none-any.whl", hash = "sha256:d9201ffa11dc90a67d33e52add828acf2e97c6359678785907d038c71db6eb6b", size = 26238, upload-time = "2026-10-21T20:27:12.484Z" },
 ]
 
 [[package]]
@@ -1036,6 +998,15 @@ wheels = [
 [package.optional-dependencies]
 cli = [
     { name = "click" },
+]
+
+[[package]]
+name = "python-json-logger"
+version = "4.2.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/21/25/5473e46b179f8e8b4ad3aeeb36773d1701b7770eaf5e5bc2025c7303b598/python_json_logger-4.2.0.tar.gz", hash = "sha256:e371ebe22ec01e289850102091a2b1f6fc9e655c7f1f5f29073936756c290afa", size = 18211, upload-time = "2026-08-15T11:36:38.232Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/dc/55/6467fde553886cb293e41538f3a8b4e4fd4688c6df242cf982162d8367fb/python_json_logger-4.2.0-py3-none-any.whl", hash = "sha256:158a52126fcd6869e09574d2b66272666f3dc8f468c62637ef9a1fa883719cb9", size = 14988, upload-time = "2026-08-15T11:36:36.821Z" },
 ]
 
 [[package]]

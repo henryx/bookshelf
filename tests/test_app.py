@@ -25,3 +25,9 @@ def test_overrides_are_applied():
 
     assert app.testing
     assert app.config["SECRET_KEY"] == "override"
+
+
+def test_cross_origin_requests_are_not_allowed(client):
+    rv = client.get("/login", headers={"Origin": "https://evil.example.com"})
+
+    assert "Access-Control-Allow-Origin" not in rv.headers

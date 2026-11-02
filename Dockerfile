@@ -58,6 +58,9 @@ RUN --mount=from=uv,source=/uv,target=/bin/uv \
     && uv pip install --offline --no-cache --no-deps --python /app/venv/bin/python /dist/*.whl \
     && useradd -m -u 8877 appuser
 
+COPY gunicorn.conf.py ./
+
 USER appuser
 
-CMD ["sh", "-c", "/app/venv/bin/gunicorn --timeout 600 --access-logfile - --error-logfile - --log-level ${APP_LOG_LEVEL} -b ${APP_HOST}:${APP_PORT} bookshelf.wsgi:app"]
+# bind, log level, timeout and JSON logging come from /app/gunicorn.conf.py
+CMD ["/app/venv/bin/gunicorn", "bookshelf.wsgi:app"]

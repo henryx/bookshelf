@@ -93,7 +93,8 @@ docker run -p 8080:8080 \
 ```
 
 The image is built from source in three stages (dependencies, wheel, release) and runs
-gunicorn as a non-root user. Serve it over HTTPS: cookies are `Secure` by default.
+gunicorn as a non-root user, configured by `gunicorn.conf.py`. All logs, gunicorn's
+included, are written to stderr as JSON lines. Serve it over HTTPS: cookies are `Secure` by default.
 
 ## CI and releases
 

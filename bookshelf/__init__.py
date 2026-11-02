@@ -1,47 +1,26 @@
-import logging
 from collections.abc import Mapping
 from datetime import timedelta
 from logging.config import dictConfig
 
-import json_logging
 from flask import Flask, Response, current_app, make_response, render_template, request
-from flask_cors import CORS
 from flask_wtf import CSRFProtect
 from werkzeug.exceptions import HTTPException
 
 from bookshelf import cli, db
 from bookshelf.config import Config
+from bookshelf.logging_config import logging_config
 from bookshelf.routes import is_htmx
 from bookshelf.routes.auth import auth_route, login_manager
 from bookshelf.routes.main import main_route
 
-__all__ = ["config", "create_app", "routes"]
+__all__ = ["config", "configure_logging", "create_app", "routes"]
 
 
 def configure_logging() -> None:
     """
-    Configure process-wide logging. Must run once per process.
+    Configure process-wide logging (JSON lines on stderr). Safe to rerun.
     """
-    cfg = Config()
-    json_logging.init_flask(enable_json=True)
-    dictConfig(
-        {
-            "version": 1,
-            "formatters": {
-                "default": {
-                    "format": '{"timestamp":"%(asctime)s", "level":"%(levelname)s", "module":"%(module)s", "message":"%(message)s"}',
-                }
-            },
-            "handlers": {
-                "wsgi": {
-                    "class": "logging.StreamHandler",
-                    "stream": "ext://flask.logging.wsgi_errors_stream",
-                    "formatter": "default",
-                }
-            },
-            "root": {"level": cfg.log_level.upper(), "handlers": ["wsgi"]},
-        }
-    )
+    dictConfig(logging_config(Config().log_level))
 
 
 def create_app(overrides: Mapping[str, object] | None = None) -> Flask:
@@ -65,13 +44,7 @@ def create_app(overrides: Mapping[str, object] | None = None) -> Flask:
     if overrides:
         app.config.update(overrides)
 
-    CORS(app)
-    json_logging.init_request_instrument(app)
-
     app.url_map.strict_slashes = False
-    gunicorn_logger = logging.getLogger("gunicorn.error")
-    app.logger.handlers = gunicorn_logger.handlers
-    app.logger.setLevel(gunicorn_logger.level)
 
     app.register_error_handler(Exception, handle_error)
     db.init_app(app)
