@@ -28,10 +28,18 @@ TABLES: dict[str, str] = {
     """,
 }
 
+# Created after TABLES, which they index.
+INDEXES: dict[str, str] = {
+    # Login-failure count and clear: filter by email, then by time.
+    "IDX_LOGIN_FAILURES_EMAIL_AT": (
+        "CREATE INDEX IDX_LOGIN_FAILURES_EMAIL_AT ON LOGIN_FAILURES (EMAIL, ATTEMPTED_AT)"
+    ),
+}
+
 
 def init_db(conn: Connection) -> None:
     """
-    Create missing domains and tables. Safe to run more than once.
+    Create missing domains, tables and indexes. Safe to run more than once.
     """
     with conn.cursor() as cur:
         for name, ddl in DOMAINS.items():
@@ -42,6 +50,10 @@ def init_db(conn: Connection) -> None:
             cur.execute(
                 "SELECT 1 FROM RDB$RELATIONS WHERE RDB$RELATION_NAME = ?", (name,)
             )
+            if cur.fetchone() is None:
+                cur.execute(ddl)
+        for name, ddl in INDEXES.items():
+            cur.execute("SELECT 1 FROM RDB$INDICES WHERE RDB$INDEX_NAME = ?", (name,))
             if cur.fetchone() is None:
                 cur.execute(ddl)
     conn.commit()

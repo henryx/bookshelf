@@ -66,7 +66,7 @@ production environment set. Passwords are always prompted, never passed as argum
 
 | Command | What it does |
 |---|---|
-| `init-db` | Create missing tables (safe to rerun) |
+| `init-db` | Create missing tables and indexes (safe to rerun) |
 | `create-admin EMAIL` | Create the first admin (refused once any admin exists) |
 | `create-user EMAIL` | Create a regular user |
 | `list-users` | Show all users with role and lock status |

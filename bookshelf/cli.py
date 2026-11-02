@@ -26,7 +26,7 @@ __all__ = ["init_app"]
 @click.command("init-db")
 @with_appcontext
 def init_db_command() -> None:
-    """Create missing database tables."""
+    """Create missing database tables and indexes."""
     init_db(get_db())
     click.echo("Database initialised.")
 
