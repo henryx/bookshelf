@@ -50,12 +50,13 @@ All settings come from environment variables:
 | `APP_DB_USER` | yes | — | Firebird user |
 | `APP_DB_PASSWORD` | yes | — | Firebird password |
 | `APP_COOKIE_SECURE` | no | `true` | Set to `false` only for local HTTP |
-| `APP_LOGIN_MAX_FAILURES` | no | `5` | Failed logins for an email before further logins are refused |
+| `APP_LOGIN_MAX_FAILURES` | no | `5` | Failed logins for an email from one IP before that IP's logins for it are refused |
+| `APP_LOGIN_MAX_IP_FAILURES` | no | `20` | Failed logins from one IP, across all emails, before that IP's logins are refused |
 | `APP_LOGIN_BLOCK_MINUTES` | no | `15` | Window in which failed logins are counted, and so how long logins stay refused |
 | `APP_LOG_LEVEL` | no | `debug` | Log level |
 | `APP_HOST` / `APP_PORT` | no | `localhost` / `8000` | Bind address (Docker image: `0.0.0.0` / `8080`) |
 | `APP_DB_POOL_SIZE` | no | `5` | Idle database connections kept for reuse, per process |
-| `APP_TRUSTED_PROXIES` | no | `0` | Reverse proxies in front of the app; set it (usually `1`) behind a proxy so client IP and HTTPS come from `X-Forwarded-*`. Leave `0` when exposed directly, or clients can fake their IP |
+| `APP_TRUSTED_PROXIES` | no | `0` | Reverse proxies in front of the app; set it (usually `1`) behind a proxy so client IP and HTTPS come from `X-Forwarded-*`. Required behind a proxy: login limits are per IP. Leave `0` when exposed directly, or clients can fake their IP |
 | `APP_WORKERS` | no | 2 × CPUs + 1 | gunicorn worker processes; set it in containers with a CPU limit |
 | `APP_TIMEOUT` | no | `30` | Seconds before gunicorn restarts a worker stuck on a request |
 
@@ -66,7 +67,7 @@ production environment set. Passwords are always prompted, never passed as argum
 
 | Command | What it does |
 |---|---|
-| `init-db` | Create missing tables and indexes (safe to rerun) |
+| `init-db` | Create missing tables, columns and indexes (safe to rerun) |
 | `create-admin EMAIL` | Create the first admin (refused once any admin exists) |
 | `create-user EMAIL` | Create a regular user |
 | `list-users` | Show all users with role and lock status |
@@ -103,9 +104,11 @@ The image is built from source in three stages (dependencies, wheel, release) an
 gunicorn as a non-root user, configured by `gunicorn.conf.py`. All logs, gunicorn's
 included, are written to stderr as JSON lines. Serve it over HTTPS: cookies are `Secure` by default.
 Behind a reverse proxy that terminates HTTPS, set `APP_TRUSTED_PROXIES` to the number of proxies
-(usually `1`) so logs show the client IP and the app sees the request as HTTPS.
+(usually `1`) so the app sees the client IP and the request as HTTPS. This is required, not
+optional: failed-login limits are per client IP, so without it every client shares the proxy's IP
+and 20 failed logins from anyone block logins for everyone.
 
-After upgrading, run `init-db` again: it adds any new tables and indexes to an existing database.
+After upgrading, run `init-db` again: it adds any new tables, columns and indexes to an existing database.
 
 ## CI and releases
 

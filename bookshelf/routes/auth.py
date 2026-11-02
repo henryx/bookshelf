@@ -103,30 +103,32 @@ def login() -> BaseResponse | str | tuple[str, int]:
 
     conn = get_db()
     email = form.email.data or ""
-    max_failures = current_app.config["LOGIN_MAX_FAILURES"]
-    window_minutes = current_app.config["LOGIN_BLOCK_MINUTES"]
+    ip = request.remote_addr or ""
+    cfg = current_app.config
+    window_minutes = cfg["LOGIN_BLOCK_MINUTES"]
     # Blocked attempts are not checked or counted, so retrying does not extend the block.
     if is_login_blocked(
-        conn, email, max_failures=max_failures, window_minutes=window_minutes
+        conn,
+        email,
+        ip,
+        max_failures=cfg["LOGIN_MAX_FAILURES"],
+        max_ip_failures=cfg["LOGIN_MAX_IP_FAILURES"],
+        window_minutes=window_minutes,
     ):
         current_app.logger.warning(
-            "Blocked login for %s from %s: too many failed attempts",
-            email,
-            request.remote_addr,
+            "Blocked login for %s from %s: too many failed attempts", email, ip
         )
         form.form_errors.append(TOO_MANY_ATTEMPTS)
         return _render_login(form), 429
 
     user = authenticate(conn, email, form.password.data or "")
     if user is None:
-        current_app.logger.info(
-            "Failed login for %s from %s", email, request.remote_addr
-        )
-        record_login_failure(conn, email, window_minutes=window_minutes)
+        current_app.logger.info("Failed login for %s from %s", email, ip)
+        record_login_failure(conn, email, ip, window_minutes=window_minutes)
         form.form_errors.append(INVALID_CREDENTIALS)
         return _render_login(form)
 
-    clear_login_failures(conn, email)
+    clear_login_failures(conn, email, ip)
     login_user(user, remember=True)
     return _redirect(url_for("main.index"))
 

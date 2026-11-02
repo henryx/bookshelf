@@ -35,6 +35,11 @@ class Config:
         return _positive_int("APP_LOGIN_MAX_FAILURES", 5)
 
     @property
+    def login_max_ip_failures(self) -> int:
+        """Failed logins from one IP, across all emails, before it is refused."""
+        return _positive_int("APP_LOGIN_MAX_IP_FAILURES", 20)
+
+    @property
     def login_block_minutes(self) -> int:
         """Window in which failures are counted, and so how long a block lasts."""
         return _positive_int("APP_LOGIN_BLOCK_MINUTES", 15)

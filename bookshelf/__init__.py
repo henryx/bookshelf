@@ -43,6 +43,7 @@ def create_app(overrides: Mapping[str, object] | None = None) -> Flask:
         REMEMBER_COOKIE_SAMESITE="Lax",
         REMEMBER_COOKIE_DURATION=timedelta(days=30),
         LOGIN_MAX_FAILURES=cfg.login_max_failures,
+        LOGIN_MAX_IP_FAILURES=cfg.login_max_ip_failures,
         LOGIN_BLOCK_MINUTES=cfg.login_block_minutes,
     )
     if overrides:

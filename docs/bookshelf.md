@@ -32,11 +32,17 @@ Decisions:
    page does not reveal which accounts exist.
  - Locking a user ends their open sessions on the next request.
  - Resetting a user's password ends their open sessions (including the persistent login cookie) on the next request.
- - After 5 failed logins for an email within 15 minutes, logins for that email are refused ("Too many failed login
-   attempts") until the failures are older than 15 minutes. Unknown emails are limited the same way, so the block does
-   not reveal which accounts exist. Refused attempts are not counted, and a successful login clears the failures.
-   Failures are stored in the `LOGIN_FAILURES` table. The CLI is not limited. Both limits are configurable
-   (`APP_LOGIN_MAX_FAILURES`, `APP_LOGIN_BLOCK_MINUTES`; see README); 5 and 15 are the defaults.
+ - Failed logins are limited per email and client IP together, and per IP. After 5 failed logins for an email from
+   one IP within 15 minutes, that IP's logins for that email are refused ("Too many failed login attempts"); after
+   20 failed logins from one IP across all emails, all logins from that IP are refused. Blocks last until the
+   failures are older than 15 minutes. Because the email limit is per IP, an attacker cannot lock the real user out:
+   their failures only block their own IP. The trade-off is that an attacker using many IPs gets 5 guesses per IP
+   per account; Argon2 hashing keeps each guess slow. Unknown emails are limited the same way, so a block does not
+   reveal which accounts exist. Refused attempts are not counted, and a successful login clears that email's
+   failures from that IP. Failures are stored in the `LOGIN_FAILURES` table with the client IP (see
+   `APP_TRUSTED_PROXIES` behind a reverse proxy, or every client shares the proxy's IP). The CLI is not limited.
+   All limits are configurable (`APP_LOGIN_MAX_FAILURES`, `APP_LOGIN_MAX_IP_FAILURES`, `APP_LOGIN_BLOCK_MINUTES`;
+   see README); 5, 20 and 15 are the defaults.
  - Emails must be valid addresses (checked with `email-validator`, no DNS lookup), on the login form and when
    creating users with `create-user` / `create-admin`, so every account created can log in. Reserved and LAN-style
    domains such as `user@bookshelf.local` or `user@nas` are rejected. Spaces around the email are ignored. An

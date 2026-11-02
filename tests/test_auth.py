@@ -81,9 +81,13 @@ def test_locked_user_cannot_login(
 TOO_MANY_ATTEMPTS = "Too many failed login attempts"
 
 
-def _fail_logins(client: FlaskClient, email: str, times: int) -> None:
+CLIENT_IP = "127.0.0.1"  # test client default
+OTHER_IP = {"environ_base": {"REMOTE_ADDR": "198.51.100.9"}}
+
+
+def _fail_logins(client: FlaskClient, email: str, times: int, **kwargs) -> None:
     for _ in range(times):
-        _login(client, email, "wrong")
+        _login(client, email, "wrong", **kwargs)
 
 
 def test_login_blocked_after_too_many_failures(
@@ -115,15 +119,49 @@ def test_login_block_is_per_email(db_client: FlaskClient, user: User, password: 
     assert rv.status_code == 302
 
 
+def test_login_block_is_per_ip(db_client: FlaskClient, user: User, password: str):
+    """Failures from an attacker's IP do not lock the real user out."""
+    _fail_logins(db_client, user.email, 5, **OTHER_IP)
+
+    rv = _login(db_client, user.email, password)
+
+    assert rv.status_code == 302
+
+
+def test_ip_blocked_after_too_many_failures_across_emails(
+    db_client: FlaskClient, db_app: Flask, user: User, password: str
+):
+    db_app.config["LOGIN_MAX_IP_FAILURES"] = 3
+    for n in range(3):
+        _login(db_client, f"guess{n}@example.com", "wrong")
+
+    rv = _login(db_client, user.email, password)
+
+    assert rv.status_code == 429
+    assert TOO_MANY_ATTEMPTS in rv.get_data(as_text=True)
+
+
+def test_ip_block_does_not_affect_other_ips(
+    db_client: FlaskClient, db_app: Flask, user: User, password: str
+):
+    db_app.config["LOGIN_MAX_IP_FAILURES"] = 3
+    for n in range(3):
+        _login(db_client, f"guess{n}@example.com", "wrong", **OTHER_IP)
+
+    rv = _login(db_client, user.email, password)
+
+    assert rv.status_code == 302
+
+
 def _add_old_failures(app: Flask, email: str, times: int, minutes_ago: int) -> None:
     with app.app_context():
         conn = get_db()
         with conn.cursor() as cur:
             for _ in range(times):
                 cur.execute(
-                    "INSERT INTO LOGIN_FAILURES (ID, EMAIL, ATTEMPTED_AT) "
-                    "VALUES (?, ?, DATEADD(? MINUTE TO CURRENT_TIMESTAMP))",
-                    (uuid4().bytes, email, -minutes_ago),
+                    "INSERT INTO LOGIN_FAILURES (ID, EMAIL, IP_ADDRESS, ATTEMPTED_AT) "
+                    "VALUES (?, ?, ?, DATEADD(? MINUTE TO CURRENT_TIMESTAMP))",
+                    (uuid4().bytes, email, CLIENT_IP, -minutes_ago),
                 )
         conn.commit()
 

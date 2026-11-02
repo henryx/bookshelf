@@ -24,24 +24,31 @@ def test_missing_secret_key_fails(monkeypatch, value):
 def test_login_limits_default(monkeypatch):
     monkeypatch.delenv("APP_LOGIN_MAX_FAILURES", raising=False)
     monkeypatch.delenv("APP_LOGIN_BLOCK_MINUTES", raising=False)
+    monkeypatch.delenv("APP_LOGIN_MAX_IP_FAILURES", raising=False)
 
     app = create_app()
 
     assert app.config["LOGIN_MAX_FAILURES"] == 5
     assert app.config["LOGIN_BLOCK_MINUTES"] == 15
+    assert app.config["LOGIN_MAX_IP_FAILURES"] == 20
 
 
 def test_login_limits_from_env(monkeypatch):
     monkeypatch.setenv("APP_LOGIN_MAX_FAILURES", "3")
     monkeypatch.setenv("APP_LOGIN_BLOCK_MINUTES", "30")
+    monkeypatch.setenv("APP_LOGIN_MAX_IP_FAILURES", "50")
 
     app = create_app()
 
     assert app.config["LOGIN_MAX_FAILURES"] == 3
     assert app.config["LOGIN_BLOCK_MINUTES"] == 30
+    assert app.config["LOGIN_MAX_IP_FAILURES"] == 50
 
 
-@pytest.mark.parametrize("name", ["APP_LOGIN_MAX_FAILURES", "APP_LOGIN_BLOCK_MINUTES"])
+@pytest.mark.parametrize(
+    "name",
+    ["APP_LOGIN_MAX_FAILURES", "APP_LOGIN_BLOCK_MINUTES", "APP_LOGIN_MAX_IP_FAILURES"],
+)
 @pytest.mark.parametrize("value", ["0", "-1", "abc"])
 def test_invalid_login_limit_fails(monkeypatch, name, value):
     monkeypatch.setenv(name, value)
