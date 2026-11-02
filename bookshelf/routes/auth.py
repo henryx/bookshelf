@@ -60,6 +60,16 @@ def _redirect(url: str) -> BaseResponse:
     return resp
 
 
+@login_manager.unauthorized_handler
+def unauthorized() -> BaseResponse:
+    """
+    Send anonymous users to the login page. htmx requests get HX-Redirect,
+    otherwise htmx would follow a 302 and swap the full login page into
+    the request's target.
+    """
+    return _redirect(url_for("auth.login"))
+
+
 def _render_login(form: LoginForm) -> str:
     template = "_login_form.html" if is_htmx() else "login.html"
     return render_template(template, form=form)

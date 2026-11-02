@@ -19,6 +19,22 @@ def test_main_page_requires_login(db_client: FlaskClient):
     assert rv.headers["Location"].startswith("/login")
 
 
+def test_htmx_request_without_login_redirects_via_header(db_client: FlaskClient):
+    rv = db_client.get("/", headers=HTMX)
+
+    assert rv.status_code == 204
+    assert rv.headers["HX-Redirect"] == "/login"
+
+
+def test_htmx_logout_with_expired_session_redirects_via_header(
+    db_client: FlaskClient,
+):
+    rv = db_client.post("/logout", headers=HTMX)
+
+    assert rv.status_code == 204
+    assert rv.headers["HX-Redirect"] == "/login"
+
+
 def test_login_page_renders_form(db_client: FlaskClient):
     rv = db_client.get("/login")
     html = rv.get_data(as_text=True)
