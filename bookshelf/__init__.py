@@ -46,6 +46,7 @@ def create_app(overrides: Mapping[str, object] | None = None) -> Flask:
         LOGIN_MAX_FAILURES=cfg.login_max_failures,
         LOGIN_MAX_IP_FAILURES=cfg.login_max_ip_failures,
         LOGIN_BLOCK_MINUTES=cfg.login_block_minutes,
+        MIN_PASSWORD_LENGTH=cfg.min_password_length,
     )
     if overrides:
         app.config.update(overrides)

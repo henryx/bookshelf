@@ -66,6 +66,7 @@ All settings come from environment variables:
 | `APP_LOGIN_MAX_FAILURES` | no | `5` | Failed logins for an email from one IP before that IP's logins for it are refused |
 | `APP_LOGIN_MAX_IP_FAILURES` | no | `20` | Failed logins from one IP, across all emails, before that IP's logins are refused |
 | `APP_LOGIN_BLOCK_MINUTES` | no | `15` | Window in which failed logins are counted, and so how long logins stay refused |
+| `APP_MIN_PASSWORD_LENGTH` | no | `12` | Characters a new password needs; values below 12 stop the app from starting |
 | `APP_LOG_LEVEL` | no | `debug` | Log level |
 | `APP_HOST` / `APP_PORT` | no | `localhost` / `8000` | Bind address (Docker image: `0.0.0.0` / `8080`) |
 | `APP_DB_POOL_SIZE` | no | `5` | Idle database connections kept for reuse, per process |
@@ -77,6 +78,8 @@ All settings come from environment variables:
 
 Run with `uv run dotenv -f dev.env run flask --app bookshelf <command>`, or with the
 production environment set. Passwords are always prompted, never passed as arguments.
+New passwords (here and in the setup wizard) must be at least `APP_MIN_PASSWORD_LENGTH`
+characters long (12 by default).
 
 | Command | What it does |
 |---|---|

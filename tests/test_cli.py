@@ -23,7 +23,8 @@ def test_init_db_is_idempotent(db_app: Flask):
 
 def test_create_admin(db_app: Flask):
     rv = db_app.test_cli_runner().invoke(
-        args=["create-admin", "Admin@Example.com"], input="s3cret-pw\ns3cret-pw\n"
+        args=["create-admin", "Admin@Example.com"],
+        input=f"{NEW_PASSWORD}\n{NEW_PASSWORD}\n",
     )
 
     assert rv.exit_code == 0, rv.output
@@ -46,7 +47,7 @@ def test_create_admin_does_not_accept_password_option(db_app: Flask):
 
 def test_create_admin_rejects_existing_email(db_app: Flask, user: User):
     rv = db_app.test_cli_runner().invoke(
-        args=["create-admin", user.email], input="pw\npw\n"
+        args=["create-admin", user.email], input=f"{NEW_PASSWORD}\n{NEW_PASSWORD}\n"
     )
 
     assert rv.exit_code != 0
@@ -55,7 +56,8 @@ def test_create_admin_rejects_existing_email(db_app: Flask, user: User):
 
 def test_create_admin_refused_when_admin_exists(db_app: Flask, admin: User):
     rv = db_app.test_cli_runner().invoke(
-        args=["create-admin", "second@example.com"], input="pw\npw\n"
+        args=["create-admin", "second@example.com"],
+        input=f"{NEW_PASSWORD}\n{NEW_PASSWORD}\n",
     )
 
     assert rv.exit_code != 0
@@ -69,7 +71,8 @@ def test_create_admin_refused_when_only_locked_admin_exists(
     lock_user(admin)
 
     rv = db_app.test_cli_runner().invoke(
-        args=["create-admin", "second@example.com"], input="pw\npw\n"
+        args=["create-admin", "second@example.com"],
+        input=f"{NEW_PASSWORD}\n{NEW_PASSWORD}\n",
     )
 
     assert rv.exit_code != 0
@@ -77,7 +80,8 @@ def test_create_admin_refused_when_only_locked_admin_exists(
 
 
 ADMIN_EMAIL = "admin@example.com"
-ADMIN_PASSWORD = "admin-pw"
+ADMIN_PASSWORD = "admin-password"
+NEW_PASSWORD = "new-password-1"
 
 
 @pytest.fixture
@@ -87,7 +91,7 @@ def admin(db_app: Flask) -> User:
 
 
 def _reset(
-    db_app: Flask, email: str, admin_password: str, new_password: str = "new-pw"
+    db_app: Flask, email: str, admin_password: str, new_password: str = NEW_PASSWORD
 ):
     return db_app.test_cli_runner().invoke(
         args=["reset-user-password", email, "--admin-email", ADMIN_EMAIL],
@@ -101,7 +105,7 @@ def test_reset_user_password(db_app: Flask, admin: User, user: User, password: s
     assert rv.exit_code == 0, rv.output
     with db_app.app_context():
         conn = get_db()
-        assert authenticate(conn, user.email, "new-pw") is not None
+        assert authenticate(conn, user.email, NEW_PASSWORD) is not None
         assert authenticate(conn, user.email, password) is None
 
 
@@ -110,7 +114,7 @@ def test_reset_user_password_prompts_for_admin_email(
 ):
     rv = db_app.test_cli_runner().invoke(
         args=["reset-user-password", user.email],
-        input=f"{ADMIN_EMAIL}\n{ADMIN_PASSWORD}\nnew-pw\nnew-pw\n",
+        input=f"{ADMIN_EMAIL}\n{ADMIN_PASSWORD}\n{NEW_PASSWORD}\n{NEW_PASSWORD}\n",
     )
 
     assert rv.exit_code == 0, rv.output
@@ -132,7 +136,7 @@ def test_reset_user_password_rejects_non_admin(
 ):
     rv = db_app.test_cli_runner().invoke(
         args=["reset-user-password", user.email, "--admin-email", user.email],
-        input=f"{password}\nnew-pw\nnew-pw\n",
+        input=f"{password}\n{NEW_PASSWORD}\n{NEW_PASSWORD}\n",
     )
 
     assert rv.exit_code != 0
@@ -210,7 +214,7 @@ def test_lock_commands_reject_non_admin(
     db_app: Flask, user: User, password: str, command: str
 ):
     with db_app.app_context():
-        other = create_user(get_db(), "other@example.com", "pw")
+        other = create_user(get_db(), "other@example.com", NEW_PASSWORD)
 
     rv = db_app.test_cli_runner().invoke(
         args=[command, other.email, "--admin-email", user.email],
@@ -321,7 +325,7 @@ def test_delete_user_rejects_wrong_admin_password(
 
 def test_delete_user_rejects_non_admin(db_app: Flask, user: User, password: str):
     with db_app.app_context():
-        other = create_user(get_db(), "other@example.com", "pw")
+        other = create_user(get_db(), "other@example.com", NEW_PASSWORD)
 
     rv = db_app.test_cli_runner().invoke(
         args=["delete-user", other.email, "--admin-email", user.email],
@@ -348,7 +352,9 @@ def test_admin_cannot_delete_themselves(db_app: Flask, admin: User):
     assert _exists(db_app, ADMIN_EMAIL)
 
 
-def _create(db_app: Flask, email: str, admin_password: str, password: str = "user-pw"):
+def _create(
+    db_app: Flask, email: str, admin_password: str, password: str = "user-password"
+):
     return db_app.test_cli_runner().invoke(
         args=["create-user", email, "--admin-email", ADMIN_EMAIL],
         input=f"{admin_password}\n{password}\n{password}\n",
@@ -361,7 +367,7 @@ def test_create_user(db_app: Flask, admin: User):
     assert rv.exit_code == 0, rv.output
     with db_app.app_context():
         conn = get_db()
-        created = authenticate(conn, "new.reader@example.com", "user-pw")
+        created = authenticate(conn, "new.reader@example.com", "user-password")
     assert created is not None
     assert created.role is Role.REGULAR
 
@@ -384,7 +390,7 @@ def test_create_user_rejects_wrong_admin_password(db_app: Flask, admin: User):
 def test_create_user_rejects_non_admin(db_app: Flask, user: User, password: str):
     rv = db_app.test_cli_runner().invoke(
         args=["create-user", "new@example.com", "--admin-email", user.email],
-        input=f"{password}\npw\npw\n",
+        input=f"{password}\n{NEW_PASSWORD}\n{NEW_PASSWORD}\n",
     )
 
     assert rv.exit_code != 0
@@ -536,7 +542,7 @@ def test_create_admin_reports_user_created_concurrently(
     _skip_existence_check(monkeypatch)
 
     rv = db_app.test_cli_runner().invoke(
-        args=["create-admin", user.email], input="pw\npw\n"
+        args=["create-admin", user.email], input=f"{NEW_PASSWORD}\n{NEW_PASSWORD}\n"
     )
 
     assert rv.exit_code == 1
@@ -545,7 +551,9 @@ def test_create_admin_reports_user_created_concurrently(
 
 @pytest.mark.parametrize("email", ["not-an-email", "admin@bookshelf.local", "x@nas"])
 def test_create_admin_rejects_invalid_email(db_app: Flask, email: str):
-    rv = db_app.test_cli_runner().invoke(args=["create-admin", email], input="pw\npw\n")
+    rv = db_app.test_cli_runner().invoke(
+        args=["create-admin", email], input=f"{NEW_PASSWORD}\n{NEW_PASSWORD}\n"
+    )
 
     assert rv.exit_code == 2
     assert "Invalid value for 'EMAIL'" in rv.output
@@ -599,3 +607,47 @@ def test_prune_login_failures_uses_configured_window(db_app: Flask):
 
     assert rv.exit_code == 0, rv.output
     assert _failure_emails(db_app) == ["recent@example.com"]
+
+
+SHORT = "too-short"
+
+
+def test_create_admin_reprompts_for_short_password(db_app: Flask):
+    rv = db_app.test_cli_runner().invoke(
+        args=["create-admin", "admin@example.com"],
+        input=f"{SHORT}\n{SHORT}\n{NEW_PASSWORD}\n{NEW_PASSWORD}\n",
+    )
+
+    assert rv.exit_code == 0, rv.output
+    assert "at least 12 characters" in rv.output
+    with db_app.app_context():
+        assert authenticate(get_db(), "admin@example.com", NEW_PASSWORD) is not None
+
+
+def test_create_user_refuses_short_password(db_app: Flask, admin: User):
+    rv = _create(db_app, "new@example.com", ADMIN_PASSWORD, password=SHORT)
+
+    assert rv.exit_code != 0
+    assert "at least 12 characters" in rv.output
+    assert not _exists(db_app, "new@example.com")
+
+
+def test_reset_user_password_refuses_short_password(
+    db_app: Flask, admin: User, user: User, password: str
+):
+    rv = _reset(db_app, user.email, ADMIN_PASSWORD, new_password=SHORT)
+
+    assert rv.exit_code != 0
+    assert "at least 12 characters" in rv.output
+    with db_app.app_context():
+        assert authenticate(get_db(), user.email, password) is not None
+
+
+def test_new_password_uses_configured_min_length(db_app: Flask, admin: User):
+    db_app.config["MIN_PASSWORD_LENGTH"] = 20
+
+    rv = _create(db_app, "new@example.com", ADMIN_PASSWORD, password="x" * 19)
+
+    assert rv.exit_code != 0
+    assert "at least 20 characters" in rv.output
+    assert not _exists(db_app, "new@example.com")

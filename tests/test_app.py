@@ -119,3 +119,23 @@ def test_invalid_trusted_proxies_fails(monkeypatch, value):
 
     with pytest.raises(RuntimeError, match="APP_TRUSTED_PROXIES"):
         create_app()
+
+
+def test_min_password_length_default(monkeypatch):
+    monkeypatch.delenv("APP_MIN_PASSWORD_LENGTH", raising=False)
+
+    assert create_app().config["MIN_PASSWORD_LENGTH"] == 12
+
+
+def test_min_password_length_from_env(monkeypatch):
+    monkeypatch.setenv("APP_MIN_PASSWORD_LENGTH", "16")
+
+    assert create_app().config["MIN_PASSWORD_LENGTH"] == 16
+
+
+@pytest.mark.parametrize("value", ["11", "0", "-1", "abc"])
+def test_min_password_length_below_12_fails(monkeypatch, value):
+    monkeypatch.setenv("APP_MIN_PASSWORD_LENGTH", value)
+
+    with pytest.raises(RuntimeError, match="APP_MIN_PASSWORD_LENGTH"):
+        create_app()

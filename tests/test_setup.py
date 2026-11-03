@@ -8,8 +8,8 @@ from bookshelf.models.users import Role, User, create_user, find_by_email
 HTMX = {"HX-Request": "true"}
 ADMIN = {
     "email": " Admin@Example.com ",
-    "password": "s3cret-pw",
-    "confirm": "s3cret-pw",
+    "password": "s3cret-password",
+    "confirm": "s3cret-password",
 }
 
 
@@ -135,7 +135,7 @@ def test_setup_refused_when_admin_created_meanwhile(
     """Another visitor finished setup after this request passed the check."""
     monkeypatch.setattr("bookshelf.routes.setup.setup_needed", lambda _conn: True)
     with db_app.app_context():
-        create_user(get_db(), "first@example.com", "pw", role=Role.ADMIN)
+        create_user(get_db(), "first@example.com", "admin-password", role=Role.ADMIN)
 
     rv = db_client.post("/setup", data=ADMIN)
 
@@ -146,7 +146,40 @@ def test_setup_refused_when_admin_created_meanwhile(
 
 def test_app_with_admin_skips_setup(db_client: FlaskClient, db_app: Flask):
     with db_app.app_context():
-        create_user(get_db(), "admin@example.com", "pw", role=Role.ADMIN)
+        create_user(get_db(), "admin@example.com", "admin-password", role=Role.ADMIN)
 
     assert db_client.get("/login").status_code == 200
     assert db_client.get("/setup").status_code == 404
+
+
+def test_setup_rejects_short_password(empty_db_app: Flask):
+    client = empty_db_app.test_client()
+
+    rv = client.post("/setup", data={**ADMIN, "password": "short", "confirm": "short"})
+
+    assert rv.status_code == 200
+    assert "at least 12 characters" in rv.get_data(as_text=True)
+    assert client.get("/").headers["Location"] == "/setup"
+
+
+def test_setup_uses_configured_min_length(empty_db_app: Flask):
+    empty_db_app.config["MIN_PASSWORD_LENGTH"] = 20
+    client = empty_db_app.test_client()
+
+    rv = client.post(
+        "/setup", data={**ADMIN, "password": "x" * 19, "confirm": "x" * 19}
+    )
+
+    assert rv.status_code == 200
+    assert "at least 20 characters" in rv.get_data(as_text=True)
+    assert client.get("/").headers["Location"] == "/setup"
+
+
+def test_setup_page_notes_configured_min_length(empty_db_app: Flask):
+    empty_db_app.config["MIN_PASSWORD_LENGTH"] = 20
+
+    html = empty_db_app.test_client().get("/setup").get_data(as_text=True)
+
+    assert 'id="password-hint"' in html
+    assert "At least 20 characters." in html
+    assert 'aria-describedby="password-hint"' in html

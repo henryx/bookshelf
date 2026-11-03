@@ -69,6 +69,14 @@ Decisions:
    domains such as `user@bookshelf.local` or `user@nas` are rejected. Spaces around the email are ignored. An
    invalid email on the login form is refused before the credentials are checked, so it is neither counted as a
    failed login nor logged. Other CLI commands accept any email, so older accounts can still be managed.
+ - New passwords must be at least 12 characters long; that is the only rule (no character classes, no maximum,
+   spaces allowed), since length is what makes a password hard to guess. The length can be raised with
+   `APP_MIN_PASSWORD_LENGTH` (e.g. to 15, the NIST SP 800-63B minimum for a password used alone) but not lowered:
+   a value below 12, or one that is not a number, stops the app and the CLI from starting. It applies wherever a
+   password is set: the setup wizard and the `create-admin`, `create-user` and `reset-user-password` commands,
+   which ask again until the password is long enough. The model (`create_user`, `set_password`) enforces it too:
+   callers pass the configured length, and a caller that omits it still gets 12, so no code path can go below the
+   floor. Login does not check it, so existing shorter passwords keep working until they are reset.
  - A user's email cannot be changed. The email is the login, so an account with a wrong or invalid email is deleted
    (`delete-user`) and created again with the right one.
  - Failed and blocked logins are logged with the email and the client IP, like the CLI logs emails for every admin

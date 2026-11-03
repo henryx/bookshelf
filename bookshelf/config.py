@@ -1,6 +1,9 @@
 import os
 
-__all__ = ["Config"]
+__all__ = ["MIN_PASSWORD_LENGTH", "Config"]
+
+# Lowest minimum length APP_MIN_PASSWORD_LENGTH may set, and its default.
+MIN_PASSWORD_LENGTH = 12
 
 
 class Config:
@@ -43,6 +46,17 @@ class Config:
     def login_block_minutes(self) -> int:
         """Window in which failures are counted, and so how long a block lasts."""
         return _positive_int("APP_LOGIN_BLOCK_MINUTES", 15)
+
+    @property
+    def min_password_length(self) -> int:
+        """Characters a new password needs; never fewer than MIN_PASSWORD_LENGTH."""
+        name = "APP_MIN_PASSWORD_LENGTH"
+        value = _positive_int(name, MIN_PASSWORD_LENGTH)
+        if value < MIN_PASSWORD_LENGTH:
+            raise RuntimeError(
+                f"{name} must be at least {MIN_PASSWORD_LENGTH}, got {value}"
+            )
+        return value
 
     @property
     def workers(self) -> int:

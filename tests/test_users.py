@@ -7,6 +7,8 @@ from flask import Flask
 
 from bookshelf.db import get_db
 from bookshelf.models.users import (
+    MIN_PASSWORD_LENGTH,
+    PasswordTooShortError,
     Role,
     User,
     UserExistsError,
@@ -177,3 +179,34 @@ def test_create_user_rejects_duplicate_email(db_app: Flask, user: User):
         pytest.raises(UserExistsError, match="reader@example.com"),
     ):
         create_user(get_db(), user.email.upper(), "another password")
+
+
+def test_create_user_rejects_short_password(db_app: Flask):
+    with db_app.app_context(), pytest.raises(PasswordTooShortError):
+        create_user(get_db(), "short@example.com", "x" * (MIN_PASSWORD_LENGTH - 1))
+
+    with db_app.app_context():
+        assert find_by_email(get_db(), "short@example.com") is None
+
+
+def test_create_user_accepts_minimum_length_password(db_app: Flask):
+    with db_app.app_context():
+        create_user(get_db(), "min@example.com", "x" * MIN_PASSWORD_LENGTH)
+
+
+def test_set_password_rejects_short_password(db_app: Flask, user: User, password: str):
+    with db_app.app_context(), pytest.raises(PasswordTooShortError):
+        set_password(get_db(), user, "short")
+
+    with db_app.app_context():
+        assert authenticate(get_db(), user.email, password) is not None
+
+
+def test_create_user_uses_given_min_length(db_app: Flask):
+    with db_app.app_context(), pytest.raises(PasswordTooShortError, match="16"):
+        create_user(get_db(), "short@example.com", "x" * 15, min_password_length=16)
+
+
+def test_set_password_uses_given_min_length(db_app: Flask, user: User):
+    with db_app.app_context(), pytest.raises(PasswordTooShortError, match="16"):
+        set_password(get_db(), user, "x" * 15, min_password_length=16)

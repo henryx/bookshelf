@@ -8,7 +8,11 @@ from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
 from firebird.driver import Connection, DatabaseError
 
+from bookshelf.config import MIN_PASSWORD_LENGTH
+
 __all__ = [
+    "MIN_PASSWORD_LENGTH",
+    "PasswordTooShortError",
     "Role",
     "User",
     "UserExistsError",
@@ -26,6 +30,7 @@ __all__ = [
     "set_password",
     "set_role",
     "start_login_attempt",
+    "validate_new_password",
 ]
 
 # Firebird GDS code for "violation of PRIMARY or UNIQUE KEY constraint".
@@ -41,6 +46,26 @@ class Role(StrEnum):
 
     ADMIN = "ADMIN"
     REGULAR = "REGULAR"
+
+
+class PasswordTooShortError(ValueError):
+    """A new password is shorter than the required minimum."""
+
+    def __init__(self, min_length: int) -> None:
+        super().__init__(f"Password must be at least {min_length} characters long")
+        self.min_length = min_length
+
+
+def validate_new_password(
+    password: str, *, min_length: int = MIN_PASSWORD_LENGTH
+) -> None:
+    """
+    Raise PasswordTooShortError unless the password may be set. Only length is
+    checked; existing passwords keep working even if shorter. Callers pass
+    the configured length; the default is the lowest allowed.
+    """
+    if len(password) < min_length:
+        raise PasswordTooShortError(min_length)
 
 
 class UserExistsError(Exception):
@@ -154,12 +179,18 @@ def list_users(conn: Connection) -> list[User]:
 
 
 def create_user(
-    conn: Connection, email: str, password: str, *, role: Role = Role.REGULAR
+    conn: Connection,
+    email: str,
+    password: str,
+    *,
+    role: Role = Role.REGULAR,
+    min_password_length: int = MIN_PASSWORD_LENGTH,
 ) -> User:
     """
     Raises UserExistsError if the email is taken, even by a user created
-    after the caller checked.
+    after the caller checked, and PasswordTooShortError for a short password.
     """
+    validate_new_password(password, min_length=min_password_length)
     email = _normalise(email)
     with conn.cursor() as cur:
         try:
@@ -177,7 +208,15 @@ def create_user(
     return _row_to_user(row)
 
 
-def set_password(conn: Connection, user: User, password: str) -> None:
+def set_password(
+    conn: Connection,
+    user: User,
+    password: str,
+    *,
+    min_password_length: int = MIN_PASSWORD_LENGTH,
+) -> None:
+    """Raises PasswordTooShortError for a short password."""
+    validate_new_password(password, min_length=min_password_length)
     with conn.cursor() as cur:
         cur.execute(
             "UPDATE USERS SET PASSWORD_HASH = ? WHERE ID = ?",

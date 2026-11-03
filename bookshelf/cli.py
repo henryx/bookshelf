@@ -8,6 +8,7 @@ from prettytable import PrettyTable
 from bookshelf.db import get_db
 from bookshelf.db.schema import init_db
 from bookshelf.models.users import (
+    PasswordTooShortError,
     Role,
     User,
     UserExistsError,
@@ -21,6 +22,7 @@ from bookshelf.models.users import (
     set_locked,
     set_password,
     set_role,
+    validate_new_password,
 )
 
 __all__ = ["init_app"]
@@ -54,6 +56,22 @@ def _valid_email(_ctx: click.Context, _param: click.Parameter, value: str) -> st
     return value
 
 
+def _min_password_length() -> int:
+    return current_app.config["MIN_PASSWORD_LENGTH"]
+
+
+def _prompt_new_password(label: str) -> str:
+    """Prompt (with confirmation) until the password is long enough."""
+    while True:
+        password = click.prompt(label, hide_input=True, confirmation_prompt=True)
+        try:
+            validate_new_password(password, min_length=_min_password_length())
+        except PasswordTooShortError as e:
+            click.echo(f"Error: {e}", err=True)
+            continue
+        return password
+
+
 @click.command("create-admin")
 @click.argument("email", callback=_valid_email)
 @with_appcontext
@@ -65,9 +83,15 @@ def create_admin_command(email: str) -> None:
     if find_by_email(conn, email) is not None:
         raise click.ClickException(f"User {email} already exists")
 
-    password = click.prompt("Password", hide_input=True, confirmation_prompt=True)
+    password = _prompt_new_password("Password")
     try:
-        user = create_user(conn, email, password, role=Role.ADMIN)
+        user = create_user(
+            conn,
+            email,
+            password,
+            role=Role.ADMIN,
+            min_password_length=_min_password_length(),
+        )
     except UserExistsError as e:
         raise click.ClickException(str(e)) from e
     click.echo(f"Admin {user.email} created.")
@@ -108,9 +132,11 @@ def create_user_command(email: str, admin_email: str) -> None:
     if find_by_email(conn, email) is not None:
         raise click.ClickException(f"User {email} already exists")
 
-    password = click.prompt("Password", hide_input=True, confirmation_prompt=True)
+    password = _prompt_new_password("Password")
     try:
-        user = create_user(conn, email, password)
+        user = create_user(
+            conn, email, password, min_password_length=_min_password_length()
+        )
     except UserExistsError as e:
         raise click.ClickException(str(e)) from e
     current_app.logger.info("User %s created by admin %s", user.email, admin.email)
@@ -127,8 +153,8 @@ def reset_user_password_command(email: str, admin_email: str) -> None:
     admin = _require_admin(conn, admin_email, "Password reset")
     user = _require_user(conn, email)
 
-    password = click.prompt("New password", hide_input=True, confirmation_prompt=True)
-    set_password(conn, user, password)
+    password = _prompt_new_password("New password")
+    set_password(conn, user, password, min_password_length=_min_password_length())
     current_app.logger.info(
         "Password for %s reset by admin %s", user.email, admin.email
     )

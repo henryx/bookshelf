@@ -2,12 +2,19 @@ from firebird.driver import Connection
 from flask import Blueprint, abort, current_app, render_template, request, url_for
 from flask_login import login_user
 from werkzeug.wrappers import Response as BaseResponse
-from wtforms import PasswordField
+from wtforms import PasswordField, ValidationError
 from wtforms.validators import DataRequired, EqualTo
 
 from bookshelf.db import get_db
 from bookshelf.db.schema import init_db, table_exists
-from bookshelf.models.users import Role, UserExistsError, admin_exists, create_user
+from bookshelf.models.users import (
+    PasswordTooShortError,
+    Role,
+    UserExistsError,
+    admin_exists,
+    create_user,
+    validate_new_password,
+)
 from bookshelf.routes import htmx_redirect, is_htmx
 from bookshelf.routes.auth import LoginForm
 
@@ -24,6 +31,14 @@ class SetupForm(LoginForm):
         "Confirm password",
         validators=[DataRequired(), EqualTo("password", "Passwords must match")],
     )
+
+    def validate_password(self, field: PasswordField) -> None:
+        try:
+            validate_new_password(
+                field.data or "", min_length=current_app.config["MIN_PASSWORD_LENGTH"]
+            )
+        except PasswordTooShortError as e:
+            raise ValidationError(str(e)) from e
 
 
 def setup_needed(conn: Connection) -> bool:
@@ -77,7 +92,11 @@ def wizard() -> BaseResponse | str:
         return htmx_redirect(url_for("auth.login"))
     try:
         admin = create_user(
-            conn, form.email.data or "", form.password.data or "", role=Role.ADMIN
+            conn,
+            form.email.data or "",
+            form.password.data or "",
+            role=Role.ADMIN,
+            min_password_length=current_app.config["MIN_PASSWORD_LENGTH"],
         )
     except UserExistsError as e:
         form.form_errors.append(str(e))
