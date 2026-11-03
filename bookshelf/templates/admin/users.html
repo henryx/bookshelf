@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Users · Bookshelf{% endblock %}
+{% block content %}
+  {% include "_topbar.html" %}
+  <div class="section-header">
+    <h2>Users</h2>
+    <button type="button" data-dialog-open="create-user-dialog">Create user</button>
+  </div>
+  <table class="users">
+    <thead>
+      <tr><th>Email</th><th>Role</th><th>Status</th></tr>
+    </thead>
+    <tbody>
+      {% for user in users %}
+        <tr>
+          <td>
+            {# htmx opens the details in the edit dialog; without JavaScript the link opens the details page. #}
+            <a href="{{ url_for('admin.user_details', user_id=user.id) }}"
+               hx-get="{{ url_for('admin.user_details', user_id=user.id) }}"
+               hx-target="#user-dialog-body" hx-indicator="closest tr">{{ user.email }}</a>
+            <span class="htmx-indicator">…</span>
+          </td>
+          <td>{{ "Admin" if user.is_admin else "Regular" }}</td>
+          <td>{{ "Locked" if user.is_locked else "Active" }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  {# Opened by the button above; already open when a plain (no-JS) post had errors. #}
+  <dialog id="create-user-dialog" aria-labelledby="create-user-title"
+          {%- if form.errors or form.form_errors %} open{% endif %}>
+    <div class="section-header">
+      <h2 id="create-user-title">Create user</h2>
+      <button type="button" class="secondary" data-dialog-close aria-label="Close">✕</button>
+    </div>
+    <p class="hint">New users are regular users; make them admins from their details page.</p>
+    {% include "admin/_create_user_form.html" %}
+  </dialog>
+
+  {# Filled with a user's details by the links in the table, then opened (app.js). #}
+  <dialog id="user-dialog" aria-labelledby="user-dialog-title">
+    <div class="section-header">
+      <h2 id="user-dialog-title">Edit user</h2>
+      <button type="button" class="secondary" data-dialog-close aria-label="Close">✕</button>
+    </div>
+    <div id="user-dialog-body"></div>
+  </dialog>
+{% endblock %}

@@ -1,0 +1,33 @@
+<form id="user-form" class="card" method="post"
+      action="{{ url_for('admin.user_details', user_id=user.id) }}"
+      hx-post="{{ url_for('admin.user_details', user_id=user.id) }}"
+      hx-target="this" hx-swap="outerHTML"
+      hx-indicator="#user-indicator" hx-disabled-elt="find button">
+  {{ form.hidden_tag() }}
+  {% for error in form.form_errors %}
+    <p class="error" role="alert">{{ error }}</p>
+  {% endfor %}
+
+  <span class="label">Email</span>
+  <span>{{ user.email }}</span>
+
+  {% if is_self %}
+    {# An admin cannot demote or lock themselves: shown, not editable. #}
+    <input type="hidden" name="role" value="{{ user.role.value }}">
+    <span class="label">Role</span>
+    <span>Admin <span class="hint">(your own account)</span></span>
+    <span class="label">Status</span>
+    <span>Active</span>
+  {% else %}
+    <label for="edit-role">{{ form.role.label.text }}</label>
+    {{ form.role(id="edit-role") }}
+    {% for error in form.role.errors %}<p class="error">{{ error }}</p>{% endfor %}
+
+    <label class="checkbox">{{ form.locked(id="edit-locked") }} {{ form.locked.label.text }}</label>
+  {% endif %}
+
+  {% with password_optional = true, id_prefix = "edit-" %}{% include "_new_password_fields.html" %}{% endwith %}
+
+  <button type="submit">Save</button>
+  <span id="user-indicator" class="htmx-indicator">Saving…</span>
+</form>

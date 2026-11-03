@@ -30,6 +30,7 @@ __all__ = [
     "set_password",
     "set_role",
     "start_login_attempt",
+    "update_user",
     "validate_new_password",
 ]
 
@@ -243,6 +244,37 @@ def set_locked(conn: Connection, user: User, *, locked: bool) -> None:
     with conn.cursor() as cur:
         cur.execute(
             "UPDATE USERS SET IS_LOCKED = ? WHERE ID = ?", (locked, user.id.bytes)
+        )
+    conn.commit()
+
+
+def update_user(
+    conn: Connection,
+    user: User,
+    *,
+    role: Role,
+    locked: bool,
+    password: str | None,
+    min_password_length: int = MIN_PASSWORD_LENGTH,
+) -> None:
+    """
+    Set role, lock state and, unless password is None, a new password, all in
+    one transaction. Raises PasswordTooShortError before changing anything.
+    """
+    if password is None:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE USERS SET ROLE = ?, IS_LOCKED = ? WHERE ID = ?",
+                (role.value, locked, user.id.bytes),
+            )
+        conn.commit()
+        return
+
+    validate_new_password(password, min_length=min_password_length)
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE USERS SET ROLE = ?, IS_LOCKED = ?, PASSWORD_HASH = ? WHERE ID = ?",
+            (role.value, locked, _hasher.hash(password), user.id.bytes),
         )
     conn.commit()
 

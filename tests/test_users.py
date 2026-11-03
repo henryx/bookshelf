@@ -21,6 +21,7 @@ from bookshelf.models.users import (
     set_locked,
     set_password,
     set_role,
+    update_user,
 )
 
 
@@ -210,3 +211,43 @@ def test_create_user_uses_given_min_length(db_app: Flask):
 def test_set_password_uses_given_min_length(db_app: Flask, user: User):
     with db_app.app_context(), pytest.raises(PasswordTooShortError, match="16"):
         set_password(get_db(), user, "x" * 15, min_password_length=16)
+
+
+def test_update_user_applies_all_changes(db_app: Flask, user: User):
+    with db_app.app_context():
+        conn = get_db()
+        update_user(conn, user, role=Role.ADMIN, locked=True, password="x" * 12)
+        updated = find_by_email(conn, user.email)
+    assert updated is not None
+    assert updated.role is Role.ADMIN
+    assert updated.is_locked
+    assert updated.password_hash != user.password_hash
+
+
+def test_update_user_without_password_keeps_it(db_app: Flask, user: User):
+    with db_app.app_context():
+        conn = get_db()
+        update_user(conn, user, role=Role.REGULAR, locked=True, password=None)
+        updated = find_by_email(conn, user.email)
+    assert updated is not None
+    assert updated.password_hash == user.password_hash
+
+
+def test_update_user_rejects_short_password_and_changes_nothing(
+    db_app: Flask, user: User
+):
+    with db_app.app_context(), pytest.raises(PasswordTooShortError, match="16"):
+        update_user(
+            get_db(),
+            user,
+            role=Role.ADMIN,
+            locked=True,
+            password="x" * 15,
+            min_password_length=16,
+        )
+
+    with db_app.app_context():
+        unchanged = find_by_email(get_db(), user.email)
+    assert unchanged is not None
+    assert unchanged.role is Role.REGULAR
+    assert not unchanged.is_locked

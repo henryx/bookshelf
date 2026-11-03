@@ -6,10 +6,7 @@ from flask_login import (
     login_user,
     logout_user,
 )
-from flask_wtf import FlaskForm
 from werkzeug.wrappers import Response as BaseResponse
-from wtforms import EmailField, PasswordField
-from wtforms.validators import DataRequired, Email, Length
 
 from bookshelf.db import get_db
 from bookshelf.models.users import (
@@ -20,6 +17,7 @@ from bookshelf.models.users import (
     start_login_attempt,
 )
 from bookshelf.routes import htmx_redirect, is_htmx
+from bookshelf.routes.forms import LoginForm
 
 __all__ = ["auth_route", "login_manager"]
 
@@ -30,19 +28,6 @@ login_manager.login_view = "auth.login"
 
 INVALID_CREDENTIALS = "Invalid email or password"
 TOO_MANY_ATTEMPTS = "Too many failed login attempts. Please try again later."
-
-
-def _strip(value: str | None) -> str | None:
-    return value.strip() if value else value
-
-
-class LoginForm(FlaskForm):
-    email = EmailField(
-        "Email",
-        filters=[_strip],
-        validators=[DataRequired(), Length(max=254), Email()],
-    )
-    password = PasswordField("Password", validators=[DataRequired()])
 
 
 @login_manager.user_loader

@@ -2,21 +2,17 @@ from firebird.driver import Connection
 from flask import Blueprint, abort, current_app, render_template, request, url_for
 from flask_login import login_user
 from werkzeug.wrappers import Response as BaseResponse
-from wtforms import PasswordField, ValidationError
-from wtforms.validators import DataRequired, EqualTo
 
 from bookshelf.db import get_db
 from bookshelf.db.schema import init_db, table_exists
 from bookshelf.models.users import (
-    PasswordTooShortError,
     Role,
     UserExistsError,
     admin_exists,
     create_user,
-    validate_new_password,
 )
 from bookshelf.routes import htmx_redirect, is_htmx
-from bookshelf.routes.auth import LoginForm
+from bookshelf.routes.forms import NewAccountForm
 
 __all__ = ["setup_needed", "setup_route"]
 
@@ -24,21 +20,6 @@ setup_route = Blueprint("setup", __name__)
 
 # Set once this process has seen an admin; setup never needs to run again.
 _DONE_KEY = "bookshelf.setup_done"
-
-
-class SetupForm(LoginForm):
-    confirm = PasswordField(
-        "Confirm password",
-        validators=[DataRequired(), EqualTo("password", "Passwords must match")],
-    )
-
-    def validate_password(self, field: PasswordField) -> None:
-        try:
-            validate_new_password(
-                field.data or "", min_length=current_app.config["MIN_PASSWORD_LENGTH"]
-            )
-        except PasswordTooShortError as e:
-            raise ValidationError(str(e)) from e
 
 
 def setup_needed(conn: Connection) -> bool:
@@ -73,7 +54,7 @@ def require_setup() -> BaseResponse | None:
     return htmx_redirect(url_for("setup.wizard"))
 
 
-def _render_setup(form: SetupForm) -> str:
+def _render_setup(form: NewAccountForm) -> str:
     template = "_setup_form.html" if is_htmx() else "setup.html"
     return render_template(template, form=form)
 
@@ -81,7 +62,7 @@ def _render_setup(form: SetupForm) -> str:
 @setup_route.route("/setup", methods=("GET", "POST"))
 def wizard() -> BaseResponse | str:
     """Create the schema and the first admin, then log the admin in."""
-    form = SetupForm()
+    form = NewAccountForm()
     if not form.validate_on_submit():
         return _render_setup(form)
 

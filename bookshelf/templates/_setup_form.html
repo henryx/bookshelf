@@ -10,15 +10,7 @@
   {{ form.email(id="email", autocomplete="username", required=True, autofocus=True) }}
   {% for error in form.email.errors %}<p class="error">{{ error }}</p>{% endfor %}
 
-  <label for="password">{{ form.password.label.text }}</label>
-  {{ form.password(id="password", autocomplete="new-password", required=True,
-                   aria_describedby="password-hint") }}
-  <p id="password-hint" class="hint">At least {{ config.MIN_PASSWORD_LENGTH }} characters.</p>
-  {% for error in form.password.errors %}<p class="error">{{ error }}</p>{% endfor %}
-
-  <label for="confirm">{{ form.confirm.label.text }}</label>
-  {{ form.confirm(id="confirm", autocomplete="new-password", required=True) }}
-  {% for error in form.confirm.errors %}<p class="error">{{ error }}</p>{% endfor %}
+  {% include "_new_password_fields.html" %}
 
   <button type="submit">Create admin</button>
   <span id="setup-indicator" class="htmx-indicator">Setting up…</span>

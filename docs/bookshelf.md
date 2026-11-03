@@ -105,13 +105,62 @@ Decisions:
 
 ### Admin area
 
-Admin area is accessible only to admin users. In this area, are shown all users stored in the system. An admin can be:
- - create and delete an user.
- - promote an user as administrator.
- - lock an user.
- - reset the password for the user.
+The admin area is where admins manage the people who can use Bookshelf. Only admins can open it: a visitor who is
+not logged in is sent to the login page, and a regular user is refused. An admin can:
 
-Status: the web admin area is not built yet. These operations are available as CLI commands (see README):
+ - See every user, with their email, role and status.
+ - Create a user.
+ - Make a user an admin, or an admin a regular user again.
+ - Lock a user, so they can no longer log in, and unlock them.
+ - Set a new password for a user. There is no email, so the admin chooses it and tells the user.
+ - Delete a user for good.
+
+**Opening it.** When an admin is logged in, an "Admin" button appears in the top bar next to their email; other users
+do not see it. It opens the users list: a table with each user's email, role (regular or admin) and status (active or
+locked).
+
+**Editing a user.** Clicking an email opens the user's details in a modal dialog over the list. The email is shown but
+cannot be changed: it is the login, so a wrong email means deleting the user and creating them again. The role, the
+lock and a new password (typed twice; left empty, the current one is kept) are editable. Save applies the changes
+together, and only if every field is valid; otherwise the dialog stays open, shows what is wrong and changes nothing.
+Closing the dialog discards unsaved changes.
+
+**Deleting a user.** The details dialog has a Delete button, which asks for confirmation.
+
+**Creating a user.** A "Create user" button, on the right of the "Users" heading, opens a dialog asking for the
+email and the password (typed twice). New users are regular users; an admin makes them admins from their details.
+
+**Rules.** Emails and passwords follow the rules used everywhere else: a valid email not used by another user, and
+a password of at least `APP_MIN_PASSWORD_LENGTH` characters (12 by default). An admin cannot demote, lock or delete
+their own account, so at least one active admin always remains; they may change their own password and stay logged
+in.
+
+**Effects.** Changes apply from the user's next request: a locked user, or one whose password changed, is logged out
+on every device, "remember me" cookie included, and a demoted admin loses the admin area. After a save, a creation
+or a deletion the list reloads with a confirmation message, and the change is logged with the admin who made it.
+
+Status: built at `/admin/users`.
+
+Decisions:
+
+ - Regular users get 403 rather than a redirect. The user is reloaded from the database on every request, which is
+   what makes locking, demotion and password changes take effect at once.
+ - Without JavaScript the admin area still works: an email link opens the details as a page (`/admin/users/<id>`),
+   and a create form posted with errors comes back with its dialog already open.
+ - Save writes role, lock and password in one transaction, after all fields are validated.
+ - An admin's own details show role and status as text and have no Delete button; requests that would demote, lock
+   or delete their own account are refused anyway. Changing their own password renews their session.
+ - An error from the server, or no answer at all, closes any open dialog, so the error banner is not hidden behind
+   it.
+
+Known limitations:
+
+ - Unlike the CLI, the admin area does not ask for the admin's password again before a change; it relies on the
+   login session and CSRF protection.
+ - The delete confirmation comes from htmx, so without JavaScript a user is deleted without asking. htmx is vendored
+   with the app, so in practice it is always loaded.
+
+The same operations are also available as CLI commands (see README):
 
 | Operation | CLI command |
 |---|---|
@@ -192,5 +241,5 @@ Open questions:
    showing everything at once and paging or infinite scroll. Suggested default: pages of 50.
 5. **Layout.** On the phone (PWA), a list of rows or a grid of covers? Depends on question 10 under Books.
    Suggested default: a list.
-6. **Admin area link.** When the web admin area is built, is it reached from the main page (a link visible only
-   to admins)? Suggested default: yes.
+6. **Admin area link.** Answered: an "Admin" button next to the user's email, visible only to admins (see Admin
+   area).

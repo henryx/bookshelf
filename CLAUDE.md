@@ -32,9 +32,10 @@ Bookshelf library webapp is a webapp to manage a book library built with Flask u
 - `bookshelf/cli.py`: Flask CLI commands; admin operations go through `_require_admin`
 - `bookshelf/db/`: per-process `ConnectionPool`; `get_db` takes a connection for the app context and teardown returns it (rolled back); `schema.py` holds table DDL and `init_db`
 - `bookshelf/models/`: data access and domain logic (`users.py`)
-- `bookshelf/routes/`: blueprints (`auth`, `main`, `setup`); `__init__.py` has the `is_htmx()` and `htmx_redirect()` helpers
+- `bookshelf/routes/`: blueprints (`auth`, `main`, `setup`, `admin`); `__init__.py` has the `is_htmx()` and `htmx_redirect()` helpers; `forms.py` holds the Flask-WTF forms
+- `bookshelf/routes/admin.py`: admin area (`/admin/users`), admins only; users list, create, details/edit, delete
 - `bookshelf/routes/setup.py`: first-run wizard; redirects every request to `/setup` until an admin exists
-- `bookshelf/templates/`, `bookshelf/static/`: Jinja templates and CSS; htmx is vendored in `static/`
+- `bookshelf/templates/`, `bookshelf/static/`: Jinja templates and CSS; htmx is vendored in `static/`; `app.js` holds the error-banner and dialog handlers
 - `tests/conftest.py`: session Firebird container, `app`/`db_app`/`empty_db_app` fixtures; autouse `setup_complete` skips the first-run wizard (overridden in `test_setup.py`)
 - `docs/bookshelf.md`: requirements, decisions and open questions
 - `dev.env` (dev server) and `test.env` (tests) are deliberately separate: tests wipe tables
@@ -88,6 +89,8 @@ Bookshelf library webapp is a webapp to manage a book library built with Flask u
 ### Templates & HTMX
 - Use template inheritance (`{% extends %}`, `{% block %}`)
 - Create partial templates for HTMX responses (`_partial.html` naming)
+- Modal dialogs use `<dialog>` with `app.js`: `data-dialog-open="<id>"` opens one, `data-dialog-close` closes it, and content swapped by htmx into a closed dialog opens it. Keep a no-JS fallback (a page or a dialog rendered `open`)
+- When two forms can share a page (e.g. two dialogs), give their element ids a prefix (`_new_password_fields.html` takes `id_prefix`)
 - Always include `hx-indicator` for loading states
 - Handle `HX-Request` header for partial vs full page responses
 

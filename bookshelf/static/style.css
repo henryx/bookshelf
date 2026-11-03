@@ -78,6 +78,12 @@ button:disabled {
   flex-wrap: wrap;
 }
 
+.topbar h1 a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.topbar nav,
 .topbar form {
   display: flex;
   align-items: center;
@@ -105,4 +111,96 @@ button:disabled {
 
 .error-banner:empty {
   display: none;
+}
+
+a {
+  color: var(--accent);
+}
+
+.flash {
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--accent);
+  border-radius: 0.5rem;
+}
+
+.users {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.users th,
+.users td {
+  padding: 0.5rem;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: middle;
+}
+
+/* Narrow screens: one card per user instead of a wide table. */
+@media (max-width: 40rem) {
+  .users thead {
+    display: none;
+  }
+
+  .users tr {
+    display: grid;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .users td {
+    padding: 0.125rem 0;
+    border: 0;
+  }
+}
+
+a.button {
+  padding: 0.5rem;
+  background: var(--accent);
+  color: var(--bg);
+  border-radius: 0.25rem;
+  text-decoration: none;
+}
+
+.label {
+  font-weight: 600;
+}
+
+.checkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.danger {
+  margin-top: 1rem;
+}
+
+.danger button {
+  background: var(--error);
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+
+button.secondary {
+  background: transparent;
+  color: var(--fg);
+}
+
+dialog {
+  width: min(32rem, calc(100vw - 2rem));
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+dialog::backdrop {
+  background: rgb(0 0 0 / 0.4);
 }

@@ -1,0 +1,16 @@
+<header class="topbar">
+  <h1><a href="{{ url_for('main.index') }}">Bookshelf</a></h1>
+  <nav>
+    <span>{{ current_user.email }}</span>
+    {% if current_user.is_admin %}
+      <a class="button" href="{{ url_for('admin.users') }}">Admin</a>
+    {% endif %}
+    <form method="post" action="{{ url_for('auth.logout') }}"
+          hx-post="{{ url_for('auth.logout') }}"
+          hx-indicator="#logout-indicator" hx-disabled-elt="find button">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit">Log out</button>
+      <span id="logout-indicator" class="htmx-indicator">…</span>
+    </form>
+  </nav>
+</header>

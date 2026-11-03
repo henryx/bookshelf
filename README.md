@@ -74,7 +74,13 @@ All settings come from environment variables:
 | `APP_WORKERS` | no | 2 × CPUs + 1 | gunicorn worker processes; set it in containers with a CPU limit |
 | `APP_TIMEOUT` | no | `30` | Seconds before gunicorn restarts a worker stuck on a request |
 
-## User management (CLI)
+## User management
+
+Admins manage users in the web app: the "Admin" button next to their email opens the users list. "Create user"
+opens a dialog to add a regular user, and clicking a user's email opens a dialog to change their role, lock state
+or password, or to delete them. The same operations are available from the CLI.
+
+### CLI
 
 Run with `uv run dotenv -f dev.env run flask --app bookshelf <command>`, or with the
 production environment set. Passwords are always prompted, never passed as arguments.
