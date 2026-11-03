@@ -48,9 +48,11 @@ Decisions:
    failures are older than 15 minutes. Because the email limit is per IP, an attacker cannot lock the real user out:
    their failures only block their own IP. The trade-off is that an attacker using many IPs gets 5 guesses per IP
    per account; Argon2 hashing keeps each guess slow. Unknown emails are limited the same way, so a block does not
-   reveal which accounts exist. Refused attempts are not counted, and a successful login clears that email's
-   failures from that IP. Failures are stored in the `LOGIN_FAILURES` table with the client IP (see
-   `APP_TRUSTED_PROXIES` behind a reverse proxy, or every client shares the proxy's IP). The CLI is not limited.
+   reveal which accounts exist. Each attempt is recorded as a failure before its password is checked, so attempts
+   sent at the same moment count each other and no more than the limit get through. Refused attempts are not
+   counted, and a successful login clears that email's failures from that IP. Failures are stored in the
+   `LOGIN_FAILURES` table with the client IP (see `APP_TRUSTED_PROXIES` behind a reverse proxy, or every client
+   shares the proxy's IP). The CLI is not limited.
    All limits are configurable (`APP_LOGIN_MAX_FAILURES`, `APP_LOGIN_MAX_IP_FAILURES`, `APP_LOGIN_BLOCK_MINUTES`;
    see README); 5, 20 and 15 are the defaults.
  - Emails must be valid addresses (checked with `email-validator`, no DNS lookup), on the login form and when
@@ -89,6 +91,10 @@ locked) and is logged with the admin who performed it. An admin cannot lock, dem
 Because every admin operation needs an active (not locked) admin, and no admin can lock, demote or delete
 themselves, the admin performing an operation always remains an active admin. The CLI therefore can never leave
 the system without an active admin, so the last admin needs no separate protection.
+
+Known limitation: two `create-admin` runs at the same moment can both find no admin and both succeed, leaving two
+admins. Firebird 3 cannot enforce "only one admin" with a constraint, and `create-admin` is run by hand once at
+setup, so this is accepted rather than guarded with an extra table.
 
 ## Main page
 

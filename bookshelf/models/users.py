@@ -20,12 +20,11 @@ __all__ = [
     "find_by_email",
     "find_by_id",
     "find_by_session_id",
-    "is_login_blocked",
     "list_users",
-    "record_login_failure",
     "set_locked",
     "set_password",
     "set_role",
+    "start_login_attempt",
 ]
 
 # Firebird GDS code for "violation of PRIMARY or UNIQUE KEY constraint".
@@ -230,7 +229,7 @@ def authenticate(conn: Connection, email: str, password: str) -> User | None:
     return user
 
 
-def is_login_blocked(
+def start_login_attempt(
     conn: Connection,
     email: str,
     ip: str,
@@ -240,36 +239,23 @@ def is_login_blocked(
     window_minutes: int,
 ) -> bool:
     """
-    True if, in the last window_minutes, the email had at least max_failures
-    failed logins from this IP, or the IP had at least max_ip_failures across
-    all emails. Counting per email and IP means failures from an attacker's IP
-    do not lock the real user out. Applies to unknown emails too, so a block
-    does not reveal which accounts exist.
-    """
-    with conn.cursor() as cur:
-        cur.execute(
-            "SELECT COUNT(*) FROM LOGIN_FAILURES WHERE EMAIL = ? AND IP_ADDRESS = ? "
-            "AND ATTEMPTED_AT > DATEADD(? MINUTE TO CURRENT_TIMESTAMP)",
-            (_normalise(email), ip, -window_minutes),
-        )
-        (email_failures,) = cur.fetchone()
-        if email_failures >= max_failures:
-            return True
-        cur.execute(
-            "SELECT COUNT(*) FROM LOGIN_FAILURES WHERE IP_ADDRESS = ? "
-            "AND ATTEMPTED_AT > DATEADD(? MINUTE TO CURRENT_TIMESTAMP)",
-            (ip, -window_minutes),
-        )
-        (ip_failures,) = cur.fetchone()
-    return ip_failures >= max_ip_failures
+    Record a login attempt as a failure before its password is checked, and
+    return whether it may go ahead. It may not if, counting itself, the email
+    has more than max_failures failures from this IP in the last
+    window_minutes, or the IP more than max_ip_failures across all emails;
+    a refused attempt is removed again, so it does not extend the block.
 
+    Recording first, in its own transaction, means attempts sent at once each
+    count the others, so no more than the limit reach the password check.
+    A successful login then clears the failures (clear_login_failures).
 
-def record_login_failure(
-    conn: Connection, email: str, ip: str, *, window_minutes: int
-) -> None:
+    Counting per email and IP means failures from an attacker's IP do not
+    lock the real user out. Unknown emails are limited too, so a block does
+    not reveal which accounts exist. Failures older than window_minutes are
+    pruned.
     """
-    Record a failed login and prune failures older than window_minutes.
-    """
+    attempt_id = uuid4().bytes
+    email = _normalise(email)
     with conn.cursor() as cur:
         cur.execute(
             "DELETE FROM LOGIN_FAILURES "
@@ -278,9 +264,50 @@ def record_login_failure(
         )
         cur.execute(
             "INSERT INTO LOGIN_FAILURES (ID, EMAIL, IP_ADDRESS) VALUES (?, ?, ?)",
-            (uuid4().bytes, _normalise(email), ip),
+            (attempt_id, email, ip),
         )
     conn.commit()
+
+    if not _over_limit(
+        conn,
+        email,
+        ip,
+        max_failures=max_failures,
+        max_ip_failures=max_ip_failures,
+        window_minutes=window_minutes,
+    ):
+        return True
+    with conn.cursor() as cur:
+        cur.execute("DELETE FROM LOGIN_FAILURES WHERE ID = ?", (attempt_id,))
+    conn.commit()
+    return False
+
+
+def _over_limit(
+    conn: Connection,
+    email: str,
+    ip: str,
+    *,
+    max_failures: int,
+    max_ip_failures: int,
+    window_minutes: int,
+) -> bool:
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT COUNT(*) FROM LOGIN_FAILURES WHERE EMAIL = ? AND IP_ADDRESS = ? "
+            "AND ATTEMPTED_AT > DATEADD(? MINUTE TO CURRENT_TIMESTAMP)",
+            (email, ip, -window_minutes),
+        )
+        (email_failures,) = cur.fetchone()
+        if email_failures > max_failures:
+            return True
+        cur.execute(
+            "SELECT COUNT(*) FROM LOGIN_FAILURES WHERE IP_ADDRESS = ? "
+            "AND ATTEMPTED_AT > DATEADD(? MINUTE TO CURRENT_TIMESTAMP)",
+            (ip, -window_minutes),
+        )
+        (ip_failures,) = cur.fetchone()
+    return ip_failures > max_ip_failures
 
 
 def clear_login_failures(conn: Connection, email: str, ip: str) -> None:

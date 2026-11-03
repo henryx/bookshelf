@@ -25,8 +25,7 @@ from bookshelf.models.users import (
     authenticate,
     clear_login_failures,
     find_by_session_id,
-    is_login_blocked,
-    record_login_failure,
+    start_login_attempt,
 )
 from bookshelf.routes import is_htmx
 
@@ -105,15 +104,15 @@ def login() -> BaseResponse | str | tuple[str, int]:
     email = form.email.data or ""
     ip = request.remote_addr or ""
     cfg = current_app.config
-    window_minutes = cfg["LOGIN_BLOCK_MINUTES"]
-    # Blocked attempts are not checked or counted, so retrying does not extend the block.
-    if is_login_blocked(
+    # Counted as a failure until the password checks out; blocked attempts
+    # are not checked or counted, so retrying does not extend the block.
+    if not start_login_attempt(
         conn,
         email,
         ip,
         max_failures=cfg["LOGIN_MAX_FAILURES"],
         max_ip_failures=cfg["LOGIN_MAX_IP_FAILURES"],
-        window_minutes=window_minutes,
+        window_minutes=cfg["LOGIN_BLOCK_MINUTES"],
     ):
         current_app.logger.warning(
             "Blocked login for %s from %s: too many failed attempts", email, ip
@@ -124,7 +123,6 @@ def login() -> BaseResponse | str | tuple[str, int]:
     user = authenticate(conn, email, form.password.data or "")
     if user is None:
         current_app.logger.info("Failed login for %s from %s", email, ip)
-        record_login_failure(conn, email, ip, window_minutes=window_minutes)
         form.form_errors.append(INVALID_CREDENTIALS)
         return _render_login(form)
 

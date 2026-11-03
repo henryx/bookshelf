@@ -1,4 +1,6 @@
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
 from uuid import uuid4
 
 from flask import Flask
@@ -314,3 +316,39 @@ def test_login_ignores_spaces_around_email(
     rv = _login(db_client, f"  {user.email}  ", password)
 
     assert rv.status_code == 302
+
+
+def test_concurrent_failed_logins_cannot_exceed_the_limit(db_app: Flask, user: User):
+    """Attempts sent at once must not all pass the check before any is counted."""
+    attempts, limit = 10, 5
+    start = Barrier(attempts)
+
+    def attempt(_: int) -> int:
+        client = db_app.test_client()
+        start.wait()
+        return _login(client, user.email, "wrong").status_code
+
+    with ThreadPoolExecutor(max_workers=attempts) as pool:
+        statuses = list(pool.map(attempt, range(attempts)))
+
+    checked = [s for s in statuses if s != 429]
+    assert len(checked) <= limit, statuses
+    with db_app.app_context():
+        assert _failures(user.email) == len(checked)
+
+
+def test_blocked_attempt_is_not_counted(db_client: FlaskClient, user: User):
+    _fail_logins(db_client, user.email, 5)
+
+    _login(db_client, user.email, "wrong")
+    _login(db_client, user.email, "wrong")
+
+    with db_client.application.app_context():
+        assert _failures(user.email) == 5
+
+
+def _failures(email: str) -> int:
+    with get_db().cursor() as cur:
+        cur.execute("SELECT COUNT(*) FROM LOGIN_FAILURES WHERE EMAIL = ?", (email,))
+        (count,) = cur.fetchone()
+    return count
