@@ -8,6 +8,14 @@ This is the bookshelf application.
 
 Frontend is developed using HTMX library as PWA, to permit to install on mobile devices.
 
+Decisions:
+
+ - Data access uses `firebird-driver` with literal SQL queries; no ORM.
+ - The schema is created and upgraded by `init-db`, which adds missing tables, columns, constraints and indexes and
+   is safe to rerun. There is no migration framework or version table: a change to an existing table is added as its
+   own `ALTER TABLE` / `CREATE INDEX` statement and never edited into the table's original DDL (see README, "Schema
+   changes"). `init-db` cannot rename, retype or drop objects.
+
 ## Authentication
 
 ### Technical details

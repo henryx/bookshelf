@@ -59,6 +59,7 @@ Bookshelf library webapp is a webapp to manage a book library built with Flask u
 - Docker:
   - Limit layers in Dockerfile
 - SQL:
+  - Schema changes to an existing table go in `COLUMNS`, `CONSTRAINTS` or `INDEXES` in `bookshelf/db/schema.py`; never edit a released `TABLES` entry. New tables go in `TABLES`.
   - Write each query as a complete literal string.
   - Never use f-strings or other interpolation for column names, table names or clauses.
   - Pass values only as `?` parameters.

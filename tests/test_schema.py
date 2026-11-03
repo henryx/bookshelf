@@ -3,7 +3,7 @@ from firebird.driver import Connection
 from flask import Flask
 
 from bookshelf.db import get_db
-from bookshelf.db.schema import init_db
+from bookshelf.db.schema import COLUMNS, CONSTRAINTS, TABLES, init_db
 
 
 @pytest.mark.parametrize("table", ["USERS", "LOGIN_FAILURES"])
@@ -79,3 +79,13 @@ def test_init_db_adds_email_check_to_existing_users(db_app: Flask):
 def test_init_db_can_run_again(db_app: Flask):
     with db_app.app_context():
         init_db(get_db())
+
+
+def test_later_columns_and_constraints_are_defined_once():
+    """Each lives only in COLUMNS or CONSTRAINTS, never also in CREATE TABLE."""
+    later = [column for _, column in COLUMNS] + list(CONSTRAINTS)
+    duplicated = [
+        name for name in later for ddl in TABLES.values() if name in ddl.upper()
+    ]
+
+    assert duplicated == []

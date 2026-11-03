@@ -8,6 +8,8 @@ DOMAINS: dict[str, str] = {
     "UUID": "CREATE DOMAIN UUID AS CHAR(16) CHARACTER SET OCTETS",
 }
 
+# Tables as first released. Never change this DDL: later changes go in COLUMNS,
+# CONSTRAINTS or INDEXES.
 TABLES: dict[str, str] = {
     "USERS": """
         CREATE TABLE USERS (
@@ -16,35 +18,32 @@ TABLES: dict[str, str] = {
             PASSWORD_HASH VARCHAR(255) NOT NULL,
             ROLE VARCHAR(16) DEFAULT 'REGULAR' NOT NULL,
             IS_LOCKED BOOLEAN DEFAULT FALSE NOT NULL,
-            CONSTRAINT CHK_USERS_ROLE CHECK (ROLE IN ('ADMIN', 'REGULAR')),
-            -- Lowercase and trimmed, so UNIQUE also holds ignoring case. Lengths are
-            -- compared because Firebird ignores trailing spaces in string equality.
-            CONSTRAINT CHK_USERS_EMAIL_NORMALISED CHECK (
-                EMAIL = LOWER(EMAIL) AND CHAR_LENGTH(EMAIL) = CHAR_LENGTH(TRIM(EMAIL))
-            )
+            CONSTRAINT CHK_USERS_ROLE CHECK (ROLE IN ('ADMIN', 'REGULAR'))
         )
     """,
     "LOGIN_FAILURES": """
         CREATE TABLE LOGIN_FAILURES (
             ID UUID NOT NULL PRIMARY KEY,
             EMAIL VARCHAR(254) NOT NULL,
-            IP_ADDRESS VARCHAR(45) DEFAULT '' NOT NULL,
             ATTEMPTED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
         )
     """,
 }
 
 # Columns added after their table was first released, keyed by (table, column).
-# Created after TABLES, for databases whose tables predate them.
+# Defined only here, not in TABLES: new and existing databases both get them
+# from these statements, run after TABLES.
 COLUMNS: dict[tuple[str, str], str] = {
     ("LOGIN_FAILURES", "IP_ADDRESS"): (
         "ALTER TABLE LOGIN_FAILURES ADD IP_ADDRESS VARCHAR(45) DEFAULT '' NOT NULL"
     ),
 }
 
-# Constraints added after their table was first released. Firebird does not
-# check existing rows when one is added.
+# Constraints added after their table was first released. Defined only here,
+# like COLUMNS. Firebird does not check existing rows when one is added.
 CONSTRAINTS: dict[str, str] = {
+    # Lowercase and trimmed, so UNIQUE also holds ignoring case. Lengths are
+    # compared because Firebird ignores trailing spaces in string equality.
     "CHK_USERS_EMAIL_NORMALISED": (
         "ALTER TABLE USERS ADD CONSTRAINT CHK_USERS_EMAIL_NORMALISED CHECK ("
         "EMAIL = LOWER(EMAIL) AND CHAR_LENGTH(EMAIL) = CHAR_LENGTH(TRIM(EMAIL)))"

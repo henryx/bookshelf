@@ -111,6 +111,18 @@ and 20 failed logins from anyone block logins for everyone.
 After upgrading, run `init-db` again: it adds any new tables, columns, constraints and indexes to an existing database.
 New check constraints apply to rows written from then on; Firebird does not recheck existing rows.
 
+## Schema changes
+
+The schema lives in `bookshelf/db/schema.py`, and `init-db` creates whatever is missing, in this order:
+`DOMAINS`, `TABLES`, `COLUMNS`, `CONSTRAINTS`, `INDEXES`.
+
+- A new table goes in `TABLES`.
+- A change to an existing table goes in `COLUMNS` (`ALTER TABLE … ADD`), `CONSTRAINTS` or `INDEXES`. Never
+  edit a released `TABLES` entry: databases that already have the table would not get the change. Each
+  column or constraint is defined in one place only, so new and existing databases get it through the
+  same statement; a test fails if it also appears in `CREATE TABLE`.
+- `init-db` only adds. Renaming, retyping or dropping something needs a hand-written step.
+
 ## CI and releases
 
 GitHub Actions run lint, format check, type check, audit and tests on every push to
