@@ -1,12 +1,4 @@
-from flask import (
-    Blueprint,
-    Response,
-    current_app,
-    redirect,
-    render_template,
-    request,
-    url_for,
-)
+from flask import Blueprint, current_app, render_template, request, url_for
 from flask_login import (
     LoginManager,
     current_user,
@@ -27,7 +19,7 @@ from bookshelf.models.users import (
     find_by_session_id,
     start_login_attempt,
 )
-from bookshelf.routes import is_htmx
+from bookshelf.routes import htmx_redirect, is_htmx
 
 __all__ = ["auth_route", "login_manager"]
 
@@ -65,17 +57,6 @@ def load_user(session_id: str) -> User | None:
     return user
 
 
-def _redirect(url: str) -> BaseResponse:
-    """
-    Redirect that works for both HTMX and plain requests.
-    """
-    if not is_htmx():
-        return redirect(url)
-    resp = Response(status=204)
-    resp.headers["HX-Redirect"] = url
-    return resp
-
-
 @login_manager.unauthorized_handler
 def unauthorized() -> BaseResponse:
     """
@@ -83,7 +64,7 @@ def unauthorized() -> BaseResponse:
     otherwise htmx would follow a 302 and swap the full login page into
     the request's target.
     """
-    return _redirect(url_for("auth.login"))
+    return htmx_redirect(url_for("auth.login"))
 
 
 def _render_login(form: LoginForm) -> str:
@@ -94,7 +75,7 @@ def _render_login(form: LoginForm) -> str:
 @auth_route.route("/login", methods=("GET", "POST"))
 def login() -> BaseResponse | str | tuple[str, int]:
     if current_user.is_authenticated:
-        return _redirect(url_for("main.index"))
+        return htmx_redirect(url_for("main.index"))
 
     form = LoginForm()
     if not form.validate_on_submit():
@@ -128,11 +109,11 @@ def login() -> BaseResponse | str | tuple[str, int]:
 
     clear_login_failures(conn, email, ip)
     login_user(user, remember=True)
-    return _redirect(url_for("main.index"))
+    return htmx_redirect(url_for("main.index"))
 
 
 @auth_route.route("/logout", methods=("POST",))
 @login_required
 def logout() -> BaseResponse:
     logout_user()
-    return _redirect(url_for("auth.login"))
+    return htmx_redirect(url_for("auth.login"))

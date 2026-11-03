@@ -74,6 +74,27 @@ Decisions:
  - Failed and blocked logins are logged with the email and the client IP, like the CLI logs emails for every admin
    operation. Only valid emails reach the log, so a password typed into the email field is not logged.
 
+### First run
+
+When the database has no schema (no `USERS` table) or no admin, every request except static files is redirected
+to a setup wizard (`/setup`). The wizard asks for an email and a password (entered twice), creates any missing
+schema (`init_db`), creates the admin and logs them in. Once an admin exists the wizard returns 404.
+
+Decisions:
+
+ - The wizard also appears when the schema exists but no admin does (e.g. `init-db` was run but not
+   `create-admin`), since the app cannot be used from the web without an admin.
+ - The wizard is open to the first visitor, with no setup token. Known risk: if the app is reachable by others
+   before setup is finished, anyone can create the admin. The administrator must finish setup first, or use the
+   CLI (`init-db`, `create-admin`), which stays available.
+ - The check runs on requests, not when the app starts: every gunicorn worker must notice when setup is done,
+   and CLI commands should not query the database just to start. Each process caches "setup done" once it has
+   seen an admin, so after setup the check costs nothing.
+ - The wizard checks again for an admin just before creating one, and sends the visitor to the login page if
+   another visitor finished first. Like `create-admin`, two submissions at the very same moment can still both
+   succeed (two admins); this is accepted for the same reason.
+ - The email follows the login form's rules. An email that already belongs to a (regular) user is refused.
+
 ### Admin area
 
 Admin area is accessible only to admin users. In this area, are shown all users stored in the system. An admin can be:

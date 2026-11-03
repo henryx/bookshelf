@@ -13,6 +13,7 @@ from bookshelf.logging_config import logging_config
 from bookshelf.routes import is_htmx
 from bookshelf.routes.auth import auth_route, login_manager
 from bookshelf.routes.main import main_route
+from bookshelf.routes.setup import setup_route
 
 __all__ = ["config", "configure_logging", "create_app", "routes"]
 
@@ -63,6 +64,7 @@ def create_app(overrides: Mapping[str, object] | None = None) -> Flask:
     cli.init_app(app)
     login_manager.init_app(app)
     CSRFProtect(app)
+    app.register_blueprint(setup_route)
     app.register_blueprint(auth_route)
     app.register_blueprint(main_route)
     return app

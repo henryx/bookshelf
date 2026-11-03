@@ -32,9 +32,10 @@ Bookshelf library webapp is a webapp to manage a book library built with Flask u
 - `bookshelf/cli.py`: Flask CLI commands; admin operations go through `_require_admin`
 - `bookshelf/db/`: per-process `ConnectionPool`; `get_db` takes a connection for the app context and teardown returns it (rolled back); `schema.py` holds table DDL and `init_db`
 - `bookshelf/models/`: data access and domain logic (`users.py`)
-- `bookshelf/routes/`: blueprints (`auth`, `main`); `__init__.py` has the `is_htmx()` request helper
+- `bookshelf/routes/`: blueprints (`auth`, `main`, `setup`); `__init__.py` has the `is_htmx()` and `htmx_redirect()` helpers
+- `bookshelf/routes/setup.py`: first-run wizard; redirects every request to `/setup` until an admin exists
 - `bookshelf/templates/`, `bookshelf/static/`: Jinja templates and CSS; htmx is vendored in `static/`
-- `tests/conftest.py`: session Firebird container, `app`/`db_app` fixtures
+- `tests/conftest.py`: session Firebird container, `app`/`db_app`/`empty_db_app` fixtures; autouse `setup_complete` skips the first-run wizard (overridden in `test_setup.py`)
 - `docs/bookshelf.md`: requirements, decisions and open questions
 - `dev.env` (dev server) and `test.env` (tests) are deliberately separate: tests wipe tables
 

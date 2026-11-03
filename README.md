@@ -29,15 +29,28 @@ docker run -d --name bookshelf-firebird \
   firebirdsql/firebird:3.0.14
 ```
 
-Create the tables and the first admin, then start the dev server:
+Start the dev server:
 
 ```sh
-uv run dotenv -f dev.env run flask --app bookshelf init-db
-uv run dotenv -f dev.env run flask --app bookshelf create-admin admin@example.com
 uv run dotenv -f dev.env run flask --app bookshelf run --debug
 ```
 
 The app is at <http://localhost:5000>. The passwords in `dev.env` and above are for local use only.
+
+## First run
+
+While the database has no tables or no admin, every page redirects to a setup wizard at
+`/setup`, which creates the tables and the first admin and logs that admin in. Once an admin
+exists, `/setup` returns 404. The wizard is open to whoever reaches it first: finish it before
+the app is reachable by anyone else, or create the admin from the CLI instead:
+
+```sh
+uv run dotenv -f dev.env run flask --app bookshelf init-db
+uv run dotenv -f dev.env run flask --app bookshelf create-admin admin@example.com
+```
+
+The wizard creates the tables with the app's own database user (`APP_DB_USER`), so that user
+must be allowed to create them (e.g. the database owner); otherwise run `init-db` first.
 
 ## Configuration
 

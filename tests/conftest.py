@@ -1,7 +1,9 @@
+import os
 from collections.abc import Callable, Iterator
+from uuid import uuid4
 
 import pytest
-from firebird.driver import connect
+from firebird.driver import connect, create_database
 from flask import Flask
 from flask.testing import FlaskClient
 from testcontainers.core.container import DockerContainer
@@ -47,6 +49,32 @@ def firebird() -> Iterator[None]:
         ) as conn:
             init_db(conn)
         yield
+
+
+@pytest.fixture(autouse=True)
+def setup_complete(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    Treat the app as set up, so requests are not sent to the first-run wizard
+    whatever the database holds. test_setup.py overrides this.
+    """
+    monkeypatch.setattr("bookshelf.routes.setup.setup_needed", lambda _conn: False)
+
+
+@pytest.fixture
+def empty_db_app() -> Iterator[Flask]:
+    """App on a new, empty database (no schema), dropped afterwards."""
+    data_dir = os.environ["APP_DB_DSN"].rpartition("/")[0]
+    dsn = f"{data_dir}/empty_{uuid4().hex}.fdb"
+    create_database(
+        dsn, user="SYSDBA", password=FIREBIRD_PASSWORD, charset="UTF8"
+    ).close()
+    app = create_app({"TESTING": True, "WTF_CSRF_ENABLED": False, "DATABASE_DSN": dsn})
+    yield app
+    close_pool(app)
+    with connect(
+        dsn, user="SYSDBA", password=FIREBIRD_PASSWORD, charset="UTF8"
+    ) as conn:
+        conn.drop_database()
 
 
 @pytest.fixture

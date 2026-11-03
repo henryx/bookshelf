@@ -1,6 +1,6 @@
 from firebird.driver import Connection
 
-__all__ = ["init_db"]
+__all__ = ["init_db", "table_exists"]
 
 # Created before TABLES, which use them.
 DOMAINS: dict[str, str] = {
@@ -61,6 +61,12 @@ INDEXES: dict[str, str] = {
         "CREATE INDEX IDX_LOGIN_FAILURES_IP_AT ON LOGIN_FAILURES (IP_ADDRESS, ATTEMPTED_AT)"
     ),
 }
+
+
+def table_exists(conn: Connection, name: str) -> bool:
+    with conn.cursor() as cur:
+        cur.execute("SELECT 1 FROM RDB$RELATIONS WHERE RDB$RELATION_NAME = ?", (name,))
+        return cur.fetchone() is not None
 
 
 def init_db(conn: Connection) -> None:
