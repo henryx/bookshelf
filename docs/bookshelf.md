@@ -96,6 +96,63 @@ Known limitation: two `create-admin` runs at the same moment can both find no ad
 admins. Firebird 3 cannot enforce "only one admin" with a constraint, and `create-admin` is run by hand once at
 setup, so this is accepted rather than guarded with an extra table.
 
+## Books
+
+Status: not built yet. The questions below need an answer before the book tables are designed. Suggested defaults
+are what would be built if the question stays open; each answer moves into a "Decisions" list here.
+
+Open questions:
+
+1. **Ownership.** Is there one shared library that every user sees, or does each user have their own books?
+   - Shared: one catalogue; users differ only in what they may do (see 2).
+   - Per user: each book belongs to a user; others cannot see it.
+   - Suggested default: shared, since a household or club library is the likely use.
+2. **Who may change books.** In a shared library, may regular users add, edit and delete books, or only admins?
+   Suggested default: every user may add and edit; only admins may delete.
+3. **Fields.** Which fields does a book have, and which are required?
+   - Candidates: title, subtitle, authors, ISBN, publisher, publication year, language, edition, page count,
+     cover image, description, notes, date added.
+   - Suggested default: title required; authors, ISBN, publisher, year, language and notes optional.
+4. **Authors.** Is the author a free-text field, or are authors their own records shared between books (so all
+   books by one author can be listed, and a misspelling fixed once)? Can a book have several authors?
+   Suggested default: author records, several per book, in order.
+5. **Classification.** Are books grouped by genre, tags, series (with volume number), or shelf/location in the
+   house? One of these, several, or none at first? Suggested default: free tags only.
+6. **Copies.** Is a book a title (one record however many copies), or a physical copy (two copies are two
+   records)? This matters if the same book can be owned twice or lent out. Suggested default: one record per
+   title, with a copy count.
+7. **Loans.** Should the app track who borrowed a book and when it is due back? To users of the app only, or also
+   to people without an account (a name typed in)? Suggested default: not in the first version.
+8. **Reading status.** Does each user track their own status per book (to read, reading, read) or a rating?
+   Suggested default: not in the first version.
+9. **ISBN lookup.** Should adding a book fill in its details from an online service by ISBN (e.g. Open Library)?
+   That means outgoing internet requests from a self-hosted app, and handling the service being down. Scanning
+   the barcode with the phone camera would come with it (PWA). Suggested default: manual entry first, lookup
+   later.
+10. **Covers.** If books have covers: uploaded files stored where (database or disk, and how big), or only a
+    link to an online image? Suggested default: no covers in the first version.
+11. **Duplicates.** Should the app refuse or warn about a second book with the same ISBN, or the same title and
+    author? Suggested default: refuse the same ISBN; allow books without one.
+12. **Deletion.** When a book is deleted, is it removed for good, or kept as deleted so it can be restored (and
+    loans and history stay readable)? Suggested default: removed for good, after a confirmation.
+13. **Import and export.** Is there an existing list of books to import (CSV, spreadsheet, another app's
+    export)? Should the library be exportable as a backup? Suggested default: CSV export only.
+
 ## Main page
 
-This is the main page
+Status: placeholder. After login it shows only the user's email and a logout button.
+
+Open questions:
+
+1. **Content.** Does the main page list the books directly, or is it a dashboard (recently added, currently
+   lent out, search box) with the list on its own page? Suggested default: the book list, with a search box.
+2. **Search.** Which fields does the search cover: title, author, ISBN, tags, notes? Is one search box enough,
+   or are filters needed (by author, tag, language)? Suggested default: one box over title, author and ISBN.
+3. **Sorting.** What is the default order (title, author, date added), and can the user change it? Suggested
+   default: by title, changeable to author or date added.
+4. **Size.** Roughly how many books will the library hold: hundreds or many thousands? This decides between
+   showing everything at once and paging or infinite scroll. Suggested default: pages of 50.
+5. **Layout.** On the phone (PWA), a list of rows or a grid of covers? Depends on question 10 under Books.
+   Suggested default: a list.
+6. **Admin area link.** When the web admin area is built, is it reached from the main page (a link visible only
+   to admins)? Suggested default: yes.
