@@ -53,6 +53,15 @@ Decisions:
    counted, and a successful login clears that email's failures from that IP. Failures are stored in the
    `LOGIN_FAILURES` table with the client IP (see `APP_TRUSTED_PROXIES` behind a reverse proxy, or every client
    shares the proxy's IP). The CLI is not limited.
+ - Expired failures (older than the block window) are deleted in two places. Each login attempt deletes only the
+   expired failures of its own email and IP: deleting every expired row on each attempt made concurrent logins
+   delete the same rows, and Firebird failed all but one with an update conflict (an error page for the user).
+   Rows for an email and IP that never try again are left behind, so the `prune-login-failures` CLI command
+   deletes all expired failures and is meant to run periodically (e.g. hourly from cron); without it the table
+   only grows. It needs no admin credentials, like `init-db`, since it removes only rows that no longer count.
+   Known limitation: concurrent attempts for the same email and IP, or a prune run at the same moment as a login
+   that deletes the same rows, can still hit the update conflict. That one request fails (or the prune run, which
+   the next run catches up on); this is rare enough to be accepted.
    All limits are configurable (`APP_LOGIN_MAX_FAILURES`, `APP_LOGIN_MAX_IP_FAILURES`, `APP_LOGIN_BLOCK_MINUTES`;
    see README); 5, 20 and 15 are the defaults.
  - Emails must be valid addresses (checked with `email-validator`, no DNS lookup), on the login form and when

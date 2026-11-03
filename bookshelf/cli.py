@@ -17,6 +17,7 @@ from bookshelf.models.users import (
     delete_user,
     find_by_email,
     list_users,
+    prune_login_failures,
     set_locked,
     set_password,
     set_role,
@@ -31,6 +32,17 @@ def init_db_command() -> None:
     """Create missing database tables, columns, constraints and indexes."""
     init_db(get_db())
     click.echo("Database initialised.")
+
+
+@click.command("prune-login-failures")
+@with_appcontext
+def prune_login_failures_command() -> None:
+    """Delete failed logins too old to count towards a block. Safe to run from cron."""
+    deleted = prune_login_failures(
+        get_db(), window_minutes=current_app.config["LOGIN_BLOCK_MINUTES"]
+    )
+    current_app.logger.info("Pruned %d expired login failures", deleted)
+    click.echo(f"Removed {deleted} expired login failures.")
 
 
 def _valid_email(_ctx: click.Context, _param: click.Parameter, value: str) -> str:
@@ -230,6 +242,7 @@ def list_users_command(admin_email: str) -> None:
 
 def init_app(app: Flask) -> None:
     app.cli.add_command(init_db_command)
+    app.cli.add_command(prune_login_failures_command)
     app.cli.add_command(create_admin_command)
     app.cli.add_command(create_user_command)
     app.cli.add_command(reset_user_password_command)

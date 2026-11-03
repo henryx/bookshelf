@@ -337,6 +337,39 @@ def test_concurrent_failed_logins_cannot_exceed_the_limit(db_app: Flask, user: U
         assert _failures(user.email) == len(checked)
 
 
+def test_concurrent_logins_with_expired_failures_succeed(db_app: Flask):
+    """Pruning expired failures must not make concurrent attempts conflict."""
+    emails = [f"reader{n}@example.com" for n in range(8)]
+    # All attempts share one IP; keep its limit out of the way.
+    db_app.config["LOGIN_MAX_IP_FAILURES"] = 1000
+    start = Barrier(len(emails))
+
+    def attempt(email: str) -> int:
+        client = db_app.test_client()
+        start.wait()
+        return _login(client, email, "wrong").status_code
+
+    # The conflict is a race, so give it several chances to happen.
+    for _ in range(5):
+        for email in emails:
+            _add_old_failures(db_app, email, 3, minutes_ago=30)
+        with ThreadPoolExecutor(max_workers=len(emails)) as pool:
+            statuses = list(pool.map(attempt, emails))
+
+        assert statuses == [200] * len(emails)
+
+
+def test_login_prunes_only_own_expired_failures(db_client: FlaskClient, user: User):
+    _add_old_failures(db_client.application, user.email, 3, minutes_ago=30)
+    _add_old_failures(db_client.application, "other@example.com", 3, minutes_ago=30)
+
+    _login(db_client, user.email, "wrong")
+
+    with db_client.application.app_context():
+        assert _failures(user.email) == 1
+        assert _failures("other@example.com") == 3
+
+
 def test_blocked_attempt_is_not_counted(db_client: FlaskClient, user: User):
     _fail_logins(db_client, user.email, 5)
 

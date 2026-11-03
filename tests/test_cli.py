@@ -1,4 +1,5 @@
 from collections.abc import Callable
+from uuid import uuid4
 
 import pytest
 from flask import Flask
@@ -557,3 +558,44 @@ def test_create_user_rejects_invalid_email(db_app: Flask, admin: User):
     assert rv.exit_code == 2
     assert "Invalid value for 'EMAIL'" in rv.output
     assert not _exists(db_app, "reader@bookshelf.local")
+
+
+def _add_failure(app: Flask, email: str, minutes_ago: int) -> None:
+    with app.app_context():
+        conn = get_db()
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO LOGIN_FAILURES (ID, EMAIL, IP_ADDRESS, ATTEMPTED_AT) "
+                "VALUES (?, ?, ?, DATEADD(? MINUTE TO CURRENT_TIMESTAMP))",
+                (uuid4().bytes, email, "192.0.2.1", -minutes_ago),
+            )
+        conn.commit()
+
+
+def _failure_emails(app: Flask) -> list[str]:
+    with app.app_context(), get_db().cursor() as cur:
+        cur.execute("SELECT EMAIL FROM LOGIN_FAILURES ORDER BY EMAIL")
+        return [email for (email,) in cur.fetchall()]
+
+
+def test_prune_login_failures_removes_only_expired(db_app: Flask):
+    _add_failure(db_app, "old1@example.com", minutes_ago=16)
+    _add_failure(db_app, "old2@example.com", minutes_ago=60)
+    _add_failure(db_app, "recent@example.com", minutes_ago=14)
+
+    rv = db_app.test_cli_runner().invoke(args=["prune-login-failures"])
+
+    assert rv.exit_code == 0, rv.output
+    assert "Removed 2 expired login failures." in rv.output
+    assert _failure_emails(db_app) == ["recent@example.com"]
+
+
+def test_prune_login_failures_uses_configured_window(db_app: Flask):
+    db_app.config["LOGIN_BLOCK_MINUTES"] = 60
+    _add_failure(db_app, "old@example.com", minutes_ago=61)
+    _add_failure(db_app, "recent@example.com", minutes_ago=30)
+
+    rv = db_app.test_cli_runner().invoke(args=["prune-login-failures"])
+
+    assert rv.exit_code == 0, rv.output
+    assert _failure_emails(db_app) == ["recent@example.com"]

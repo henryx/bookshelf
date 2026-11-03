@@ -68,6 +68,7 @@ production environment set. Passwords are always prompted, never passed as argum
 | Command | What it does |
 |---|---|
 | `init-db` | Create missing tables, columns, constraints and indexes (safe to rerun) |
+| `prune-login-failures` | Delete failed logins older than `APP_LOGIN_BLOCK_MINUTES` (run periodically, e.g. hourly from cron) |
 | `create-admin EMAIL` | Create the first admin (refused once any admin exists) |
 | `create-user EMAIL` | Create a regular user |
 | `list-users` | Show all users with role and lock status |
@@ -76,7 +77,7 @@ production environment set. Passwords are always prompted, never passed as argum
 | `lock-user EMAIL` / `unlock-user EMAIL` | Block or allow a user's login; locking ends open sessions |
 | `delete-user EMAIL [--yes]` | Permanently delete a user (asks for confirmation) |
 
-All commands except `init-db` and `create-admin` require admin credentials
+All commands except `init-db`, `prune-login-failures` and `create-admin` require admin credentials
 (`--admin-email`, or prompted, plus the admin password). Admins cannot lock, demote or
 delete their own account. `create-admin` and `create-user` only accept valid email
 addresses (no reserved or LAN-style domains such as `.local`), the same rule as the login form.
@@ -107,6 +108,13 @@ Behind a reverse proxy that terminates HTTPS, set `APP_TRUSTED_PROXIES` to the n
 (usually `1`) so the app sees the client IP and the request as HTTPS. This is required, not
 optional: failed-login limits are per client IP, so without it every client shares the proxy's IP
 and 20 failed logins from anyone block logins for everyone.
+
+Schedule `prune-login-failures` on the host, or the failed-login table only grows. For example, hourly
+from cron:
+
+```sh
+0 * * * * docker exec <container> /app/venv/bin/flask --app bookshelf prune-login-failures
+```
 
 After upgrading, run `init-db` again: it adds any new tables, columns, constraints and indexes to an existing database.
 New check constraints apply to rows written from then on; Firebird does not recheck existing rows.

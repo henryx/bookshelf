@@ -21,6 +21,7 @@ __all__ = [
     "find_by_id",
     "find_by_session_id",
     "list_users",
+    "prune_login_failures",
     "set_locked",
     "set_password",
     "set_role",
@@ -251,16 +252,17 @@ def start_login_attempt(
 
     Counting per email and IP means failures from an attacker's IP do not
     lock the real user out. Unknown emails are limited too, so a block does
-    not reveal which accounts exist. Failures older than window_minutes are
-    pruned.
+    not reveal which accounts exist. The email's failures from this IP older
+    than window_minutes are pruned; only those, so concurrent attempts for
+    other emails or IPs never delete the same rows and conflict.
     """
     attempt_id = uuid4().bytes
     email = _normalise(email)
     with conn.cursor() as cur:
         cur.execute(
-            "DELETE FROM LOGIN_FAILURES "
-            "WHERE ATTEMPTED_AT <= DATEADD(? MINUTE TO CURRENT_TIMESTAMP)",
-            (-window_minutes,),
+            "DELETE FROM LOGIN_FAILURES WHERE EMAIL = ? AND IP_ADDRESS = ? "
+            "AND ATTEMPTED_AT <= DATEADD(? MINUTE TO CURRENT_TIMESTAMP)",
+            (email, ip, -window_minutes),
         )
         cur.execute(
             "INSERT INTO LOGIN_FAILURES (ID, EMAIL, IP_ADDRESS) VALUES (?, ?, ?)",
@@ -308,6 +310,23 @@ def _over_limit(
         )
         (ip_failures,) = cur.fetchone()
     return ip_failures > max_ip_failures
+
+
+def prune_login_failures(conn: Connection, *, window_minutes: int) -> int:
+    """
+    Delete every failure older than window_minutes, which no longer counts
+    towards a block, and return how many were deleted. Logins prune only
+    their own email and IP, so this clears the rest (run it periodically).
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            "DELETE FROM LOGIN_FAILURES "
+            "WHERE ATTEMPTED_AT <= DATEADD(? MINUTE TO CURRENT_TIMESTAMP)",
+            (-window_minutes,),
+        )
+        deleted = cur.affected_rows
+    conn.commit()
+    return deleted
 
 
 def clear_login_failures(conn: Connection, email: str, ip: str) -> None:
