@@ -11,10 +11,12 @@ Frontend is developed using HTMX library as PWA, to permit to install on mobile 
 Decisions:
 
  - Data access uses `firebird-driver` with literal SQL queries; no ORM.
- - The schema is created and upgraded by `init-db`, which adds missing tables, columns, constraints and indexes and
-   is safe to rerun. There is no migration framework or version table: a change to an existing table is added as its
-   own `ALTER TABLE` / `CREATE INDEX` statement and never edited into the table's original DDL (see README, "Schema
-   changes"). `init-db` cannot rename, retype or drop objects.
+ - The schema is created by `init-db`, which creates missing domains, tables, constraints and indexes and is safe
+   to rerun. Tables are created with their columns only; every constraint is added separately with a name of our
+   own (`PK_USERS`, `UQ_USERS_EMAIL`, …) instead of one Firebird generates.
+   Until the first release is tagged the schema is not final: tables are changed by editing their `CREATE TABLE`
+   in place, with no migration steps, and development databases are recreated. Once a release is tagged, changes to
+   released tables will need upgrade steps for existing databases (see README, "Schema changes").
 
 ## Authentication
 
@@ -53,6 +55,12 @@ Decisions:
    counted, and a successful login clears that email's failures from that IP. Failures are stored in the
    `LOGIN_FAILURES` table with the client IP (see `APP_TRUSTED_PROXIES` behind a reverse proxy, or every client
    shares the proxy's IP). The CLI is not limited.
+ - `LOGIN_FAILURES` has no primary key. Its `ID` references the user the failed email belongs to
+   (`FK_LOGIN_FAILURES_USER`, `ON DELETE CASCADE`, so deleting a user deletes their failures) and is NULL for an
+   unknown email, which is still recorded so that a block does not reveal which accounts exist. Without a
+   per-attempt key, a refused attempt removes its row by deleting one row with the same email, IP and time; such
+   rows are indistinguishable, so it does not matter which. Concurrent refused attempts may pick the same row:
+   Firebird fails all but one with an update conflict, and those retry (up to 10 times) and then see the row gone.
  - Expired failures (older than the block window) are deleted in two places. Each login attempt deletes only the
    expired failures of its own email and IP: deleting every expired row on each attempt made concurrent logins
    delete the same rows, and Firebird failed all but one with an update conflict (an error page for the user).

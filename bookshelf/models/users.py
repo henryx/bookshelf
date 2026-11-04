@@ -1,6 +1,8 @@
 import hashlib
 import hmac
+import logging
 from dataclasses import dataclass
+from datetime import datetime
 from enum import StrEnum
 from uuid import UUID, uuid4
 
@@ -36,6 +38,12 @@ __all__ = [
 
 # Firebird GDS code for "violation of PRIMARY or UNIQUE KEY constraint".
 _UNIQUE_KEY_VIOLATION = 335544665
+# Firebird GDS code for "update conflicts with concurrent update".
+_UPDATE_CONFLICT = 335544451
+# Concurrent refused attempts that may each have to retry removing their row.
+_REMOVE_ATTEMPT_TRIES = 10
+
+logger = logging.getLogger(__name__)
 
 _hasher = PasswordHasher()
 # Verified against unknown emails so a failed login takes the same time either way.
@@ -326,8 +334,9 @@ def start_login_attempt(
     not reveal which accounts exist. The email's failures from this IP older
     than window_minutes are pruned; only those, so concurrent attempts for
     other emails or IPs never delete the same rows and conflict.
+
+    The failure's ID is the email's user, or NULL for an unknown email.
     """
-    attempt_id = uuid4().bytes
     email = _normalise(email)
     with conn.cursor() as cur:
         cur.execute(
@@ -336,9 +345,12 @@ def start_login_attempt(
             (email, ip, -window_minutes),
         )
         cur.execute(
-            "INSERT INTO LOGIN_FAILURES (ID, EMAIL, IP_ADDRESS) VALUES (?, ?, ?)",
-            (attempt_id, email, ip),
+            "INSERT INTO LOGIN_FAILURES (ID, EMAIL, IP_ADDRESS) "
+            "VALUES ((SELECT ID FROM USERS WHERE EMAIL = ?), ?, ?) "
+            "RETURNING ATTEMPTED_AT",
+            (email, email, ip),
         )
+        (attempted_at,) = cur.fetchone()
     conn.commit()
 
     if not _over_limit(
@@ -350,10 +362,42 @@ def start_login_attempt(
         window_minutes=window_minutes,
     ):
         return True
-    with conn.cursor() as cur:
-        cur.execute("DELETE FROM LOGIN_FAILURES WHERE ID = ?", (attempt_id,))
-    conn.commit()
+    _remove_attempt(conn, email, ip, attempted_at)
     return False
+
+
+def _remove_attempt(
+    conn: Connection, email: str, ip: str, attempted_at: datetime
+) -> None:
+    """
+    Delete the row a refused attempt added. Rows have no key of their own, but
+    any row with the same email, IP and time is indistinguishable from it, so
+    one of them is deleted. Concurrent refused attempts may pick the same row:
+    Firebird then fails all but one with an update conflict, and the others
+    try again, now seeing that row gone.
+    """
+    for _ in range(_REMOVE_ATTEMPT_TRIES - 1):
+        try:
+            _delete_one_failure(conn, email, ip, attempted_at)
+            return
+        except DatabaseError as e:
+            if _UPDATE_CONFLICT not in e.gds_codes:
+                raise
+            conn.rollback()
+            logger.debug("Retrying removal of refused login for %s from %s", email, ip)
+    _delete_one_failure(conn, email, ip, attempted_at)
+
+
+def _delete_one_failure(
+    conn: Connection, email: str, ip: str, attempted_at: datetime
+) -> None:
+    with conn.cursor() as cur:
+        cur.execute(
+            "DELETE FROM LOGIN_FAILURES "
+            "WHERE EMAIL = ? AND IP_ADDRESS = ? AND ATTEMPTED_AT = ? ROWS 1",
+            (email, ip, attempted_at),
+        )
+    conn.commit()
 
 
 def _over_limit(

@@ -143,15 +143,21 @@ New check constraints apply to rows written from then on; Firebird does not rech
 
 ## Schema changes
 
-The schema lives in `bookshelf/db/schema.py`, and `init-db` creates whatever is missing, in this order:
-`DOMAINS`, `TABLES`, `COLUMNS`, `CONSTRAINTS`, `INDEXES`.
+The schema lives in `bookshelf/db/schema.py`: `DOMAINS`, `TABLES`, `CONSTRAINTS` and `INDEXES`, created in
+that order. `init-db` creates whatever is missing and is safe to rerun, but it does not change objects that
+already exist.
 
-- A new table goes in `TABLES`.
-- A change to an existing table goes in `COLUMNS` (`ALTER TABLE … ADD`), `CONSTRAINTS` or `INDEXES`. Never
-  edit a released `TABLES` entry: databases that already have the table would not get the change. Each
-  column or constraint is defined in one place only, so new and existing databases get it through the
-  same statement; a test fails if it also appears in `CREATE TABLE`.
-- `init-db` only adds. Renaming, retyping or dropping something needs a hand-written step.
+- `TABLES` holds only columns, with their types, `NOT NULL` and defaults. Every table constraint (primary key,
+  unique, check, foreign key) is a named `ALTER TABLE … ADD CONSTRAINT` in `CONSTRAINTS`, never written inside
+  `CREATE TABLE`; a test fails if one is. Constraints run in order, so a foreign key comes after the key it
+  references.
+
+- Until the first release is tagged, the schema is not final: change a table by editing its `CREATE TABLE`
+  in `TABLES` directly, and recreate your development database (drop it, then run `init-db`). Tests always
+  start from an empty database.
+- Once a release is tagged, released tables must not be edited in place: changes to them will need upgrade
+  steps that `init-db` applies to existing databases. That mechanism will be added with the first change that
+  needs it.
 
 ## CI and releases
 

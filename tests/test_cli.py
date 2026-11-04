@@ -1,5 +1,4 @@
 from collections.abc import Callable
-from uuid import uuid4
 
 import pytest
 from flask import Flask
@@ -573,9 +572,9 @@ def _add_failure(app: Flask, email: str, minutes_ago: int) -> None:
         conn = get_db()
         with conn.cursor() as cur:
             cur.execute(
-                "INSERT INTO LOGIN_FAILURES (ID, EMAIL, IP_ADDRESS, ATTEMPTED_AT) "
-                "VALUES (?, ?, ?, DATEADD(? MINUTE TO CURRENT_TIMESTAMP))",
-                (uuid4().bytes, email, "192.0.2.1", -minutes_ago),
+                "INSERT INTO LOGIN_FAILURES (EMAIL, IP_ADDRESS, ATTEMPTED_AT) "
+                "VALUES (?, ?, DATEADD(? MINUTE TO CURRENT_TIMESTAMP))",
+                (email, "192.0.2.1", -minutes_ago),
             )
         conn.commit()
 

@@ -1,14 +1,20 @@
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
-from uuid import uuid4
 
 from flask import Flask
 from flask.testing import FlaskClient
 
 from bookshelf import create_app
 from bookshelf.db import get_db
-from bookshelf.models.users import Role, User, set_password, set_role
+from bookshelf.models.users import (
+    Role,
+    User,
+    clear_login_failures,
+    delete_user,
+    set_password,
+    set_role,
+)
 
 HTMX = {"HX-Request": "true"}
 
@@ -162,8 +168,9 @@ def _add_old_failures(app: Flask, email: str, times: int, minutes_ago: int) -> N
             for _ in range(times):
                 cur.execute(
                     "INSERT INTO LOGIN_FAILURES (ID, EMAIL, IP_ADDRESS, ATTEMPTED_AT) "
-                    "VALUES (?, ?, ?, DATEADD(? MINUTE TO CURRENT_TIMESTAMP))",
-                    (uuid4().bytes, email, CLIENT_IP, -minutes_ago),
+                    "VALUES ((SELECT ID FROM USERS WHERE EMAIL = ?), ?, ?, "
+                    "DATEADD(? MINUTE TO CURRENT_TIMESTAMP))",
+                    (email, email, CLIENT_IP, -minutes_ago),
                 )
         conn.commit()
 
@@ -319,7 +326,10 @@ def test_login_ignores_spaces_around_email(
 
 
 def test_concurrent_failed_logins_cannot_exceed_the_limit(db_app: Flask, user: User):
-    """Attempts sent at once must not all pass the check before any is counted."""
+    """
+    Attempts sent at once must not all pass the check before any is counted,
+    and refused ones, removing rows that may look identical, must not fail.
+    """
     attempts, limit = 10, 5
     start = Barrier(attempts)
 
@@ -328,13 +338,18 @@ def test_concurrent_failed_logins_cannot_exceed_the_limit(db_app: Flask, user: U
         start.wait()
         return _login(client, user.email, "wrong").status_code
 
-    with ThreadPoolExecutor(max_workers=attempts) as pool:
-        statuses = list(pool.map(attempt, range(attempts)))
+    # Conflicts are a race, so give them several chances to happen.
+    for _ in range(5):
+        with db_app.app_context():
+            clear_login_failures(get_db(), user.email, CLIENT_IP)
+        with ThreadPoolExecutor(max_workers=attempts) as pool:
+            statuses = list(pool.map(attempt, range(attempts)))
 
-    checked = [s for s in statuses if s != 429]
-    assert len(checked) <= limit, statuses
-    with db_app.app_context():
-        assert _failures(user.email) == len(checked)
+        assert set(statuses) <= {200, 429}, statuses
+        checked = [s for s in statuses if s == 200]
+        assert len(checked) <= limit, statuses
+        with db_app.app_context():
+            assert _failures(user.email) == len(checked)
 
 
 def test_concurrent_logins_with_expired_failures_succeed(db_app: Flask):
@@ -385,3 +400,31 @@ def _failures(email: str) -> int:
         cur.execute("SELECT COUNT(*) FROM LOGIN_FAILURES WHERE EMAIL = ?", (email,))
         (count,) = cur.fetchone()
     return count
+
+
+def _failure_ids(email: str) -> list[bytes | None]:
+    with get_db().cursor() as cur:
+        cur.execute("SELECT ID FROM LOGIN_FAILURES WHERE EMAIL = ?", (email,))
+        return [user_id for (user_id,) in cur.fetchall()]
+
+
+def test_failure_references_user_of_known_email(db_client: FlaskClient, user: User):
+    _login(db_client, user.email.upper(), "wrong")
+
+    with db_client.application.app_context():
+        assert _failure_ids(user.email) == [user.id.bytes]
+
+
+def test_failure_of_unknown_email_has_no_user(db_client: FlaskClient):
+    _login(db_client, "nobody@example.com", "wrong")
+
+    with db_client.application.app_context():
+        assert _failure_ids("nobody@example.com") == [None]
+
+
+def test_deleting_user_deletes_their_failures(db_client: FlaskClient, user: User):
+    _fail_logins(db_client, user.email, 2)
+
+    with db_client.application.app_context():
+        delete_user(get_db(), user)
+        assert _failures(user.email) == 0
