@@ -193,8 +193,7 @@ setup, so this is accepted rather than guarded with an extra table.
 
 ## Books
 
-Status: not built yet. Every question below is answered, and the answers are the decisions that follow; the
-book tables can now be designed.
+Status: not built yet. The decisions below are settled; the book tables can now be designed.
 
 Decisions:
 
@@ -227,41 +226,15 @@ Decisions:
    book removes it for good (it cannot be restored) and asks for confirmation first.
  - The library can be exported as a CSV file. There is no import in the first version.
 
-Questions (all answered):
-
-1. **Ownership.** Answered: one shared catalogue, plus a collection per user (see Decisions).
-2. **Who may change books.** Answered: every user may add and edit any book; only admins may delete (see
-   Decisions).
-3. **Fields.** Answered: title required; authors (a list of names), ISBN, publisher, year, language and notes
-   optional (see Decisions).
-4. **Authors.** Answered: shared author records, picked or created by name (see Decisions).
-5. **Classification.** Answered: free tags only (see Decisions).
-6. **Copies.** Answered: one record per title; the copy count is per user, in their collection (see Decisions).
-7. **Loans.** Answered: not tracked in the first version (see Decisions).
-8. **Reading status.** Answered: not tracked in the first version (see Decisions).
-9. **ISBN lookup.** Answered: manual entry first, lookup later (see Decisions).
-10. **Covers.** Answered: no covers in the first version (see Decisions).
-11. **Duplicates.** Answered: the same ISBN is refused; books without one are allowed (see Decisions).
-12. **Deletion.** Answered: only a book in no user's collection can be deleted, for good (see Decisions).
-13. **Import and export.** Answered: CSV export only (see Decisions).
-14. **Collections.** Answered: users add or remove any catalogue book to or from their own collection, and see
-    who owns each book (see Decisions).
-
 ## Main page
 
 Status: placeholder. After login it shows only the user's email and a logout button.
 
-Open questions:
+Decisions:
 
-1. **Content.** Does the main page list the books directly, or is it a dashboard (recently added, currently
-   lent out, search box) with the list on its own page? Suggested default: the book list, with a search box.
-2. **Search.** Which fields does the search cover: title, author, ISBN, tags, notes? Is one search box enough,
-   or are filters needed (by author, tag, language)? Suggested default: one box over title, author and ISBN.
-3. **Sorting.** What is the default order (title, author, date added), and can the user change it? Suggested
-   default: by title, changeable to author or date added.
-4. **Size.** Roughly how many books will the library hold: hundreds or many thousands? This decides between
-   showing everything at once and paging or infinite scroll. Suggested default: pages of 50.
-5. **Layout.** On the phone (PWA), a list of rows or a grid of covers? Depends on question 10 under Books.
-   Suggested default: a list.
-6. **Admin area link.** Answered: an "Admin" button next to the user's email, visible only to admins (see Admin
-   area).
+ - The main page is the book list, with a search box. There is no separate dashboard page.
+ - One search box searches title, author and ISBN together. There are no separate filters (by author, tag or
+   language).
+ - The list is sorted by title by default; the user can sort it by author or by date added instead.
+ - The list is shown in pages of 50 books.
+ - On the phone, books are shown as a list of rows, not a grid (books have no covers; see Books).
