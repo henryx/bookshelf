@@ -193,45 +193,59 @@ setup, so this is accepted rather than guarded with an extra table.
 
 ## Books
 
-Status: not built yet. The questions below need an answer before the book tables are designed. Suggested defaults
-are what would be built if the question stays open; each answer moves into a "Decisions" list here.
+Status: not built yet. Every question below is answered, and the answers are the decisions that follow; the
+book tables can now be designed.
 
-Open questions:
+Decisions:
 
-1. **Ownership.** Is there one shared library that every user sees, or does each user have their own books?
-   - Shared: one catalogue; users differ only in what they may do (see 2).
-   - Per user: each book belongs to a user; others cannot see it.
-   - Suggested default: shared, since a household or club library is the likely use.
-2. **Who may change books.** In a shared library, may regular users add, edit and delete books, or only admins?
-   Suggested default: every user may add and edit; only admins may delete.
-3. **Fields.** Which fields does a book have, and which are required?
-   - Candidates: title, subtitle, authors, ISBN, publisher, publication year, language, edition, page count,
-     cover image, description, notes, date added.
-   - Suggested default: title required; authors, ISBN, publisher, year, language and notes optional.
-4. **Authors.** Is the author a free-text field, or are authors their own records shared between books (so all
-   books by one author can be listed, and a misspelling fixed once)? Can a book have several authors?
-   Suggested default: author records, several per book, in order.
-5. **Classification.** Are books grouped by genre, tags, series (with volume number), or shelf/location in the
-   house? One of these, several, or none at first? Suggested default: free tags only.
-6. **Copies.** Is a book a title (one record however many copies), or a physical copy (two copies are two
-   records)? This matters if the same book can be owned twice or lent out. Suggested default: one record per
-   title, with a copy count.
-7. **Loans.** Should the app track who borrowed a book and when it is due back? To users of the app only, or also
-   to people without an account (a name typed in)? Suggested default: not in the first version.
-8. **Reading status.** Does each user track their own status per book (to read, reading, read) or a rating?
-   Suggested default: not in the first version.
-9. **ISBN lookup.** Should adding a book fill in its details from an online service by ISBN (e.g. Open Library)?
-   That means outgoing internet requests from a self-hosted app, and handling the service being down. Scanning
-   the barcode with the phone camera would come with it (PWA). Suggested default: manual entry first, lookup
-   later.
-10. **Covers.** If books have covers: uploaded files stored where (database or disk, and how big), or only a
-    link to an online image? Suggested default: no covers in the first version.
-11. **Duplicates.** Should the app refuse or warn about a second book with the same ISBN, or the same title and
-    author? Suggested default: refuse the same ISBN; allow books without one.
-12. **Deletion.** When a book is deleted, is it removed for good, or kept as deleted so it can be restored (and
-    loans and history stay readable)? Suggested default: removed for good, after a confirmation.
-13. **Import and export.** Is there an existing list of books to import (CSV, spreadsheet, another app's
-    export)? Should the library be exportable as a backup? Suggested default: CSV export only.
+ - The library is shared: there is one catalogue of books, and every user sees all of it.
+ - Each user also has their own collection: the books from the shared catalogue that are theirs. A book a user
+   adds goes into their collection automatically.
+ - A user can add any book already in the catalogue to their own collection, and remove any book from it;
+   removing it leaves the book in the catalogue. Users change only their own collection. Every user can see who
+   owns each book and how many copies.
+ - Every user, regular or admin, may add a book to the catalogue and edit any book in it, not only the books
+   they added. Only admins may delete a book.
+ - A book has a title (required) and optionally authors, ISBN, publisher, publication year, language and notes.
+   Authors are a list of names, so a book can have several, in the order given.
+ - Authors are their own records, shared between books: when a book is added or edited, each author is picked
+   from the existing ones by name, or created if new. All books by one author can be listed, and a misspelled
+   name is fixed once for every book.
+ - Books are classified by free tags only: a book can have any number of tags, typed freely. There are no
+   genres, series or shelf locations.
+ - A book is a title: one record in the catalogue however many copies exist. The number of copies belongs to a
+   user's collection: each user records how many copies of the book they own (at least one), so two users
+   owning the same book is still one catalogue record.
+ - Loans (who borrowed a book and when it is due back) are not tracked in the first version.
+ - Reading status (to read, reading, read) and ratings are not tracked in the first version.
+ - Books are entered by hand in the first version. Filling in a book's details from an online service by ISBN
+   (e.g. Open Library), and scanning the barcode with the phone camera, may come later.
+ - Books have no cover images in the first version.
+ - A book whose ISBN is already in the catalogue is refused. Any number of books may have no ISBN, and books
+   with the same title and authors are allowed.
+ - A book can be deleted only while it is in no user's collection; otherwise deletion is refused. Deleting a
+   book removes it for good (it cannot be restored) and asks for confirmation first.
+ - The library can be exported as a CSV file. There is no import in the first version.
+
+Questions (all answered):
+
+1. **Ownership.** Answered: one shared catalogue, plus a collection per user (see Decisions).
+2. **Who may change books.** Answered: every user may add and edit any book; only admins may delete (see
+   Decisions).
+3. **Fields.** Answered: title required; authors (a list of names), ISBN, publisher, year, language and notes
+   optional (see Decisions).
+4. **Authors.** Answered: shared author records, picked or created by name (see Decisions).
+5. **Classification.** Answered: free tags only (see Decisions).
+6. **Copies.** Answered: one record per title; the copy count is per user, in their collection (see Decisions).
+7. **Loans.** Answered: not tracked in the first version (see Decisions).
+8. **Reading status.** Answered: not tracked in the first version (see Decisions).
+9. **ISBN lookup.** Answered: manual entry first, lookup later (see Decisions).
+10. **Covers.** Answered: no covers in the first version (see Decisions).
+11. **Duplicates.** Answered: the same ISBN is refused; books without one are allowed (see Decisions).
+12. **Deletion.** Answered: only a book in no user's collection can be deleted, for good (see Decisions).
+13. **Import and export.** Answered: CSV export only (see Decisions).
+14. **Collections.** Answered: users add or remove any catalogue book to or from their own collection, and see
+    who owns each book (see Decisions).
 
 ## Main page
 
