@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 from bookshelf import create_app
 from bookshelf.config import Config
 
