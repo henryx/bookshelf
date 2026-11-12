@@ -28,6 +28,7 @@ Bookshelf library webapp is a webapp to manage a book library built with Flask u
 - `bookshelf/__init__.py`: `create_app()` factory, error handlers, logging
 - `bookshelf/config.py`: `Config` (environment variables)
 - `bookshelf/logging_config.py`: JSON logging config shared by the app and gunicorn
+- `bookshelf/wsgi.py`: WSGI entry point (`bookshelf.wsgi:app` for gunicorn); run as a script it never enables debug mode (only `flask run --debug` does)
 - `gunicorn.conf.py`: gunicorn settings (bind, workers, timeout, log level, logging); loaded from the working directory
 - `bookshelf/cli.py`: Flask CLI commands; admin operations go through `_require_admin`
 - `bookshelf/db/`: per-process `ConnectionPool`; `get_db` takes a connection for the app context and teardown returns it (rolled back); `schema.py` holds table DDL and `init_db`
