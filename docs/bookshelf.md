@@ -193,7 +193,8 @@ setup, so this is accepted rather than guarded with an extra table.
 
 ## Books
 
-Status: not built yet. The decisions below are settled; the book tables can now be designed.
+Status: tables created by `init-db` (`BOOKS`, `AUTHORS`, `BOOK_AUTHORS`, `BOOK_TAGS`, `COLLECTION_BOOKS`); no
+pages yet.
 
 Decisions:
 
@@ -225,6 +226,16 @@ Decisions:
  - A book can be deleted only while it is in no user's collection; otherwise deletion is refused. Deleting a
    book removes it for good (it cannot be restored) and asks for confirmation first.
  - The library can be exported as a CSV file. There is no import in the first version.
+ - ISBNs are stored as 13 digits: hyphens and spaces are removed and an ISBN-10 is converted to its ISBN-13, so
+   the same book typed either way is caught as a duplicate.
+ - Titles, author names and tags ignore case when compared and sorted ("Sci-fi" and "sci-fi" are one tag), but
+   not accents ("Citta" and "Città" differ). All three are trimmed and cannot be blank.
+ - Author names are unique: two different authors cannot share a name, so picking an author by name is never
+   ambiguous. An author used by a book cannot be deleted; unused authors are kept until removed.
+ - Tags are stored as text on each book, with no list of tags of their own.
+ - Deleting a user removes their collection, which may leave books in no collection (and so deletable).
+ - Sizes: title, publisher and author name up to 255 characters, language (free text, e.g. "Italian") up to 64,
+   tag up to 64, notes up to 4000. Who added a book is not recorded.
 
 ## Main page
 

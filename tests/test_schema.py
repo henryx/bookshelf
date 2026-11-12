@@ -113,6 +113,81 @@ def _assert_complete_schema(conn: Connection) -> None:
         "ATTEMPTED_AT",
     ]
 
+    assert _columns(conn, "BOOKS") == [
+        "ID",
+        "TITLE",
+        "ISBN",
+        "PUBLISHER",
+        "PUBLICATION_YEAR",
+        "LANGUAGE",
+        "NOTES",
+        "CREATED_AT",
+    ]
+    assert _domain(conn, "BOOKS", "ID") == "UUID"
+    assert _constraints(conn, "BOOKS") == {
+        "PK_BOOKS": "PRIMARY KEY",
+        "UQ_BOOKS_ISBN": "UNIQUE",
+        "CHK_BOOKS_ISBN": "CHECK",
+        "CHK_BOOKS_TITLE": "CHECK",
+    }
+    assert _index_columns(conn, "IDX_BOOKS_TITLE") == ["TITLE"]
+    assert _index_columns(conn, "IDX_BOOKS_CREATED_AT") == ["CREATED_AT"]
+
+    assert _columns(conn, "AUTHORS") == ["ID", "NAME"]
+    assert _domain(conn, "AUTHORS", "ID") == "UUID"
+    assert _constraints(conn, "AUTHORS") == {
+        "PK_AUTHORS": "PRIMARY KEY",
+        "UQ_AUTHORS_NAME": "UNIQUE",
+        "CHK_AUTHORS_NAME": "CHECK",
+    }
+
+    assert _columns(conn, "BOOK_AUTHORS") == ["BOOK_ID", "AUTHOR_ID", "SORT_ORDER"]
+    assert _domain(conn, "BOOK_AUTHORS", "BOOK_ID") == "UUID"
+    assert _domain(conn, "BOOK_AUTHORS", "AUTHOR_ID") == "UUID"
+    assert _constraints(conn, "BOOK_AUTHORS") == {
+        "PK_BOOK_AUTHORS": "PRIMARY KEY",
+        "UQ_BOOK_AUTHORS_SORT_ORDER": "UNIQUE",
+        "CHK_BOOK_AUTHORS_SORT_ORDER": "CHECK",
+        "FK_BOOK_AUTHORS_BOOK": "FOREIGN KEY",
+        "FK_BOOK_AUTHORS_AUTHOR": "FOREIGN KEY",
+    }
+    assert _reference(conn, "FK_BOOK_AUTHORS_BOOK") == ("BOOK_ID", "BOOKS", "CASCADE")
+    assert _reference(conn, "FK_BOOK_AUTHORS_AUTHOR") == (
+        "AUTHOR_ID",
+        "AUTHORS",
+        "RESTRICT",
+    )
+
+    assert _columns(conn, "BOOK_TAGS") == ["BOOK_ID", "TAG"]
+    assert _domain(conn, "BOOK_TAGS", "BOOK_ID") == "UUID"
+    assert _constraints(conn, "BOOK_TAGS") == {
+        "PK_BOOK_TAGS": "PRIMARY KEY",
+        "CHK_BOOK_TAGS_TAG": "CHECK",
+        "FK_BOOK_TAGS_BOOK": "FOREIGN KEY",
+    }
+    assert _reference(conn, "FK_BOOK_TAGS_BOOK") == ("BOOK_ID", "BOOKS", "CASCADE")
+    assert _index_columns(conn, "IDX_BOOK_TAGS_TAG") == ["TAG"]
+
+    assert _columns(conn, "COLLECTION_BOOKS") == ["USER_ID", "BOOK_ID", "COPIES"]
+    assert _domain(conn, "COLLECTION_BOOKS", "USER_ID") == "UUID"
+    assert _domain(conn, "COLLECTION_BOOKS", "BOOK_ID") == "UUID"
+    assert _constraints(conn, "COLLECTION_BOOKS") == {
+        "PK_COLLECTION_BOOKS": "PRIMARY KEY",
+        "CHK_COLLECTION_BOOKS_COPIES": "CHECK",
+        "FK_COLLECTION_BOOKS_USER": "FOREIGN KEY",
+        "FK_COLLECTION_BOOKS_BOOK": "FOREIGN KEY",
+    }
+    assert _reference(conn, "FK_COLLECTION_BOOKS_USER") == (
+        "USER_ID",
+        "USERS",
+        "CASCADE",
+    )
+    assert _reference(conn, "FK_COLLECTION_BOOKS_BOOK") == (
+        "BOOK_ID",
+        "BOOKS",
+        "RESTRICT",
+    )
+
 
 def test_session_database_has_complete_schema(db_app: Flask):
     with db_app.app_context():

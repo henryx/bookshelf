@@ -33,6 +33,51 @@ TABLES: dict[str, str] = {
             ATTEMPTED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
         )
     """,
+    # The shared catalogue: one row per title, however many copies users own.
+    # TITLE ignores case (UNICODE_CI) when compared and sorted. ISBN is 13
+    # digits, ISBN-10 converted by the app. CREATED_AT is the date added.
+    "BOOKS": """
+        CREATE TABLE BOOKS (
+            ID UUID NOT NULL,
+            TITLE VARCHAR(255) NOT NULL COLLATE UNICODE_CI,
+            ISBN CHAR(13),
+            PUBLISHER VARCHAR(255),
+            PUBLICATION_YEAR SMALLINT,
+            LANGUAGE VARCHAR(64),
+            NOTES VARCHAR(4000),
+            CREATED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
+        )
+    """,
+    # Authors are shared between books; names are unique, ignoring case.
+    "AUTHORS": """
+        CREATE TABLE AUTHORS (
+            ID UUID NOT NULL,
+            NAME VARCHAR(255) NOT NULL COLLATE UNICODE_CI
+        )
+    """,
+    # A book's authors, in order from 1 (POSITION is a reserved word).
+    "BOOK_AUTHORS": """
+        CREATE TABLE BOOK_AUTHORS (
+            BOOK_ID UUID NOT NULL,
+            AUTHOR_ID UUID NOT NULL,
+            SORT_ORDER SMALLINT NOT NULL
+        )
+    """,
+    # Free tags, stored on each book; unique per book, ignoring case.
+    "BOOK_TAGS": """
+        CREATE TABLE BOOK_TAGS (
+            BOOK_ID UUID NOT NULL,
+            TAG VARCHAR(64) NOT NULL COLLATE UNICODE_CI
+        )
+    """,
+    # Each user's collection: the books they own, and how many copies.
+    "COLLECTION_BOOKS": """
+        CREATE TABLE COLLECTION_BOOKS (
+            USER_ID UUID NOT NULL,
+            BOOK_ID UUID NOT NULL,
+            COPIES SMALLINT DEFAULT 1 NOT NULL
+        )
+    """,
 }
 
 # Named table constraints, added after TABLES in this order (a foreign key
@@ -57,6 +102,75 @@ CONSTRAINTS: dict[str, str] = {
         "ALTER TABLE LOGIN_FAILURES ADD CONSTRAINT FK_LOGIN_FAILURES_USER "
         "FOREIGN KEY (ID) REFERENCES USERS (ID) ON DELETE CASCADE"
     ),
+    "PK_BOOKS": "ALTER TABLE BOOKS ADD CONSTRAINT PK_BOOKS PRIMARY KEY (ID)",
+    # Any number of books may have no ISBN: UNIQUE ignores NULLs.
+    "UQ_BOOKS_ISBN": "ALTER TABLE BOOKS ADD CONSTRAINT UQ_BOOKS_ISBN UNIQUE (ISBN)",
+    "CHK_BOOKS_ISBN": (
+        "ALTER TABLE BOOKS ADD CONSTRAINT CHK_BOOKS_ISBN "
+        "CHECK (ISBN SIMILAR TO '[0-9]{13}')"
+    ),
+    # Non-blank and trimmed (see CHK_USERS_EMAIL_NORMALISED on lengths).
+    "CHK_BOOKS_TITLE": (
+        "ALTER TABLE BOOKS ADD CONSTRAINT CHK_BOOKS_TITLE CHECK ("
+        "TITLE <> '' AND CHAR_LENGTH(TITLE) = CHAR_LENGTH(TRIM(TITLE)))"
+    ),
+    "PK_AUTHORS": "ALTER TABLE AUTHORS ADD CONSTRAINT PK_AUTHORS PRIMARY KEY (ID)",
+    "UQ_AUTHORS_NAME": "ALTER TABLE AUTHORS ADD CONSTRAINT UQ_AUTHORS_NAME UNIQUE (NAME)",
+    "CHK_AUTHORS_NAME": (
+        "ALTER TABLE AUTHORS ADD CONSTRAINT CHK_AUTHORS_NAME CHECK ("
+        "NAME <> '' AND CHAR_LENGTH(NAME) = CHAR_LENGTH(TRIM(NAME)))"
+    ),
+    "PK_BOOK_AUTHORS": (
+        "ALTER TABLE BOOK_AUTHORS ADD CONSTRAINT PK_BOOK_AUTHORS "
+        "PRIMARY KEY (BOOK_ID, AUTHOR_ID)"
+    ),
+    # Checked row by row, so a book's authors are replaced, not reordered in place.
+    "UQ_BOOK_AUTHORS_SORT_ORDER": (
+        "ALTER TABLE BOOK_AUTHORS ADD CONSTRAINT UQ_BOOK_AUTHORS_SORT_ORDER "
+        "UNIQUE (BOOK_ID, SORT_ORDER)"
+    ),
+    "CHK_BOOK_AUTHORS_SORT_ORDER": (
+        "ALTER TABLE BOOK_AUTHORS ADD CONSTRAINT CHK_BOOK_AUTHORS_SORT_ORDER "
+        "CHECK (SORT_ORDER >= 1)"
+    ),
+    # Deleting a book deletes its author links; an author with books cannot be deleted.
+    "FK_BOOK_AUTHORS_BOOK": (
+        "ALTER TABLE BOOK_AUTHORS ADD CONSTRAINT FK_BOOK_AUTHORS_BOOK "
+        "FOREIGN KEY (BOOK_ID) REFERENCES BOOKS (ID) ON DELETE CASCADE"
+    ),
+    "FK_BOOK_AUTHORS_AUTHOR": (
+        "ALTER TABLE BOOK_AUTHORS ADD CONSTRAINT FK_BOOK_AUTHORS_AUTHOR "
+        "FOREIGN KEY (AUTHOR_ID) REFERENCES AUTHORS (ID)"
+    ),
+    "PK_BOOK_TAGS": (
+        "ALTER TABLE BOOK_TAGS ADD CONSTRAINT PK_BOOK_TAGS PRIMARY KEY (BOOK_ID, TAG)"
+    ),
+    "CHK_BOOK_TAGS_TAG": (
+        "ALTER TABLE BOOK_TAGS ADD CONSTRAINT CHK_BOOK_TAGS_TAG CHECK ("
+        "TAG <> '' AND CHAR_LENGTH(TAG) = CHAR_LENGTH(TRIM(TAG)))"
+    ),
+    "FK_BOOK_TAGS_BOOK": (
+        "ALTER TABLE BOOK_TAGS ADD CONSTRAINT FK_BOOK_TAGS_BOOK "
+        "FOREIGN KEY (BOOK_ID) REFERENCES BOOKS (ID) ON DELETE CASCADE"
+    ),
+    "PK_COLLECTION_BOOKS": (
+        "ALTER TABLE COLLECTION_BOOKS ADD CONSTRAINT PK_COLLECTION_BOOKS "
+        "PRIMARY KEY (USER_ID, BOOK_ID)"
+    ),
+    "CHK_COLLECTION_BOOKS_COPIES": (
+        "ALTER TABLE COLLECTION_BOOKS ADD CONSTRAINT CHK_COLLECTION_BOOKS_COPIES "
+        "CHECK (COPIES >= 1)"
+    ),
+    # Deleting a user deletes their collection.
+    "FK_COLLECTION_BOOKS_USER": (
+        "ALTER TABLE COLLECTION_BOOKS ADD CONSTRAINT FK_COLLECTION_BOOKS_USER "
+        "FOREIGN KEY (USER_ID) REFERENCES USERS (ID) ON DELETE CASCADE"
+    ),
+    # A book in anyone's collection cannot be deleted.
+    "FK_COLLECTION_BOOKS_BOOK": (
+        "ALTER TABLE COLLECTION_BOOKS ADD CONSTRAINT FK_COLLECTION_BOOKS_BOOK "
+        "FOREIGN KEY (BOOK_ID) REFERENCES BOOKS (ID)"
+    ),
 }
 
 # Created after TABLES and CONSTRAINTS.
@@ -69,6 +183,13 @@ INDEXES: dict[str, str] = {
     "IDX_LOGIN_FAILURES_IP_AT": (
         "CREATE INDEX IDX_LOGIN_FAILURES_IP_AT ON LOGIN_FAILURES (IP_ADDRESS, ATTEMPTED_AT)"
     ),
+    # Book list sorted by title, or by date added (newest first).
+    "IDX_BOOKS_TITLE": "CREATE INDEX IDX_BOOKS_TITLE ON BOOKS (TITLE)",
+    "IDX_BOOKS_CREATED_AT": (
+        "CREATE DESCENDING INDEX IDX_BOOKS_CREATED_AT ON BOOKS (CREATED_AT)"
+    ),
+    # Books with a tag.
+    "IDX_BOOK_TAGS_TAG": "CREATE INDEX IDX_BOOK_TAGS_TAG ON BOOK_TAGS (TAG)",
 }
 
 
