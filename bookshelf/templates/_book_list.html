@@ -1,0 +1,31 @@
+{# The book list and its page links: part of main.html, and the htmx response for searches and pages. #}
+{% macro page_link(number, label) -%}
+  {%- set url = url_for('main.index', q=search or None,
+                        sort=None if sort == sorts.TITLE else sort.value, page=number) -%}
+  <a href="{{ url }}" hx-get="{{ url }}" hx-target="#book-list" hx-push-url="true"
+     hx-indicator="#book-pages-indicator">{{ label }}</a>
+{%- endmacro %}
+<p class="hint">{{ books.total }} book{{ "" if books.total == 1 else "s" }}</p>
+{% if books.books %}
+  <ul class="books">
+    {% for book in books.books %}
+      <li>
+        <span class="book-title">{{ book.title }}</span>
+        {% if book.authors %}<span class="book-authors">{{ book.authors | join(", ") }}</span>{% endif %}
+        {% if book.publication_year %}<span class="book-year">{{ book.publication_year }}</span>{% endif %}
+      </li>
+    {% endfor %}
+  </ul>
+{% elif search %}
+  <p>No books match “{{ search }}”.</p>
+{% else %}
+  <p>No books in the library yet.</p>
+{% endif %}
+{% if books.pages > 1 %}
+  <nav class="pages" aria-label="Pages">
+    {% if books.page > 1 %}{{ page_link(books.page - 1, "← Previous") }}{% endif %}
+    <span>Page {{ books.page }} of {{ books.pages }}</span>
+    {% if books.page < books.pages %}{{ page_link(books.page + 1, "Next →") }}{% endif %}
+    <span id="book-pages-indicator" class="htmx-indicator">…</span>
+  </nav>
+{% endif %}

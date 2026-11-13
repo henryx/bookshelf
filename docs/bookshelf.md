@@ -239,7 +239,7 @@ Decisions:
 
 ## Main page
 
-Status: placeholder. After login it shows only the user's email and a logout button.
+Status: built at `/` (read-only: books cannot be added from the web yet, see Books).
 
 Decisions:
 
@@ -249,3 +249,12 @@ Decisions:
  - The list is sorted by title by default; the user can sort it by author or by date added instead.
  - The list is shown in pages of 50 books.
  - On the phone, books are shown as a list of rows, not a grid (books have no covers; see Books).
+ - Each row shows the title, the authors in their order and the publication year.
+ - Sorting by author uses each book's first author, then the title; books without authors come last. Date added
+   sorts newest first.
+ - The search ignores case and spaces around it. In ISBNs, hyphens and spaces are ignored, and an ISBN-10 finds
+   the book stored with the matching ISBN-13.
+ - With htmx, typing in the search box (after a short pause), changing the order and moving between pages
+   reload only the list, and the address bar keeps the search, order and page so they can be bookmarked.
+   Without JavaScript the search is a plain form and the page links are plain links.
+ - A page number out of range shows the nearest page.
