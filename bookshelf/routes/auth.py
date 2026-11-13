@@ -18,6 +18,7 @@ from bookshelf.models.users import (
 )
 from bookshelf.routes import htmx_redirect, is_htmx
 from bookshelf.routes.forms import LoginForm
+from bookshelf.routes.setup import setup_done
 
 __all__ = ["auth_route", "login_manager"]
 
@@ -34,8 +35,12 @@ TOO_MANY_ATTEMPTS = "Too many failed login attempts. Please try again later."
 def load_user(session_id: str) -> User | None:
     """
     Reload the user on every request; locked users, and sessions issued
-    before a password change, are logged out.
+    before a password change, are logged out. Until setup is done nobody is
+    logged in: a cookie from an earlier database must not query a USERS table
+    that may not exist yet.
     """
+    if not setup_done():
+        return None
     user = find_by_session_id(get_db(), session_id)
     if user is None or not user.is_active:
         return None

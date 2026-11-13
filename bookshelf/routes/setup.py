@@ -14,7 +14,7 @@ from bookshelf.models.users import (
 from bookshelf.routes import htmx_redirect, is_htmx
 from bookshelf.routes.forms import NewAccountForm
 
-__all__ = ["setup_needed", "setup_route"]
+__all__ = ["setup_done", "setup_needed", "setup_route"]
 
 setup_route = Blueprint("setup", __name__)
 
@@ -27,7 +27,8 @@ def setup_needed(conn: Connection) -> bool:
     return not table_exists(conn, "USERS") or not admin_exists(conn)
 
 
-def _setup_done() -> bool:
+def setup_done() -> bool:
+    """True once an admin exists; cached per process after that."""
     if current_app.extensions.get(_DONE_KEY):
         return True
     if setup_needed(get_db()):
@@ -44,7 +45,7 @@ def require_setup() -> BaseResponse | None:
     """
     if request.endpoint == "static":
         return None
-    done = _setup_done()
+    done = setup_done()
     if request.endpoint == "setup.wizard":
         if done:
             abort(404)

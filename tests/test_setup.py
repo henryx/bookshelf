@@ -1,3 +1,5 @@
+from uuid import uuid4
+
 import pytest
 from flask import Flask
 from flask.testing import FlaskClient
@@ -50,6 +52,23 @@ def test_setup_page_shows_form(empty_db_app: Flask):
     assert rv.status_code == 200
     assert 'name="email"' in html
     assert 'name="confirm"' in html
+
+
+def test_setup_ignores_login_cookies_from_an_earlier_database(empty_db_app: Flask):
+    """A browser logged in before the database was emptied still sees the wizard."""
+    client = empty_db_app.test_client()
+    session_id = f"{uuid4()}:stale"
+    with client.session_transaction() as session:
+        session["_user_id"] = session_id
+    client.set_cookie("remember_token", f"{session_id}|stale")
+
+    page = client.get("/setup")
+    setup = client.post("/setup", data=ADMIN)
+
+    assert page.status_code == 200
+    assert 'name="email"' in page.get_data(as_text=True)
+    assert setup.status_code == 302
+    assert _admin(empty_db_app) is not None
 
 
 def test_setup_creates_schema_and_admin_and_logs_in(empty_db_app: Flask):
