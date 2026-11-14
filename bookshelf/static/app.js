@@ -7,8 +7,13 @@
     return document.getElementById("error-banner");
   }
 
-  // Clear the previous error when a new request starts.
-  document.addEventListener("htmx:beforeRequest", function () {
+  // Clear the previous error when a new request starts, but not for
+  // suggestions ([data-suggest]): they are sent while typing, and would
+  // clear an error before it is read.
+  document.addEventListener("htmx:beforeRequest", function (event) {
+    if (event.detail.elt.matches("[data-suggest]")) {
+      return;
+    }
     var el = banner();
     if (el) {
       el.textContent = "";
