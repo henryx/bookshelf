@@ -58,6 +58,14 @@ def _render_add(form: BookForm) -> str:
 def new_book() -> BaseResponse | str:
     """Add a book to the catalogue and to the current user's collection."""
     form = BookForm()
+    # Without JavaScript the + and - buttons of the author rows submit the
+    # form: show it again with the row added or removed, without saving.
+    if "add_author" in request.form:
+        form.add_author_row()
+        return _render_add(form)
+    if remove := request.form.get("remove_author"):
+        form.remove_author_row(remove)
+        return _render_add(form)
     if not form.validate_on_submit():
         return _render_add(form)
     book = form.to_book()

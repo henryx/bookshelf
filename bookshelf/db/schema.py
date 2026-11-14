@@ -48,11 +48,15 @@ TABLES: dict[str, str] = {
             CREATED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
         )
     """,
-    # Authors are shared between books; names are unique, ignoring case.
+    # Authors are shared between books; a name and surname pair is unique,
+    # ignoring case. NAME (the given name) is '' when there is only a
+    # surname ("Homer"), never NULL, so the pair stays unique. 127 characters
+    # each is what fits in one UNICODE_CI index key on 8 KB pages.
     "AUTHORS": """
         CREATE TABLE AUTHORS (
             ID UUID NOT NULL,
-            NAME VARCHAR(255) NOT NULL COLLATE UNICODE_CI
+            NAME VARCHAR(127) DEFAULT '' NOT NULL COLLATE UNICODE_CI,
+            SURNAME VARCHAR(127) NOT NULL COLLATE UNICODE_CI
         )
     """,
     # A book's authors, in order from 1 (POSITION is a reserved word).
@@ -115,10 +119,19 @@ CONSTRAINTS: dict[str, str] = {
         "TITLE <> '' AND CHAR_LENGTH(TITLE) = CHAR_LENGTH(TRIM(TITLE)))"
     ),
     "PK_AUTHORS": "ALTER TABLE AUTHORS ADD CONSTRAINT PK_AUTHORS PRIMARY KEY (ID)",
-    "UQ_AUTHORS_NAME": "ALTER TABLE AUTHORS ADD CONSTRAINT UQ_AUTHORS_NAME UNIQUE (NAME)",
+    # Surname first: it also serves the book list sorted by author.
+    "UQ_AUTHORS_SURNAME_NAME": (
+        "ALTER TABLE AUTHORS ADD CONSTRAINT UQ_AUTHORS_SURNAME_NAME "
+        "UNIQUE (SURNAME, NAME)"
+    ),
+    # Trimmed; may be empty.
     "CHK_AUTHORS_NAME": (
         "ALTER TABLE AUTHORS ADD CONSTRAINT CHK_AUTHORS_NAME CHECK ("
-        "NAME <> '' AND CHAR_LENGTH(NAME) = CHAR_LENGTH(TRIM(NAME)))"
+        "CHAR_LENGTH(NAME) = CHAR_LENGTH(TRIM(NAME)))"
+    ),
+    "CHK_AUTHORS_SURNAME": (
+        "ALTER TABLE AUTHORS ADD CONSTRAINT CHK_AUTHORS_SURNAME CHECK ("
+        "SURNAME <> '' AND CHAR_LENGTH(SURNAME) = CHAR_LENGTH(TRIM(SURNAME)))"
     ),
     "PK_BOOK_AUTHORS": (
         "ALTER TABLE BOOK_AUTHORS ADD CONSTRAINT PK_BOOK_AUTHORS "

@@ -133,12 +133,13 @@ def _assert_complete_schema(conn: Connection) -> None:
     assert _index_columns(conn, "IDX_BOOKS_TITLE") == ["TITLE"]
     assert _index_columns(conn, "IDX_BOOKS_CREATED_AT") == ["CREATED_AT"]
 
-    assert _columns(conn, "AUTHORS") == ["ID", "NAME"]
+    assert _columns(conn, "AUTHORS") == ["ID", "NAME", "SURNAME"]
     assert _domain(conn, "AUTHORS", "ID") == "UUID"
     assert _constraints(conn, "AUTHORS") == {
         "PK_AUTHORS": "PRIMARY KEY",
-        "UQ_AUTHORS_NAME": "UNIQUE",
+        "UQ_AUTHORS_SURNAME_NAME": "UNIQUE",
         "CHK_AUTHORS_NAME": "CHECK",
+        "CHK_AUTHORS_SURNAME": "CHECK",
     }
 
     assert _columns(conn, "BOOK_AUTHORS") == ["BOOK_ID", "AUTHOR_ID", "SORT_ORDER"]

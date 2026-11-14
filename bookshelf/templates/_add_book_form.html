@@ -20,7 +20,22 @@
   {% endmacro %}
 
   {{ field("title", required=True, maxlength=255, autocomplete="off") }}
-  {{ field("authors", "One per line, in order.", rows=2) }}
+  <fieldset class="author-rows" data-rows aria-describedby="book-authors-hint">
+    <legend>Authors</legend>
+    {% for entry in form.authors %}
+      {% with index=entry.name.rpartition("-")[2], name=entry.form.name.data,
+              surname=entry.form.surname.data, first=loop.first,
+              errors=entry.form.name.errors + entry.form.surname.errors %}
+        {% include "_author_row.html" %}
+      {% endwith %}
+    {% endfor %}
+    <template data-row-template>
+      {% with index="__index__", name="", surname="", first=False, errors=[] %}
+        {% include "_author_row.html" %}
+      {% endwith %}
+    </template>
+    <p id="book-authors-hint" class="hint">In order. Leave the name empty for authors known by one name.</p>
+  </fieldset>
   {{ field("isbn", "ISBN-10 or ISBN-13; hyphens and spaces are fine.", autocomplete="off") }}
   {{ field("publisher", maxlength=255) }}
   {{ field("publication_year", min=1, max=9999) }}

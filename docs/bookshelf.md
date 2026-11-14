@@ -205,9 +205,14 @@ as a page (`/books/new`).
 
 Decisions:
 
- - Authors are typed one per line, in order, since a name may contain a comma ("Tolkien, J. R. R."). Tags are
-   separated by commas. Blank entries are skipped, and an author or tag repeated (ignoring case) is kept once.
- - An author whose name matches an existing one (ignoring case) is that author, keeping its existing spelling.
+ - Each author is a row of two fields, name and surname, in order. The first row has a "+" button that adds
+   a row; each added row has a "−" button that removes it. Without JavaScript these buttons submit the form,
+   and the server shows it again with the row added or removed, saving nothing.
+ - The surname is required in a row with a name; the name may be left empty for an author known by one name
+   ("Homer"). Empty rows are skipped, and an author repeated in the rows (ignoring case) is kept once.
+ - Tags are separated by commas. Blank tags are skipped, and a tag repeated (ignoring case) is kept once.
+ - An author whose name and surname match an existing one (ignoring case) is that author, keeping its
+   existing spelling.
  - The ISBN must be a valid ISBN-10 or ISBN-13, check digit included, so a mistyped ISBN is caught; it is saved
    as ISBN-13. An ISBN already in the catalogue is refused with a message naming it.
  - The publication year is between 1 and 9999; copies between 1 and 999.
@@ -226,7 +231,7 @@ Decisions:
  - A book has a title (required) and optionally authors, ISBN, publisher, publication year, language and notes.
    Authors are a list of names, so a book can have several, in the order given.
  - Authors are their own records, shared between books: when a book is added or edited, each author is picked
-   from the existing ones by name, or created if new. All books by one author can be listed, and a misspelled
+   from the existing ones by name and surname, or created if new. All books by one author can be listed, and a misspelled
    name is fixed once for every book.
  - Books are classified by free tags only: a book can have any number of tags, typed freely. There are no
    genres, series or shelf locations.
@@ -245,14 +250,17 @@ Decisions:
  - The library can be exported as a CSV file. There is no import in the first version.
  - ISBNs are stored as 13 digits: hyphens and spaces are removed and an ISBN-10 is converted to its ISBN-13, so
    the same book typed either way is caught as a duplicate.
- - Titles, author names and tags ignore case when compared and sorted ("Sci-fi" and "sci-fi" are one tag), but
-   not accents ("Citta" and "Città" differ). All three are trimmed and cannot be blank.
- - Author names are unique: two different authors cannot share a name, so picking an author by name is never
-   ambiguous. An author used by a book cannot be deleted; unused authors are kept until removed.
+ - Titles, author names and surnames, and tags ignore case when compared and sorted ("Sci-fi" and "sci-fi"
+   are one tag), but not accents ("Citta" and "Città" differ). All are trimmed; titles, surnames and tags
+   cannot be blank. An author's name (the given name) may be empty, stored as '' rather than NULL so that
+   uniqueness still holds.
+ - An author is a name and a surname, and that pair is unique: two different authors cannot share both, so
+   picking an author is never ambiguous. Authors may share a surname (Charlotte and Emily Brontë). An author used by a book cannot be deleted; unused authors are kept until removed.
  - Tags are stored as text on each book, with no list of tags of their own.
  - Deleting a user removes their collection, which may leave books in no collection (and so deletable).
- - Sizes: title, publisher and author name up to 255 characters, language (free text, e.g. "Italian") up to 64,
-   tag up to 64, notes up to 4000. Who added a book is not recorded.
+ - Sizes: title and publisher up to 255 characters, author name and surname up to 127 each, language (free
+   text, e.g. "Italian") up to 64, tag up to 64, notes up to 4000. Name and surname are limited to 127 because
+   the unique index on both must fit Firebird's index key limit (8 KB pages). Who added a book is not recorded.
 
 ## Main page
 
@@ -267,9 +275,11 @@ Decisions:
  - The list is shown in pages of 50 books.
  - On the phone, books are shown as a list of rows, not a grid (books have no covers; see Books).
  - Each row shows the title, the authors in their order and the publication year.
- - Sorting by author uses each book's first author, then the title; books without authors come last. Date added
+ - Sorting by author uses each book's first author (surname, then name), then the title; books without
+   authors come last. Date added
    sorts newest first.
- - The search ignores case and spaces around it. In ISBNs, hyphens and spaces are ignored, and an ISBN-10 finds
+ - The search ignores case and spaces around it. An author matches on name, surname or both ("Frank
+   Herbert"). In ISBNs, hyphens and spaces are ignored, and an ISBN-10 finds
    the book stored with the matching ISBN-13.
  - With htmx, typing in the search box (after a short pause), changing the order and moving between pages
    reload only the list, and the address bar keeps the search, order and page so they can be bookmarked.

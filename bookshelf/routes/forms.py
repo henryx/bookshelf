@@ -3,6 +3,9 @@ from flask_wtf import FlaskForm
 from wtforms import (
     BooleanField,
     EmailField,
+    FieldList,
+    Form,
+    FormField,
     IntegerField,
     PasswordField,
     SelectField,
@@ -20,13 +23,14 @@ from wtforms.validators import (
     Optional,
 )
 
-from bookshelf.models.books import InvalidIsbnError, NewBook, normalise_isbn
+from bookshelf.models.books import Author, InvalidIsbnError, NewBook, normalise_isbn
 from bookshelf.models.users import PasswordTooShortError, Role, validate_new_password
 
-__all__ = ["BookForm", "LoginForm", "NewAccountForm", "UserForm"]
+__all__ = ["AuthorForm", "BookForm", "LoginForm", "NewAccountForm", "UserForm"]
 
 # Column sizes in BOOKS, AUTHORS and BOOK_TAGS.
 _NAME_MAX_LENGTH = 255
+_AUTHOR_NAME_MAX_LENGTH = 127
 _TAG_MAX_LENGTH = 64
 
 
@@ -100,15 +104,36 @@ class UserForm(FlaskForm):
         _check_new_password(field.data or "")
 
 
+class AuthorForm(Form):
+    """
+    One author row: name and surname. An empty row is ignored; a name needs a
+    surname. A plain Form: the BookForm around it has the CSRF token.
+    """
+
+    name = StringField(
+        "Name", filters=[_strip], validators=[Length(max=_AUTHOR_NAME_MAX_LENGTH)]
+    )
+    surname = StringField(
+        "Surname", filters=[_strip], validators=[Length(max=_AUTHOR_NAME_MAX_LENGTH)]
+    )
+
+    def validate_surname(self, field: StringField) -> None:
+        if self.name.data and not field.data:
+            raise ValidationError("Surname is required.")
+
+    def to_author(self) -> Author:
+        return Author(self.name.data or "", self.surname.data or "")
+
+
 class BookForm(FlaskForm):
-    """A new book. Authors are one per line, tags separated by commas."""
+    """A new book: authors as rows of name and surname, tags separated by commas."""
 
     title = StringField(
         "Title",
         filters=[_strip],
         validators=[DataRequired(), Length(max=_NAME_MAX_LENGTH)],
     )
-    authors = TextAreaField("Authors")
+    authors = FieldList(FormField(AuthorForm), "Authors", min_entries=1)
     isbn = StringField("ISBN", filters=[_strip_or_none])
     publisher = _optional_text("Publisher", _NAME_MAX_LENGTH)
     publication_year = IntegerField(
@@ -125,17 +150,19 @@ class BookForm(FlaskForm):
         validators=[InputRequired(), NumberRange(min=1, max=999)],
     )
 
-    def author_names(self) -> tuple[str, ...]:
-        return tuple((self.authors.data or "").splitlines())
+    def add_author_row(self) -> None:
+        """One more empty author row (the + button without JavaScript)."""
+        self.authors.append_entry()
+
+    def remove_author_row(self, index: str) -> None:
+        """Drop the author row numbered `index` (the - button without JavaScript)."""
+        name = f"{self.authors.name}-{index}"
+        self.authors.entries = [e for e in self.authors.entries if e.name != name]
+        if not self.authors.entries:
+            self.authors.append_entry()
 
     def tag_names(self) -> tuple[str, ...]:
         return tuple((self.tags.data or "").split(","))
-
-    def validate_authors(self, _field: TextAreaField) -> None:
-        if any(len(name.strip()) > _NAME_MAX_LENGTH for name in self.author_names()):
-            raise ValidationError(
-                f"Author names cannot be longer than {_NAME_MAX_LENGTH} characters."
-            )
 
     def validate_tags(self, _field: StringField) -> None:
         if any(len(tag.strip()) > _TAG_MAX_LENGTH for tag in self.tag_names()):
@@ -154,7 +181,7 @@ class BookForm(FlaskForm):
     def to_book(self) -> NewBook:
         return NewBook(
             title=self.title.data or "",
-            authors=self.author_names(),
+            authors=tuple(entry.form.to_author() for entry in self.authors),
             isbn=self.isbn.data,
             publisher=self.publisher.data,
             publication_year=self.publication_year.data,

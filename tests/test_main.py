@@ -40,14 +40,19 @@ def _add_book(
                 "VALUES (?, ?, ?, ?, COALESCE(?, CURRENT_TIMESTAMP))",
                 (book_id, title, isbn, year, added),
             )
-            for order, name in enumerate(authors, start=1):
-                cur.execute("SELECT ID FROM AUTHORS WHERE NAME = ?", (name,))
+            for order, full_name in enumerate(authors, start=1):
+                # "Terry Pratchett": name "Terry", surname "Pratchett".
+                name, _, surname = full_name.rpartition(" ")
+                cur.execute(
+                    "SELECT ID FROM AUTHORS WHERE NAME = ? AND SURNAME = ?",
+                    (name, surname),
+                )
                 row = cur.fetchone()
                 author_id = row[0] if row else uuid4().bytes
                 if row is None:
                     cur.execute(
-                        "INSERT INTO AUTHORS (ID, NAME) VALUES (?, ?)",
-                        (author_id, name),
+                        "INSERT INTO AUTHORS (ID, NAME, SURNAME) VALUES (?, ?, ?)",
+                        (author_id, name, surname),
                     )
                 cur.execute(
                     "INSERT INTO BOOK_AUTHORS (BOOK_ID, AUTHOR_ID, SORT_ORDER) "
@@ -91,14 +96,16 @@ def test_books_sorted_by_title_ignoring_case_by_default(db_app, client):
 
 
 def test_books_sorted_by_first_author_without_authors_last(db_app, client):
+    """By surname, then name, ignoring case."""
     _add_book(db_app, "A", ("Zadie Smith",))
     _add_book(db_app, "B")
     _add_book(db_app, "C", ("ann Leckie", "Zadie Smith"))
     _add_book(db_app, "D", ("Banks",))
+    _add_book(db_app, "E", ("Adam Smith",))
 
     html = client.get("/?sort=author").get_data(as_text=True)
 
-    assert _titles(html) == ["C", "D", "A", "B"]
+    assert _titles(html) == ["D", "C", "E", "A", "B"]
 
 
 def test_books_sorted_by_date_added_newest_first(db_app, client):
@@ -125,7 +132,9 @@ def test_unknown_sort_falls_back_to_title(db_app, client):
     ("search", "expected"),
     [
         ("dune", ["Dune"]),  # title, ignoring case
-        ("HERBERT", ["Dune"]),  # author, ignoring case
+        ("HERBERT", ["Dune"]),  # author's surname, ignoring case
+        ("frank", ["Dune"]),  # author's name
+        ("Frank Herbert", ["Dune"]),  # author's name and surname
         ("leckie", ["Ancillary Justice"]),  # second author
         ("978-0-441", ["Dune"]),  # ISBN, hyphens ignored
         ("0441172717", ["Dune"]),  # ISBN-10 of the stored ISBN-13

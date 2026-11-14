@@ -8,6 +8,7 @@ from firebird.driver import Connection, Cursor, DatabaseError
 __all__ = [
     "PAGE_SIZE",
     "SEARCH_MAX_LENGTH",
+    "Author",
     "Book",
     "BookExistsError",
     "BookPage",
@@ -23,7 +24,8 @@ __all__ = [
 _UNIQUE_KEY_VIOLATION = 335544665
 
 PAGE_SIZE = 50
-# The longest searched column (TITLE, AUTHORS.NAME); a longer text matches nothing.
+# The longest searched text (TITLE, or an author's name and surname); a
+# longer text matches nothing.
 SEARCH_MAX_LENGTH = 255
 
 
@@ -52,12 +54,23 @@ class Sort(StrEnum):
 
 
 @dataclass(frozen=True)
+class Author:
+    """An author's given name ('' when there is none, as for "Homer") and surname."""
+
+    name: str
+    surname: str
+
+    def __str__(self) -> str:
+        return f"{self.name} {self.surname}".strip()
+
+
+@dataclass(frozen=True)
 class Book:
     """A book as shown in the book list."""
 
     id: UUID
     title: str
-    authors: tuple[str, ...]
+    authors: tuple[Author, ...]
     publication_year: int | None
 
 
@@ -69,7 +82,7 @@ class NewBook:
     """
 
     title: str
-    authors: tuple[str, ...] = ()
+    authors: tuple[Author, ...] = ()
     isbn: str | None = None
     publisher: str | None = None
     publication_year: int | None = None
@@ -91,7 +104,8 @@ class BookPage:
         return max(1, -(-self.total // self.page_size))
 
 
-# Search: title, any author or ISBN contains the text, ignoring case.
+# Search: title, any author's "name surname" or ISBN contains the text,
+# ignoring case.
 # CONTAINING '' is true, so an empty search lists every book. The CASTs keep
 # the parameters from taking the column types (CHAR(13) for ISBN).
 _COUNT_QUERY = """
@@ -100,7 +114,8 @@ _COUNT_QUERY = """
        OR b.ISBN CONTAINING CAST(? AS VARCHAR(255))
        OR EXISTS (
            SELECT 1 FROM BOOK_AUTHORS ba JOIN AUTHORS a ON a.ID = ba.AUTHOR_ID
-           WHERE ba.BOOK_ID = b.ID AND a.NAME CONTAINING CAST(? AS VARCHAR(255))
+           WHERE ba.BOOK_ID = b.ID
+                     AND (a.NAME || ' ' || a.SURNAME) CONTAINING CAST(? AS VARCHAR(255))
        )
 """
 
@@ -108,14 +123,15 @@ _COUNT_QUERY = """
 # authors), in the page's order and each book's author order.
 _LIST_QUERIES: dict[Sort, str] = {
     Sort.TITLE: """
-        SELECT p.ID, p.TITLE, p.PUBLICATION_YEAR, a.NAME
+        SELECT p.ID, p.TITLE, p.PUBLICATION_YEAR, a.NAME, a.SURNAME
         FROM (
             SELECT b.ID, b.TITLE, b.PUBLICATION_YEAR FROM BOOKS b
             WHERE b.TITLE CONTAINING CAST(? AS VARCHAR(255))
                OR b.ISBN CONTAINING CAST(? AS VARCHAR(255))
                OR EXISTS (
                    SELECT 1 FROM BOOK_AUTHORS ba JOIN AUTHORS a ON a.ID = ba.AUTHOR_ID
-                   WHERE ba.BOOK_ID = b.ID AND a.NAME CONTAINING CAST(? AS VARCHAR(255))
+                   WHERE ba.BOOK_ID = b.ID
+                     AND (a.NAME || ' ' || a.SURNAME) CONTAINING CAST(? AS VARCHAR(255))
                )
             ORDER BY b.TITLE, b.ID
             OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
@@ -124,38 +140,43 @@ _LIST_QUERIES: dict[Sort, str] = {
         LEFT JOIN AUTHORS a ON a.ID = ba.AUTHOR_ID
         ORDER BY p.TITLE, p.ID, ba.SORT_ORDER
     """,
-    # By first author; books without authors last.
+    # By first author's surname, then name; books without authors last.
     Sort.AUTHOR: """
-        SELECT p.ID, p.TITLE, p.PUBLICATION_YEAR, a.NAME
+        SELECT p.ID, p.TITLE, p.PUBLICATION_YEAR, a.NAME, a.SURNAME
         FROM (
             SELECT b.ID, b.TITLE, b.PUBLICATION_YEAR,
+                   (SELECT FIRST 1 fa.SURNAME
+                    FROM BOOK_AUTHORS fba JOIN AUTHORS fa ON fa.ID = fba.AUTHOR_ID
+                    WHERE fba.BOOK_ID = b.ID ORDER BY fba.SORT_ORDER) AS FIRST_SURNAME,
                    (SELECT FIRST 1 fa.NAME
                     FROM BOOK_AUTHORS fba JOIN AUTHORS fa ON fa.ID = fba.AUTHOR_ID
-                    WHERE fba.BOOK_ID = b.ID ORDER BY fba.SORT_ORDER) AS FIRST_AUTHOR
+                    WHERE fba.BOOK_ID = b.ID ORDER BY fba.SORT_ORDER) AS FIRST_NAME
             FROM BOOKS b
             WHERE b.TITLE CONTAINING CAST(? AS VARCHAR(255))
                OR b.ISBN CONTAINING CAST(? AS VARCHAR(255))
                OR EXISTS (
                    SELECT 1 FROM BOOK_AUTHORS ba JOIN AUTHORS a ON a.ID = ba.AUTHOR_ID
-                   WHERE ba.BOOK_ID = b.ID AND a.NAME CONTAINING CAST(? AS VARCHAR(255))
+                   WHERE ba.BOOK_ID = b.ID
+                     AND (a.NAME || ' ' || a.SURNAME) CONTAINING CAST(? AS VARCHAR(255))
                )
-            ORDER BY FIRST_AUTHOR NULLS LAST, b.TITLE, b.ID
+            ORDER BY FIRST_SURNAME NULLS LAST, FIRST_NAME, b.TITLE, b.ID
             OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
         ) p
         LEFT JOIN BOOK_AUTHORS ba ON ba.BOOK_ID = p.ID
         LEFT JOIN AUTHORS a ON a.ID = ba.AUTHOR_ID
-        ORDER BY p.FIRST_AUTHOR NULLS LAST, p.TITLE, p.ID, ba.SORT_ORDER
+        ORDER BY p.FIRST_SURNAME NULLS LAST, p.FIRST_NAME, p.TITLE, p.ID, ba.SORT_ORDER
     """,
     # Newest first.
     Sort.ADDED: """
-        SELECT p.ID, p.TITLE, p.PUBLICATION_YEAR, a.NAME
+        SELECT p.ID, p.TITLE, p.PUBLICATION_YEAR, a.NAME, a.SURNAME
         FROM (
             SELECT b.ID, b.TITLE, b.PUBLICATION_YEAR, b.CREATED_AT FROM BOOKS b
             WHERE b.TITLE CONTAINING CAST(? AS VARCHAR(255))
                OR b.ISBN CONTAINING CAST(? AS VARCHAR(255))
                OR EXISTS (
                    SELECT 1 FROM BOOK_AUTHORS ba JOIN AUTHORS a ON a.ID = ba.AUTHOR_ID
-                   WHERE ba.BOOK_ID = b.ID AND a.NAME CONTAINING CAST(? AS VARCHAR(255))
+                   WHERE ba.BOOK_ID = b.ID
+                     AND (a.NAME || ' ' || a.SURNAME) CONTAINING CAST(? AS VARCHAR(255))
                )
             ORDER BY b.CREATED_AT DESC, b.ID
             OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
@@ -216,12 +237,16 @@ def _search_params(search: str) -> tuple[str, str, str]:
     return search, _isbn_search(search), search
 
 
-def _books(rows: list[tuple[bytes, str, int | None, str | None]]) -> list[Book]:
+type _BookRow = tuple[bytes, str, int | None, str | None, str | None]
+
+
+def _books(rows: list[_BookRow]) -> list[Book]:
     """Group the per-author rows into books, keeping their order."""
     books: dict[bytes, Book] = {}
-    for book_id, title, year, author in rows:
+    for book_id, title, year, name, surname in rows:
         book = books.get(book_id) or Book(UUID(bytes=book_id), title, (), year)
-        if author is not None:
+        if surname is not None:
+            author = Author(name or "", surname)
             book = Book(book.id, title, (*book.authors, author), year)
         books[book_id] = book
     return list(books.values())
@@ -252,8 +277,24 @@ def list_books(
         return BookPage(_books(cur.fetchall()), total, page, page_size)
 
 
+def _unique_authors(authors: tuple[Author, ...]) -> list[Author]:
+    """
+    Trimmed authors with a surname, the first of each kept (ignoring case).
+    Rows left entirely empty are skipped.
+    """
+    seen: set[tuple[str, str]] = set()
+    unique = []
+    for author in authors:
+        trimmed = Author(author.name.strip(), author.surname.strip())
+        key = (trimmed.name.casefold(), trimmed.surname.casefold())
+        if (trimmed.name or trimmed.surname) and key not in seen:
+            seen.add(key)
+            unique.append(trimmed)
+    return unique
+
+
 def _unique_ignoring_case(names: tuple[str, ...]) -> list[str]:
-    """Trimmed, non-blank names, the first of each kept (ignoring case)."""
+    """Trimmed, non-blank tags, the first of each kept (ignoring case)."""
     seen: set[str] = set()
     unique = []
     for name in (n.strip() for n in names):
@@ -263,24 +304,30 @@ def _unique_ignoring_case(names: tuple[str, ...]) -> list[str]:
     return unique
 
 
-def _find_author(cur: Cursor, name: str) -> bytes | None:
-    # NAME ignores case (UNICODE_CI), so "TERRY PRATCHETT" finds "Terry Pratchett".
-    cur.execute("SELECT ID FROM AUTHORS WHERE NAME = ?", (name,))
+def _find_author(cur: Cursor, author: Author) -> bytes | None:
+    # Both ignore case (UNICODE_CI), so "TERRY PRATCHETT" finds "Terry Pratchett".
+    cur.execute(
+        "SELECT ID FROM AUTHORS WHERE SURNAME = ? AND NAME = ?",
+        (author.surname, author.name),
+    )
     row = cur.fetchone()
     return row[0] if row else None
 
 
-def _author_id(cur: Cursor, name: str) -> bytes:
-    """The existing author with this name (ignoring case), or a new one."""
-    author_id = _find_author(cur, name)
+def _author_id(cur: Cursor, author: Author) -> bytes:
+    """The existing author with this name and surname (ignoring case), or a new one."""
+    author_id = _find_author(cur, author)
     if author_id is not None:
         return author_id
     author_id = uuid4().bytes
     try:
-        cur.execute("INSERT INTO AUTHORS (ID, NAME) VALUES (?, ?)", (author_id, name))
+        cur.execute(
+            "INSERT INTO AUTHORS (ID, NAME, SURNAME) VALUES (?, ?, ?)",
+            (author_id, author.name, author.surname),
+        )
     except DatabaseError as e:
         # Added by someone else since the lookup: use theirs.
-        existing = _find_author(cur, name)
+        existing = _find_author(cur, author)
         if _UNIQUE_KEY_VIOLATION not in e.gds_codes or existing is None:
             raise
         return existing
@@ -290,7 +337,8 @@ def _author_id(cur: Cursor, name: str) -> bytes:
 def add_book(conn: Connection, user_id: UUID, book: NewBook, copies: int = 1) -> UUID:
     """
     Add a book to the catalogue and to the user's collection with `copies`
-    copies, in one transaction. Authors are picked by name or created.
+    copies, in one transaction. Authors are picked by name and surname, or
+    created; one with a name but no surname is refused by the database.
     Raises InvalidIsbnError for a bad ISBN and BookExistsError if the ISBN
     is already in the catalogue.
     """
@@ -317,11 +365,11 @@ def add_book(conn: Connection, user_id: UUID, book: NewBook, copies: int = 1) ->
             if isbn is not None and _UNIQUE_KEY_VIOLATION in e.gds_codes:
                 raise BookExistsError(isbn) from e
             raise
-        for order, name in enumerate(_unique_ignoring_case(book.authors), start=1):
+        for order, author in enumerate(_unique_authors(book.authors), start=1):
             cur.execute(
                 "INSERT INTO BOOK_AUTHORS (BOOK_ID, AUTHOR_ID, SORT_ORDER) "
                 "VALUES (?, ?, ?)",
-                (book_id.bytes, _author_id(cur, name), order),
+                (book_id.bytes, _author_id(cur, author), order),
             )
         for tag in _unique_ignoring_case(book.tags):
             cur.execute(

@@ -1,0 +1,19 @@
+{# One author row of the add-book form. Takes index (a number, or "__index__" in the
+   <template> that app.js copies), name, surname, errors and first: the first row
+   has the + button, the others a - button. Both submit the form when JavaScript
+   is off, so the server adds or removes the row. #}
+{% set prefix = "authors-" ~ index %}
+<div class="author-row" data-row data-index="{{ index }}">
+  <input id="book-{{ prefix }}-name" name="{{ prefix }}-name" value="{{ name or '' }}"
+         maxlength="127" autocomplete="off" placeholder="Name" aria-label="Author name">
+  <input id="book-{{ prefix }}-surname" name="{{ prefix }}-surname" value="{{ surname or '' }}"
+         maxlength="127" autocomplete="off" placeholder="Surname" aria-label="Author surname">
+  {% if first %}
+    <button type="submit" class="row-button" name="add_author" value="1" formnovalidate
+            data-row-add aria-label="Add another author" title="Add another author">+</button>
+  {% else %}
+    <button type="submit" class="row-button secondary" name="remove_author" value="{{ index }}"
+            formnovalidate data-row-remove aria-label="Remove this author" title="Remove this author">−</button>
+  {% endif %}
+  {% for error in errors %}<p class="error">{{ error }}</p>{% endfor %}
+</div>

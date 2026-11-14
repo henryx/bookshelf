@@ -51,9 +51,13 @@ def _add_book(
     return book_id
 
 
-def _add_author(conn: Connection, name: str) -> bytes:
+def _add_author(conn: Connection, surname: str, name: str = "") -> bytes:
     author_id = uuid4().bytes
-    _run(conn, "INSERT INTO AUTHORS (ID, NAME) VALUES (?, ?)", (author_id, name))
+    _run(
+        conn,
+        "INSERT INTO AUTHORS (ID, NAME, SURNAME) VALUES (?, ?, ?)",
+        (author_id, name, surname),
+    )
     return author_id
 
 
@@ -118,31 +122,60 @@ def test_titles_sort_and_match_ignoring_case(conn: Connection):
 
 def test_long_accented_names_fit_their_indexes(conn: Connection):
     _add_book(conn, "è" * 255)
-    _add_author(conn, "é" * 255)
+    _add_author(conn, "é" * 127, "ü" * 127)
 
     assert _count(conn, "SELECT COUNT(*) FROM AUTHORS") == 1
 
 
-def test_author_names_are_unique_ignoring_case(conn: Connection):
-    _add_author(conn, "Italo Calvino")
+def test_author_name_and_surname_are_unique_ignoring_case(conn: Connection):
+    _add_author(conn, "Calvino", "Italo")
 
     assert _refused(
         conn,
-        "INSERT INTO AUTHORS (ID, NAME) VALUES (?, ?)",
-        (uuid4().bytes, "italo calvino"),
+        "INSERT INTO AUTHORS (ID, NAME, SURNAME) VALUES (?, ?, ?)",
+        (uuid4().bytes, "italo", "CALVINO"),
     )
 
 
-@pytest.mark.parametrize("name", ["", " Untrimmed", "Untrimmed "])
-def test_author_name_must_be_non_blank_and_trimmed(conn: Connection, name: str):
+def test_authors_may_share_a_surname(conn: Connection):
+    _add_author(conn, "Brontë", "Charlotte")
+    _add_author(conn, "Brontë", "Emily")
+    _add_author(conn, "Brontë")
+
+    assert _count(conn, "SELECT COUNT(*) FROM AUTHORS") == 3
+
+
+def test_author_without_name_is_unique_too(conn: Connection):
+    _add_author(conn, "Homer")
+
     assert _refused(
-        conn, "INSERT INTO AUTHORS (ID, NAME) VALUES (?, ?)", (uuid4().bytes, name)
+        conn,
+        "INSERT INTO AUTHORS (ID, SURNAME) VALUES (?, ?)",
+        (uuid4().bytes, "homer"),
+    )
+
+
+@pytest.mark.parametrize("surname", ["", " Untrimmed", "Untrimmed "])
+def test_author_surname_must_be_non_blank_and_trimmed(conn: Connection, surname: str):
+    assert _refused(
+        conn,
+        "INSERT INTO AUTHORS (ID, NAME, SURNAME) VALUES (?, ?, ?)",
+        (uuid4().bytes, "Italo", surname),
+    )
+
+
+@pytest.mark.parametrize("name", [" Untrimmed", "Untrimmed ", None])
+def test_author_name_must_be_trimmed_and_not_null(conn: Connection, name: str | None):
+    assert _refused(
+        conn,
+        "INSERT INTO AUTHORS (ID, NAME, SURNAME) VALUES (?, ?, ?)",
+        (uuid4().bytes, name, "Calvino"),
     )
 
 
 def test_author_appears_once_per_book(conn: Connection):
     book_id = _add_book(conn)
-    author_id = _add_author(conn, "Italo Calvino")
+    author_id = _add_author(conn, "Calvino", "Italo")
     _run(
         conn,
         "INSERT INTO BOOK_AUTHORS (BOOK_ID, AUTHOR_ID, SORT_ORDER) VALUES (?, ?, 1)",
@@ -177,13 +210,13 @@ def test_author_order_starts_at_one(conn: Connection):
     assert _refused(
         conn,
         "INSERT INTO BOOK_AUTHORS (BOOK_ID, AUTHOR_ID, SORT_ORDER) VALUES (?, ?, 0)",
-        (_add_book(conn), _add_author(conn, "Italo Calvino")),
+        (_add_book(conn), _add_author(conn, "Calvino", "Italo")),
     )
 
 
 def test_author_of_a_book_cannot_be_deleted(conn: Connection):
     book_id = _add_book(conn)
-    author_id = _add_author(conn, "Italo Calvino")
+    author_id = _add_author(conn, "Calvino", "Italo")
     _run(
         conn,
         "INSERT INTO BOOK_AUTHORS (BOOK_ID, AUTHOR_ID, SORT_ORDER) VALUES (?, ?, 1)",
@@ -247,7 +280,7 @@ def test_deleting_a_user_empties_their_collection(conn: Connection, user: User):
 
 def test_deleting_a_book_removes_its_author_and_tag_links(conn: Connection):
     book_id = _add_book(conn)
-    author_id = _add_author(conn, "Italo Calvino")
+    author_id = _add_author(conn, "Calvino", "Italo")
     _run(
         conn,
         "INSERT INTO BOOK_AUTHORS (BOOK_ID, AUTHOR_ID, SORT_ORDER) VALUES (?, ?, 1)",

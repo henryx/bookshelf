@@ -8,6 +8,7 @@ from flask.testing import FlaskClient
 
 from bookshelf.db import get_db
 from bookshelf.models.books import (
+    Author,
     InvalidIsbnError,
     NewBook,
     add_book,
@@ -25,6 +26,15 @@ def client(db_client: FlaskClient, user: User, password: str) -> FlaskClient:
     rv = db_client.post("/login", data={"email": user.email, "password": password})
     assert rv.status_code == 302
     return db_client
+
+
+def _authors(*rows: tuple[str, str], start: int = 0) -> dict[str, str]:
+    """Form fields for author rows of (name, surname), numbered from `start`."""
+    fields = {}
+    for index, (name, surname) in enumerate(rows, start=start):
+        fields[f"authors-{index}-name"] = name
+        fields[f"authors-{index}-surname"] = surname
+    return fields
 
 
 def _post(client: FlaskClient, **fields: str):
@@ -82,7 +92,7 @@ def test_add_book_saves_it_in_the_catalogue_and_collection(db_app, client, user)
     rv = _post(
         client,
         title="  Good Omens ",
-        authors="Terry Pratchett\n\n  Neil Gaiman  \n",
+        **_authors(("Terry", "Pratchett"), ("", ""), ("  Neil ", " Gaiman  ")),
         isbn="0-552-13703-0",
         publisher="Gollancz",
         publication_year="1990",
@@ -110,11 +120,12 @@ def test_add_book_saves_it_in_the_catalogue_and_collection(db_app, client, user)
     ]
     authors = _rows(
         db_app,
-        "SELECT a.NAME FROM BOOK_AUTHORS ba JOIN AUTHORS a ON a.ID = ba.AUTHOR_ID "
+        "SELECT a.NAME, a.SURNAME FROM BOOK_AUTHORS ba "
+        "JOIN AUTHORS a ON a.ID = ba.AUTHOR_ID "
         "WHERE ba.BOOK_ID = ? ORDER BY ba.SORT_ORDER",
         (book_id,),
     )
-    assert [name for (name,) in authors] == ["Terry Pratchett", "Neil Gaiman"]
+    assert authors == [("Terry", "Pratchett"), ("Neil", "Gaiman")]
     tags = _rows(
         db_app, "SELECT TAG FROM BOOK_TAGS WHERE BOOK_ID = ? ORDER BY TAG", (book_id,)
     )
@@ -147,15 +158,40 @@ def test_add_book_with_title_only_leaves_the_rest_empty(db_app, client):
 
 
 def test_add_book_reuses_existing_author_ignoring_case(db_app, client):
-    _post(client, title="Mort", authors="Terry Pratchett")
-    _post(client, title="Guards! Guards!", authors="TERRY PRATCHETT")
+    _post(client, title="Mort", **_authors(("Terry", "Pratchett")))
+    _post(client, title="Guards! Guards!", **_authors(("TERRY", "PRATCHETT")))
 
-    names = _rows(db_app, "SELECT NAME FROM AUTHORS")
-    assert names == [("Terry Pratchett",)]
+    names = _rows(db_app, "SELECT NAME, SURNAME FROM AUTHORS")
+    assert names == [("Terry", "Pratchett")]
+
+
+def test_add_book_author_with_surname_only(db_app, client):
+    _post(client, title="Iliad", **_authors(("", "Homer")))
+
+    names = _rows(db_app, "SELECT NAME, SURNAME FROM AUTHORS")
+    assert names == [("", "Homer")]
+    html = client.get("/").get_data(as_text=True)
+    assert '<span class="book-authors">Homer</span>' in html
+
+
+def test_add_book_keeps_author_rows_in_order_despite_gaps(db_app, client):
+    """Rows removed in the browser leave gaps in the numbering."""
+    _post(
+        client,
+        **_authors(("A", "First"), start=0),
+        **_authors(("B", "Second"), start=3),
+    )
+
+    authors = _rows(
+        db_app,
+        "SELECT a.SURNAME FROM BOOK_AUTHORS ba JOIN AUTHORS a ON a.ID = ba.AUTHOR_ID "
+        "ORDER BY ba.SORT_ORDER",
+    )
+    assert authors == [("First",), ("Second",)]
 
 
 def test_add_book_drops_repeated_author(db_app, client):
-    _post(client, authors="Ann Leckie\nann leckie")
+    _post(client, **_authors(("Ann", "Leckie"), ("ann", "LECKIE")))
 
     assert _scalar(db_app, "SELECT COUNT(*) FROM BOOK_AUTHORS") == 1
 
@@ -178,7 +214,12 @@ def test_add_book_without_htmx_redirects(client):
         ({"title": "x" * 256}, "Field cannot be longer than 255 characters."),
         ({"isbn": "978-0-441-17271-8"}, "Not a valid ISBN."),
         ({"isbn": "12345"}, "Not a valid ISBN."),
-        ({"authors": "x" * 256}, "Author names cannot be longer than 255 characters."),
+        (_authors(("Ann", "")), "Surname is required."),
+        (
+            _authors(("x" * 128, "Leckie")),
+            "Field cannot be longer than 127 characters.",
+        ),
+        (_authors(("Ann", "x" * 128)), "Field cannot be longer than 127 characters."),
         ({"tags": "x" * 65}, "Tags cannot be longer than 64 characters."),
         ({"publication_year": "abc"}, "Not a valid integer value."),
         ({"publication_year": "10000"}, "Number must be between 1 and 9999."),
@@ -246,9 +287,63 @@ def test_normalise_isbn_rejects_invalid(isbn):
 def test_add_book_model_returns_id_listed_in_catalogue(db_app, user):
     with db_app.app_context():
         conn = get_db()
-        book_id = add_book(conn, user.id, NewBook(title="Dune", authors=("Herbert",)))
+        book_id = add_book(
+            conn, user.id, NewBook(title="Dune", authors=(Author("Frank", "Herbert"),))
+        )
         books = list_books(conn).books
 
     assert [(b.id, b.title, b.authors) for b in books] == [
-        (book_id, "Dune", ("Herbert",))
+        (book_id, "Dune", (Author("Frank", "Herbert"),))
     ]
+
+
+# Author rows
+
+
+def test_form_has_one_author_row_with_add_button_and_a_row_template(client):
+    html = client.get("/books/new").get_data(as_text=True)
+
+    assert 'name="authors-0-name"' in html
+    assert 'name="authors-0-surname"' in html
+    assert 'name="add_author"' in html
+    assert "<template" in html
+    assert 'name="authors-__index__-surname"' in html
+
+
+def test_add_author_row_without_javascript(db_app, client):
+    """The + button posts the form back with one more, empty, row."""
+    rv = client.post(
+        "/books/new",
+        data={
+            "title": "Dune",
+            "copies": "1",
+            "add_author": "1",
+            **_authors(("Frank", "Herbert")),
+        },
+    )
+    html = rv.get_data(as_text=True)
+
+    assert rv.status_code == 200
+    assert 'value="Herbert"' in html
+    assert 'name="authors-1-surname"' in html
+    assert 'name="remove_author" value="1"' in html
+    assert "This field is required." not in html
+    assert _scalar(db_app, "SELECT COUNT(*) FROM BOOKS") == 0
+
+
+def test_remove_author_row_without_javascript(db_app, client):
+    rv = client.post(
+        "/books/new",
+        data={
+            "title": "Good Omens",
+            "copies": "1",
+            "remove_author": "1",
+            **_authors(("Terry", "Pratchett"), ("Neil", "Gaiman")),
+        },
+    )
+    html = rv.get_data(as_text=True)
+
+    assert 'value="Pratchett"' in html
+    assert 'value="Gaiman"' not in html
+    assert 'name="authors-1-surname"' not in html
+    assert _scalar(db_app, "SELECT COUNT(*) FROM BOOKS") == 0
