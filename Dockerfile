@@ -26,7 +26,7 @@ RUN --mount=from=uv,source=/uv,target=/bin/uv \
 FROM ${PYTHON_IMAGE} AS wheel
 ENV UV_PYTHON_DOWNLOADS=never
 WORKDIR /src
-COPY pyproject.toml uv.lock README.md ./
+COPY pyproject.toml uv.lock README.md LICENSE ./
 COPY bookshelf ./bookshelf
 RUN --mount=from=uv,source=/uv,target=/bin/uv \
     --mount=type=cache,target=/root/.cache/uv \
