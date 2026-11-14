@@ -1,6 +1,8 @@
 """Adding a book from the main page."""
 
 import re
+import time
+from concurrent.futures import ThreadPoolExecutor
 from uuid import uuid4
 
 import pytest
@@ -364,6 +366,60 @@ def test_add_book_uses_author_added_concurrently(db_app, user):
     assert [(b.title, b.authors) for b in books] == [
         ("Dune", (Author("Frank", "Herbert"),))
     ]
+    assert _scalar(db_app, "SELECT COUNT(*) FROM AUTHORS") == 1
+
+
+def _wait_until_author_insert_blocks(app: Flask) -> None:
+    """
+    Wait until another attachment's author insert is running, i.e. waiting for
+    the lock on the uncommitted author. Each check is a new transaction, so it
+    sees fresh monitoring data.
+    """
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        running = _scalar(
+            app,
+            "SELECT COUNT(*) FROM MON$STATEMENTS "
+            "WHERE MON$STATE = 1 AND MON$ATTACHMENT_ID <> CURRENT_CONNECTION "
+            "AND MON$SQL_TEXT CONTAINING 'INSERT INTO AUTHORS'",
+        )
+        if running:
+            return
+        time.sleep(0.05)
+    pytest.fail("The author insert never started waiting")
+
+
+def test_add_book_uses_author_committed_while_inserting(db_app, user, other_conn):
+    """
+    Someone else's new author, still uncommitted when the book looks it up,
+    is committed while the book's insert of the same author waits: the insert
+    clashes, and the book gets their author.
+    """
+    theirs = uuid4().bytes
+    with other_conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO AUTHORS (ID, NAME, SURNAME) VALUES (?, ?, ?)",
+            (theirs, "Frank", "Herbert"),
+        )
+
+    def add() -> None:
+        with db_app.app_context():
+            add_book(
+                get_db(),
+                user.id,
+                NewBook(title="Dune", authors=(Author("FRANK", "HERBERT"),)),
+            )
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        added = executor.submit(add)
+        try:
+            _wait_until_author_insert_blocks(db_app)
+        finally:
+            # Always release the lock, or the executor would wait forever.
+            other_conn.commit()
+        added.result(timeout=10)
+
+    assert _rows(db_app, "SELECT AUTHOR_ID FROM BOOK_AUTHORS") == [(theirs,)]
     assert _scalar(db_app, "SELECT COUNT(*) FROM AUTHORS") == 1
 
 

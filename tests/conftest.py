@@ -3,7 +3,7 @@ from collections.abc import Callable, Iterator
 from uuid import uuid4
 
 import pytest
-from firebird.driver import connect, create_database
+from firebird.driver import Connection, connect, create_database
 from flask import Flask
 from flask.testing import FlaskClient
 from testcontainers.core.container import DockerContainer
@@ -82,6 +82,26 @@ def app() -> Iterator[Flask]:
     app = create_app({"TESTING": True, "WTF_CSRF_ENABLED": False})
     yield app
     close_pool(app)
+
+
+@pytest.fixture
+def other_conn(app: Flask) -> Iterator[Connection]:
+    """
+    A second connection to the app's database, as another request would hold.
+    Uncommitted work is rolled back at the end.
+    """
+    cfg = app.config
+    with connect(
+        cfg["DATABASE_DSN"],
+        user=cfg["DATABASE_USER"],
+        password=cfg["DATABASE_PASSWORD"],
+        charset="UTF8",
+    ) as conn:
+        try:
+            yield conn
+        finally:
+            if conn.is_active():
+                conn.rollback()
 
 
 @pytest.fixture
