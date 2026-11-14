@@ -28,6 +28,10 @@ hash string, so no separate salt column is needed. Users can be two roles: regul
 (column `ROLE`, values `REGULAR` and `ADMIN`, enforced by a `CHECK` constraint). Admin role permit to user
 to made admin operations such add or delete new users.
 
+A user also has an optional name and surname (columns `NAME` and `SURNAME`), shown in the top bar and the admin
+area. Either may be missing; empty fields are stored as NULL, and the database keeps given ones trimmed and non-blank
+(`CHK_USERS_NAME`, `CHK_USERS_SURNAME`). Each is up to 127 characters, like an author's.
+
 ### Login page
 
 When user open for the first time the webapp, a login page is shown. If login and password are correct, main page is
@@ -87,6 +91,8 @@ Decisions:
    floor. Login does not check it, so existing shorter passwords keep working until they are reset.
  - A user's email cannot be changed. The email is the login, so an account with a wrong or invalid email is deleted
    (`delete-user`) and created again with the right one.
+ - Name and surname are optional everywhere: the setup wizard and the CLI (`create-admin`, `create-user`) do not ask
+   for them; users fill them in from their account page, or an admin from the admin area.
  - Failed and blocked logins are logged with the email and the client IP, like the CLI logs emails for every admin
    operation. Only valid emails reach the log, so a password typed into the email field is not logged.
 
@@ -116,27 +122,28 @@ Decisions:
 The admin area is where admins manage the people who can use Bookshelf. Only admins can open it: a visitor who is
 not logged in is sent to the login page, and a regular user is refused. An admin can:
 
- - See every user, with their email, role and status.
+ - See every user, with their email, name, role and status.
  - Create a user.
+ - Set or change a user's name and surname.
  - Make a user an admin, or an admin a regular user again.
  - Lock a user, so they can no longer log in, and unlock them.
  - Set a new password for a user. There is no email, so the admin chooses it and tells the user.
  - Delete a user for good.
 
-**Opening it.** When an admin is logged in, an "Admin" button appears in the top bar next to their email; other users
-do not see it. It opens the users list: a table with each user's email, role (regular or admin) and status (active or
-locked).
+**Opening it.** When an admin is logged in, the account menu in the top bar (see "Account menu") has an "Admin" link;
+other users do not see it. It opens the users list: a table with each user's email, name and surname, role (regular
+or admin) and status (active or locked).
 
 **Editing a user.** Clicking an email opens the user's details in a modal dialog over the list. The email is shown but
-cannot be changed: it is the login, so a wrong email means deleting the user and creating them again. The role, the
-lock and a new password (typed twice; left empty, the current one is kept) are editable. Save applies the changes
+cannot be changed: it is the login, so a wrong email means deleting the user and creating them again. The name and
+surname, the role, the lock and a new password (typed twice; left empty, the current one is kept) are editable. Save applies the changes
 together, and only if every field is valid; otherwise the dialog stays open, shows what is wrong and changes nothing.
 Closing the dialog discards unsaved changes.
 
 **Deleting a user.** The details dialog has a Delete button, which asks for confirmation.
 
 **Creating a user.** A "Create user" button, on the right of the "Users" heading, opens a dialog asking for the
-email and the password (typed twice). New users are regular users; an admin makes them admins from their details.
+email, the name and surname (optional) and the password (typed twice). New users are regular users; an admin makes them admins from their details.
 
 **Rules.** Emails and passwords follow the rules used everywhere else: a valid email not used by another user, and
 a password of at least `APP_MIN_PASSWORD_LENGTH` characters (12 by default). An admin cannot demote, lock or delete
@@ -179,6 +186,7 @@ The same operations are also available as CLI commands (see README):
 | Reset a password | `reset-user-password` (the admin sets the new password; no email is available) |
 | Lock / unlock a user | `lock-user`, `unlock-user` |
 | Delete a user | `delete-user` (asks for confirmation) |
+| Set a user's name and surname | none: web only (the admin area, or the user's account page) |
 
 Every CLI operation except `create-admin` requires valid admin credentials (correct password, `ADMIN` role, not
 locked) and is logged with the admin who performed it. An admin cannot lock, demote or delete their own account.
@@ -190,6 +198,37 @@ the system without an active admin, so the last admin needs no separate protecti
 Known limitation: two `create-admin` runs at the same moment can both find no admin and both succeed, leaving two
 admins. Firebird 3 cannot enforce "only one admin" with a constraint, and `create-admin` is run by hand once at
 setup, so this is accepted rather than guarded with an extra table.
+
+### Account menu
+
+Status: built, in the top bar of every page after login.
+
+The upper right corner of the top bar shows who is logged in: their name and surname (or their email, without a
+name) next to a round avatar with their initials (or the email's first letter). On a phone only the avatar is
+shown. Clicking it opens a menu with the name and the email, "Your account", "Admin" (admins only) and "Log out".
+
+Decisions:
+
+ - The menu is a `<details>` element, so it opens and closes without JavaScript; with JavaScript a click elsewhere
+   or Escape also closes it.
+ - Initials are the first letters of the name and the surname that are given, upper case.
+
+### Your account
+
+Status: built at `/account`.
+
+Every user can change their own name and surname, and their password. The email is shown but cannot be changed (see
+Login page). Save applies the changes together, and only if every field is valid.
+
+Decisions:
+
+ - A new password needs the current one, so a session left open on a shared device cannot be used to take the
+   account over. A wrong current password is refused and logged; it is not counted towards the login limits.
+ - Changing the password ends the user's sessions on other devices ("remember me" cookie included), like an admin's
+   reset, but keeps this one: the user stays logged in.
+ - Role and lock state are not on this page, and saving it never changes them, even if an admin changes them in
+   the meantime.
+ - Empty name or surname fields clear them.
 
 ## Books
 

@@ -1,0 +1,15 @@
+{# A person's optional name and surname, side by side. Set id_prefix to keep
+   element ids unique when two of these forms share a page. #}
+{% set p = id_prefix | default("") %}
+<div class="field-pair">
+  <div class="field">
+    <label for="{{ p }}name">{{ form.name.label.text }}</label>
+    {{ form.name(id=p ~ "name", autocomplete="given-name" if autofill else "off", maxlength=127) }}
+    {% for error in form.name.errors %}<p class="error">{{ error }}</p>{% endfor %}
+  </div>
+  <div class="field">
+    <label for="{{ p }}surname">{{ form.surname.label.text }}</label>
+    {{ form.surname(id=p ~ "surname", autocomplete="family-name" if autofill else "off", maxlength=127) }}
+    {% for error in form.surname.errors %}<p class="error">{{ error }}</p>{% endfor %}
+  </div>
+</div>

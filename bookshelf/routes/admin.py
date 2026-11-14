@@ -24,7 +24,7 @@ from bookshelf.models.users import (
     update_user,
 )
 from bookshelf.routes import htmx_redirect, is_htmx
-from bookshelf.routes.forms import NewAccountForm, UserForm
+from bookshelf.routes.forms import NewUserForm, UserForm
 
 __all__ = ["admin_route"]
 
@@ -59,7 +59,7 @@ def _is_self(user: User) -> bool:
     return user.id == current_user.id
 
 
-def _render_users(form: NewAccountForm) -> str:
+def _render_users(form: NewUserForm) -> str:
     if is_htmx():
         return render_template("admin/_create_user_form.html", form=form)
     return render_template("admin/users.html", form=form, users=list_users(get_db()))
@@ -68,7 +68,7 @@ def _render_users(form: NewAccountForm) -> str:
 @admin_route.route("/users", methods=("GET", "POST"))
 def users() -> BaseResponse | str:
     """List the users and create regular users."""
-    form = NewAccountForm()
+    form = NewUserForm()
     if not form.validate_on_submit():
         return _render_users(form)
     try:
@@ -76,6 +76,8 @@ def users() -> BaseResponse | str:
             get_db(),
             form.email.data or "",
             form.password.data or "",
+            name=form.name.data,
+            surname=form.surname.data,
             min_password_length=_min_password_length(),
         )
     except UserExistsError as e:
@@ -103,8 +105,17 @@ def _render_user(form: UserForm, user: User) -> str:
     return render_template(template, form=form, user=user, is_self=_is_self(user))
 
 
-def _changes(user: User, role: Role, locked: bool, password: str | None) -> str:
+def _changes(
+    user: User,
+    name: str | None,
+    surname: str | None,
+    role: Role,
+    locked: bool,
+    password: str | None,
+) -> str:
     changes = []
+    if (name, surname) != (user.name, user.surname):
+        changes.append("name")
     if role is not user.role:
         changes.append(f"role {role.value}")
     if locked != user.is_locked:
@@ -121,10 +132,19 @@ def user_details(user_id: UUID) -> BaseResponse | str:
     Changing the password or locking ends the user's open sessions.
     """
     user = _user_or_404(user_id)
-    form = UserForm(data={"role": user.role.value, "locked": user.is_locked})
+    form = UserForm(
+        data={
+            "name": user.name,
+            "surname": user.surname,
+            "role": user.role.value,
+            "locked": user.is_locked,
+        }
+    )
     if not form.validate_on_submit():
         return _render_user(form, user)
 
+    name = form.name.data
+    surname = form.surname.data
     role = Role(form.role.data)
     locked = bool(form.locked.data)
     password = form.password.data or None
@@ -138,6 +158,8 @@ def user_details(user_id: UUID) -> BaseResponse | str:
     update_user(
         conn,
         user,
+        name=name,
+        surname=surname,
         role=role,
         locked=locked,
         password=password,
@@ -147,7 +169,7 @@ def user_details(user_id: UUID) -> BaseResponse | str:
         "User %s updated by admin %s: %s",
         user.email,
         current_user.email,
-        _changes(user, role, locked, password),
+        _changes(user, name, surname, role, locked, password),
     )
     if password is not None and _is_self(user):
         # The new password invalidates this session too; issue a fresh one.

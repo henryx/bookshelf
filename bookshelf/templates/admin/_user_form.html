@@ -11,6 +11,8 @@
   <span class="label">Email</span>
   <span>{{ user.email }}</span>
 
+  {% with id_prefix = "edit-" %}{% include "_name_fields.html" %}{% endwith %}
+
   {% if is_self %}
     {# An admin cannot demote or lock themselves: shown, not editable. #}
     <input type="hidden" name="role" value="{{ user.role.value }}">

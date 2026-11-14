@@ -113,6 +113,31 @@
     row.querySelector('[data-author-field="surname"]').value = picked.dataset.surname;
   });
 
+  // The account menu (<details class="avatar">) opens and closes on its own
+  // summary without JavaScript; this also closes it on a click outside it,
+  // or on Escape (giving the focus back to its summary).
+  function openMenus() {
+    return document.querySelectorAll("details.avatar[open]");
+  }
+
+  document.addEventListener("click", function (event) {
+    openMenus().forEach(function (menu) {
+      if (!menu.contains(event.target)) {
+        menu.open = false;
+      }
+    });
+  });
+
+  document.addEventListener("keydown", function (event) {
+    if (event.key !== "Escape") {
+      return;
+    }
+    openMenus().forEach(function (menu) {
+      menu.open = false;
+      menu.querySelector("summary").focus();
+    });
+  });
+
   // A modal dialog would hide the error banner behind its backdrop.
   function closeDialogs() {
     document.querySelectorAll("dialog[open]").forEach(function (dialog) {

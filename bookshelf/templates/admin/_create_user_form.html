@@ -10,6 +10,8 @@
   {{ form.email(id="email", autocomplete="off", required=True) }}
   {% for error in form.email.errors %}<p class="error">{{ error }}</p>{% endfor %}
 
+  {% include "_name_fields.html" %}
+
   {% include "_new_password_fields.html" %}
 
   <button type="submit">Create user</button>

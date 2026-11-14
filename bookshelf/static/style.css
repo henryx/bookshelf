@@ -299,7 +299,6 @@ button.secondary,
 
 .hero {
   position: relative;
-  overflow: hidden;
   color: var(--on-cloth);
   background:
     radial-gradient(60rem 26rem at 85% -6rem, var(--lamp), transparent 70%),
@@ -450,28 +449,142 @@ button.secondary,
   text-decoration: none;
 }
 
-.topbar nav,
-.topbar form {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 0.9375rem;
-}
-
-.topbar nav > span {
-  font-weight: 200;
-  overflow-wrap: anywhere;
-}
-
-/* On the tall band the nav sits above a big title. */
+/* On the tall band the account menu sits above a big title. */
 .hero-tall .topbar {
   display: grid;
   grid-template-columns: 1fr auto;
 }
 
-.hero-tall .topbar nav {
+.hero-tall .topbar .avatar {
   grid-column: 2;
   grid-row: 1;
+}
+
+/* Account menu, upper right: the user's name (or email) and initials;
+   opened, a sheet with who is logged in, their account, admin and log out. */
+
+.avatar {
+  position: relative;
+}
+
+.avatar summary {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.25rem 0.25rem 0.25rem 1rem;
+  border: 2px solid rgb(238 243 238 / 0.35);
+  border-radius: 999px;
+  list-style: none;
+  cursor: pointer;
+}
+
+.avatar summary::-webkit-details-marker {
+  display: none;
+}
+
+.avatar[open] summary {
+  background: rgb(238 243 238 / 0.1);
+}
+
+.avatar-label {
+  max-width: 16rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 200;
+  font-size: 0.9375rem;
+}
+
+/* Phones: initials only; the name stays the summary's accessible name. */
+@media (max-width: 30rem) {
+  .avatar summary {
+    padding-left: 0.25rem;
+  }
+
+  .avatar-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    clip-path: inset(50%);
+  }
+}
+
+.avatar-initials {
+  display: grid;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 50%;
+  background: var(--bone);
+  color: var(--cloth-deep);
+  font-family: var(--font-display);
+  font-size: 0.9375rem;
+  font-weight: 800;
+}
+
+.avatar-menu {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  right: 0;
+  z-index: 10;
+  display: grid;
+  min-width: 15rem;
+  max-width: calc(100vw - 2rem);
+  padding: 1rem 1.25rem 1.25rem;
+  border-top: 0.375rem solid var(--cloth-light);
+  border-radius: 0.75rem;
+  background: var(--paper-raised);
+  color: var(--ink);
+  box-shadow: 0 1.5rem 3rem -1rem var(--shade);
+}
+
+.avatar-who {
+  display: grid;
+  margin: 0 0 0.75rem;
+}
+
+.avatar-who strong {
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+  font-weight: 800;
+}
+
+.avatar-who span {
+  font-weight: 200;
+  overflow-wrap: anywhere;
+}
+
+.avatar-menu a {
+  padding: 0.375rem 0;
+  color: var(--ink);
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.avatar-menu a:hover {
+  text-decoration: underline;
+}
+
+.avatar-menu form {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--rule);
+}
+
+/* Logging out is not the page's main action: outlined, not stamp ink. */
+.avatar-menu button {
+  background: transparent;
+  border-color: var(--rule);
+  color: var(--ink);
+}
+
+.hero-tall .topbar h1 {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  margin-bottom: 0;
 }
 
 /* Search, inside the main page's hero. */
@@ -775,6 +888,31 @@ dialog .card {
 .field {
   display: grid;
   gap: 0.5rem;
+}
+
+/* A person's name and surname, side by side. */
+.field-pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+/* The account page's optional password change. */
+.password-change {
+  display: grid;
+  gap: 0.5rem;
+  margin: 1rem 0 0;
+  padding: 1rem 0 0;
+  border: 0;
+  border-top: 1px solid var(--rule);
+}
+
+.password-change legend {
+  float: left;
+  width: 100%;
+  padding: 0;
+  font-size: 1.125rem;
 }
 
 .field input {

@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% from "_hero.html" import hero %}
+{% block title %}Your account · Bookshelf{% endblock %}
+{% block hero %}
+  {% call hero() %}{% include "_topbar.html" %}{% endcall %}
+{% endblock %}
+{% block content %}
+  <h2>Your account</h2>
+  {% include "_account_form.html" %}
+{% endblock %}

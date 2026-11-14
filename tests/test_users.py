@@ -21,6 +21,7 @@ from bookshelf.models.users import (
     set_locked,
     set_password,
     set_role,
+    update_account,
     update_user,
 )
 
@@ -44,6 +45,76 @@ def test_user_id_is_uuid4(user: User):
 
 def test_email_is_normalised(user: User):
     assert user.email == "reader@example.com"
+
+
+# Name and surname
+
+
+def test_new_user_has_no_name_by_default(user: User):
+    assert user.name is None
+    assert user.surname is None
+
+
+def test_create_user_with_name_and_surname(db_app: Flask, password: str):
+    with db_app.app_context():
+        conn = get_db()
+        create_user(conn, "ada@example.com", password, name="Ada", surname="Lovelace")
+        found = find_by_email(conn, "ada@example.com")
+
+    assert found is not None
+    assert (found.name, found.surname) == ("Ada", "Lovelace")
+
+
+def _named(name: str | None, surname: str | None, email: str = "reader@example.com"):
+    return User(
+        id=UUID(int=1),
+        email=email,
+        password_hash="x",
+        role=Role.REGULAR,
+        is_locked=False,
+        name=name,
+        surname=surname,
+    )
+
+
+@pytest.mark.parametrize(
+    ("name", "surname", "full_name", "initials"),
+    [
+        ("Ada", "Lovelace", "Ada Lovelace", "AL"),
+        (None, "Homer", "Homer", "H"),
+        ("élodie", None, "élodie", "É"),
+        (None, None, None, "R"),
+    ],
+)
+def test_full_name_and_initials(name, surname, full_name, initials):
+    user = _named(name, surname)
+
+    assert user.full_name == full_name
+    assert user.initials == initials
+
+
+@pytest.mark.parametrize(
+    ("column", "value", "constraint"),
+    [
+        ("NAME", "", "CHK_USERS_NAME"),
+        ("NAME", " Ada", "CHK_USERS_NAME"),
+        ("SURNAME", "", "CHK_USERS_SURNAME"),
+        ("SURNAME", "Lovelace ", "CHK_USERS_SURNAME"),
+    ],
+)
+def test_database_rejects_blank_or_untrimmed_names(
+    db_app: Flask, user: User, column: str, value: str, constraint: str
+):
+    # One literal query per column: identifiers are never interpolated.
+    queries = {
+        "NAME": "UPDATE USERS SET NAME = ? WHERE ID = ?",
+        "SURNAME": "UPDATE USERS SET SURNAME = ? WHERE ID = ?",
+    }
+    with db_app.app_context():
+        conn = get_db()
+        with pytest.raises(DatabaseError, match=constraint), conn.cursor() as cur:
+            cur.execute(queries[column], (value, user.id.bytes))
+        conn.rollback()
 
 
 def test_authenticate_with_correct_password(db_app: Flask, user: User, password: str):
@@ -216,9 +287,18 @@ def test_set_password_uses_given_min_length(db_app: Flask, user: User):
 def test_update_user_applies_all_changes(db_app: Flask, user: User):
     with db_app.app_context():
         conn = get_db()
-        update_user(conn, user, role=Role.ADMIN, locked=True, password="x" * 12)
+        update_user(
+            conn,
+            user,
+            name="Ada",
+            surname="Lovelace",
+            role=Role.ADMIN,
+            locked=True,
+            password="x" * 12,
+        )
         updated = find_by_email(conn, user.email)
     assert updated is not None
+    assert (updated.name, updated.surname) == ("Ada", "Lovelace")
     assert updated.role is Role.ADMIN
     assert updated.is_locked
     assert updated.password_hash != user.password_hash
@@ -227,7 +307,15 @@ def test_update_user_applies_all_changes(db_app: Flask, user: User):
 def test_update_user_without_password_keeps_it(db_app: Flask, user: User):
     with db_app.app_context():
         conn = get_db()
-        update_user(conn, user, role=Role.REGULAR, locked=True, password=None)
+        update_user(
+            conn,
+            user,
+            name=None,
+            surname=None,
+            role=Role.REGULAR,
+            locked=True,
+            password=None,
+        )
         updated = find_by_email(conn, user.email)
     assert updated is not None
     assert updated.password_hash == user.password_hash
@@ -240,6 +328,8 @@ def test_update_user_rejects_short_password_and_changes_nothing(
         update_user(
             get_db(),
             user,
+            name="Ada",
+            surname=None,
             role=Role.ADMIN,
             locked=True,
             password="x" * 15,
@@ -249,5 +339,63 @@ def test_update_user_rejects_short_password_and_changes_nothing(
     with db_app.app_context():
         unchanged = find_by_email(get_db(), user.email)
     assert unchanged is not None
+    assert unchanged.name is None
     assert unchanged.role is Role.REGULAR
     assert not unchanged.is_locked
+
+
+# A user's own account
+
+
+def test_update_account_sets_name_surname_and_password(db_app: Flask, user: User):
+    with db_app.app_context():
+        conn = get_db()
+        update_account(
+            conn, user, name="Ada", surname="Lovelace", password="a-new-password"
+        )
+        updated = find_by_email(conn, user.email)
+        assert authenticate(conn, user.email, "a-new-password") is not None
+    assert updated is not None
+    assert (updated.name, updated.surname) == ("Ada", "Lovelace")
+
+
+def test_update_account_without_password_keeps_it(
+    db_app: Flask, user: User, password: str
+):
+    with db_app.app_context():
+        conn = get_db()
+        update_account(conn, user, name=None, surname="Homer", password=None)
+        assert authenticate(conn, user.email, password) is not None
+
+
+def test_update_account_keeps_role_and_lock(
+    db_app: Flask, user: User, lock_user: Callable[[User], None]
+):
+    """An account saved while an admin locks it stays locked."""
+    lock_user(user)
+    with db_app.app_context():
+        conn = get_db()
+        update_account(conn, user, name="Ada", surname=None, password=None)
+        updated = find_by_email(conn, user.email)
+    assert updated is not None
+    assert updated.is_locked
+    assert updated.role is Role.REGULAR
+
+
+def test_update_account_rejects_short_password_and_changes_nothing(
+    db_app: Flask, user: User
+):
+    with db_app.app_context(), pytest.raises(PasswordTooShortError, match="16"):
+        update_account(
+            get_db(),
+            user,
+            name="Ada",
+            surname=None,
+            password="x" * 15,
+            min_password_length=16,
+        )
+
+    with db_app.app_context():
+        unchanged = find_by_email(get_db(), user.email)
+    assert unchanged is not None
+    assert unchanged.name is None

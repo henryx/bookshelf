@@ -32,6 +32,7 @@ __all__ = [
     "set_password",
     "set_role",
     "start_login_attempt",
+    "update_account",
     "update_user",
     "validate_new_password",
 ]
@@ -92,6 +93,8 @@ class User:
     password_hash: str
     role: Role
     is_locked: bool
+    name: str | None = None
+    surname: str | None = None
 
     # Flask-Login user protocol
     is_authenticated = True
@@ -104,6 +107,17 @@ class User:
     @property
     def is_active(self) -> bool:
         return not self.is_locked
+
+    @property
+    def full_name(self) -> str | None:
+        """Name and surname, either of which may be missing; None without both."""
+        return " ".join(p for p in (self.name, self.surname) if p) or None
+
+    @property
+    def initials(self) -> str:
+        """Initials of the name and surname, or the email's first letter."""
+        parts = [p for p in (self.name, self.surname) if p] or [self.email]
+        return "".join(p[0] for p in parts).upper()
 
     def get_id(self) -> str:
         """
@@ -118,14 +132,19 @@ def _normalise(email: str) -> str:
     return email.strip().lower()
 
 
-def _row_to_user(row: tuple[bytes, str, str, str, bool]) -> User:
-    user_id, email, password_hash, role, is_locked = row
+type _UserRow = tuple[bytes, str, str, str, bool, str | None, str | None]
+
+
+def _row_to_user(row: _UserRow) -> User:
+    user_id, email, password_hash, role, is_locked, name, surname = row
     return User(
         id=UUID(bytes=user_id),
         email=email,
         password_hash=password_hash,
         role=Role(role),
         is_locked=is_locked,
+        name=name,
+        surname=surname,
     )
 
 
@@ -141,7 +160,8 @@ def _fetch_user(
 def find_by_id(conn: Connection, user_id: UUID) -> User | None:
     return _fetch_user(
         conn,
-        "SELECT ID, EMAIL, PASSWORD_HASH, ROLE, IS_LOCKED FROM USERS WHERE ID = ?",
+        "SELECT ID, EMAIL, PASSWORD_HASH, ROLE, IS_LOCKED, NAME, SURNAME "
+        "FROM USERS WHERE ID = ?",
         (user_id.bytes,),
     )
 
@@ -165,7 +185,8 @@ def find_by_session_id(conn: Connection, session_id: str) -> User | None:
 def find_by_email(conn: Connection, email: str) -> User | None:
     return _fetch_user(
         conn,
-        "SELECT ID, EMAIL, PASSWORD_HASH, ROLE, IS_LOCKED FROM USERS WHERE EMAIL = ?",
+        "SELECT ID, EMAIL, PASSWORD_HASH, ROLE, IS_LOCKED, NAME, SURNAME "
+        "FROM USERS WHERE EMAIL = ?",
         (_normalise(email),),
     )
 
@@ -182,7 +203,8 @@ def admin_exists(conn: Connection) -> bool:
 def list_users(conn: Connection) -> list[User]:
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT ID, EMAIL, PASSWORD_HASH, ROLE, IS_LOCKED FROM USERS ORDER BY EMAIL"
+            "SELECT ID, EMAIL, PASSWORD_HASH, ROLE, IS_LOCKED, NAME, SURNAME "
+            "FROM USERS ORDER BY EMAIL"
         )
         return [_row_to_user(row) for row in cur.fetchall()]
 
@@ -193,20 +215,31 @@ def create_user(
     password: str,
     *,
     role: Role = Role.REGULAR,
+    name: str | None = None,
+    surname: str | None = None,
     min_password_length: int = MIN_PASSWORD_LENGTH,
 ) -> User:
     """
     Raises UserExistsError if the email is taken, even by a user created
     after the caller checked, and PasswordTooShortError for a short password.
+    Name and surname are optional (None), trimmed and non-blank when given.
     """
     validate_new_password(password, min_length=min_password_length)
     email = _normalise(email)
     with conn.cursor() as cur:
         try:
             cur.execute(
-                "INSERT INTO USERS (ID, EMAIL, PASSWORD_HASH, ROLE) VALUES (?, ?, ?, ?) "
-                "RETURNING ID, EMAIL, PASSWORD_HASH, ROLE, IS_LOCKED",
-                (uuid4().bytes, email, _hasher.hash(password), role.value),
+                "INSERT INTO USERS (ID, EMAIL, PASSWORD_HASH, ROLE, NAME, SURNAME) "
+                "VALUES (?, ?, ?, ?, ?, ?) "
+                "RETURNING ID, EMAIL, PASSWORD_HASH, ROLE, IS_LOCKED, NAME, SURNAME",
+                (
+                    uuid4().bytes,
+                    email,
+                    _hasher.hash(password),
+                    role.value,
+                    name,
+                    surname,
+                ),
             )
         except DatabaseError as e:
             if _UNIQUE_KEY_VIOLATION in e.gds_codes:
@@ -260,20 +293,24 @@ def update_user(
     conn: Connection,
     user: User,
     *,
+    name: str | None,
+    surname: str | None,
     role: Role,
     locked: bool,
     password: str | None,
     min_password_length: int = MIN_PASSWORD_LENGTH,
 ) -> None:
     """
-    Set role, lock state and, unless password is None, a new password, all in
-    one transaction. Raises PasswordTooShortError before changing anything.
+    An admin's changes: set name, surname, role, lock state and, unless
+    password is None, a new password, all in one transaction. Raises
+    PasswordTooShortError before changing anything.
     """
     if password is None:
         with conn.cursor() as cur:
             cur.execute(
-                "UPDATE USERS SET ROLE = ?, IS_LOCKED = ? WHERE ID = ?",
-                (role.value, locked, user.id.bytes),
+                "UPDATE USERS SET NAME = ?, SURNAME = ?, ROLE = ?, IS_LOCKED = ? "
+                "WHERE ID = ?",
+                (name, surname, role.value, locked, user.id.bytes),
             )
         conn.commit()
         return
@@ -281,8 +318,42 @@ def update_user(
     validate_new_password(password, min_length=min_password_length)
     with conn.cursor() as cur:
         cur.execute(
-            "UPDATE USERS SET ROLE = ?, IS_LOCKED = ?, PASSWORD_HASH = ? WHERE ID = ?",
-            (role.value, locked, _hasher.hash(password), user.id.bytes),
+            "UPDATE USERS SET NAME = ?, SURNAME = ?, ROLE = ?, IS_LOCKED = ?, "
+            "PASSWORD_HASH = ? WHERE ID = ?",
+            (name, surname, role.value, locked, _hasher.hash(password), user.id.bytes),
+        )
+    conn.commit()
+
+
+def update_account(
+    conn: Connection,
+    user: User,
+    *,
+    name: str | None,
+    surname: str | None,
+    password: str | None,
+    min_password_length: int = MIN_PASSWORD_LENGTH,
+) -> None:
+    """
+    A user's changes to their own account: set name, surname and, unless
+    password is None, a new password, in one transaction. Role and lock state
+    are left alone, so an admin's lock made meanwhile stays. Raises
+    PasswordTooShortError before changing anything.
+    """
+    if password is None:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE USERS SET NAME = ?, SURNAME = ? WHERE ID = ?",
+                (name, surname, user.id.bytes),
+            )
+        conn.commit()
+        return
+
+    validate_new_password(password, min_length=min_password_length)
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE USERS SET NAME = ?, SURNAME = ?, PASSWORD_HASH = ? WHERE ID = ?",
+            (name, surname, _hasher.hash(password), user.id.bytes),
         )
     conn.commit()
 

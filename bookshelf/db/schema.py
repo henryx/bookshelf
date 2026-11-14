@@ -14,13 +14,16 @@ DOMAINS: dict[str, str] = {
 
 # Columns only: constraints are in CONSTRAINTS.
 TABLES: dict[str, str] = {
+    # NAME (the given name) and SURNAME are optional: NULL when not given.
     "USERS": """
         CREATE TABLE USERS (
             ID UUID NOT NULL,
             EMAIL VARCHAR(254) NOT NULL,
             PASSWORD_HASH VARCHAR(255) NOT NULL,
             ROLE VARCHAR(16) DEFAULT 'REGULAR' NOT NULL,
-            IS_LOCKED BOOLEAN DEFAULT FALSE NOT NULL
+            IS_LOCKED BOOLEAN DEFAULT FALSE NOT NULL,
+            NAME VARCHAR(127),
+            SURNAME VARCHAR(127)
         )
     """,
     # One row per failed login, with no key of its own. ID is the user the
@@ -101,6 +104,15 @@ CONSTRAINTS: dict[str, str] = {
     "CHK_USERS_EMAIL_NORMALISED": (
         "ALTER TABLE USERS ADD CONSTRAINT CHK_USERS_EMAIL_NORMALISED CHECK ("
         "EMAIL = LOWER(EMAIL) AND CHAR_LENGTH(EMAIL) = CHAR_LENGTH(TRIM(EMAIL)))"
+    ),
+    # Non-blank and trimmed when given (see CHK_USERS_EMAIL_NORMALISED on lengths).
+    "CHK_USERS_NAME": (
+        "ALTER TABLE USERS ADD CONSTRAINT CHK_USERS_NAME CHECK (NAME IS NULL OR ("
+        "NAME <> '' AND CHAR_LENGTH(NAME) = CHAR_LENGTH(TRIM(NAME))))"
+    ),
+    "CHK_USERS_SURNAME": (
+        "ALTER TABLE USERS ADD CONSTRAINT CHK_USERS_SURNAME CHECK (SURNAME IS NULL OR ("
+        "SURNAME <> '' AND CHAR_LENGTH(SURNAME) = CHAR_LENGTH(TRIM(SURNAME))))"
     ),
     # Deleting a user deletes their login failures.
     "FK_LOGIN_FAILURES_USER": (

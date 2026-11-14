@@ -27,12 +27,21 @@ from wtforms.validators import (
 from bookshelf.models.books import Author, InvalidIsbnError, NewBook, normalise_isbn
 from bookshelf.models.users import PasswordTooShortError, Role, validate_new_password
 
-__all__ = ["AuthorForm", "BookForm", "LoginForm", "NewAccountForm", "UserForm"]
+__all__ = [
+    "AccountForm",
+    "AuthorForm",
+    "BookForm",
+    "LoginForm",
+    "NewAccountForm",
+    "NewUserForm",
+    "UserForm",
+]
 
-# Column sizes in BOOKS, AUTHORS and BOOK_TAGS.
+# Column sizes in BOOKS, AUTHORS, BOOK_TAGS and USERS.
 _NAME_MAX_LENGTH = 255
 _AUTHOR_NAME_MAX_LENGTH = 127
 _TAG_MAX_LENGTH = 64
+_PERSON_NAME_MAX_LENGTH = 127
 
 
 def _strip(value: str | None) -> str | None:
@@ -86,9 +95,18 @@ class NewAccountForm(FlaskForm):
         _check_new_password(field.data or "")
 
 
+class NewUserForm(NewAccountForm):
+    """A user created by an admin: a new account, with optional name and surname."""
+
+    name = _optional_text("Name", _PERSON_NAME_MAX_LENGTH)
+    surname = _optional_text("Surname", _PERSON_NAME_MAX_LENGTH)
+
+
 class UserForm(FlaskForm):
     """An existing user's editable details; an empty password keeps the old one."""
 
+    name = _optional_text("Name", _PERSON_NAME_MAX_LENGTH)
+    surname = _optional_text("Surname", _PERSON_NAME_MAX_LENGTH)
     role = SelectField(
         "Role",
         choices=[
@@ -213,3 +231,27 @@ class BookForm(FlaskForm):
             notes=self.notes.data,
             tags=self.tag_names(),
         )
+
+
+class AccountForm(FlaskForm):
+    """
+    A user's own account: name, surname and, optionally, a new password,
+    which needs the current one. Whether the current password is right is
+    checked against the database by the view.
+    """
+
+    name = _optional_text("Name", _PERSON_NAME_MAX_LENGTH)
+    surname = _optional_text("Surname", _PERSON_NAME_MAX_LENGTH)
+    current_password = PasswordField("Current password")
+    password = PasswordField("New password", validators=[Optional()])
+    confirm = PasswordField(
+        "Confirm new password",
+        validators=[EqualTo("password", "Passwords must match")],
+    )
+
+    def validate_current_password(self, field: PasswordField) -> None:
+        if self.password.data and not field.data:
+            raise ValidationError("Enter your current password to change it.")
+
+    def validate_password(self, field: PasswordField) -> None:
+        _check_new_password(field.data or "")

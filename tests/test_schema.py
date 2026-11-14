@@ -83,13 +83,19 @@ def _assert_complete_schema(conn: Connection) -> None:
         "PASSWORD_HASH",
         "ROLE",
         "IS_LOCKED",
+        "NAME",
+        "SURNAME",
     ]
     assert _domain(conn, "USERS", "ID") == "UUID"
+    assert _nullable(conn, "USERS", "NAME")
+    assert _nullable(conn, "USERS", "SURNAME")
     assert _constraints(conn, "USERS") == {
         "PK_USERS": "PRIMARY KEY",
         "UQ_USERS_EMAIL": "UNIQUE",
         "CHK_USERS_ROLE": "CHECK",
         "CHK_USERS_EMAIL_NORMALISED": "CHECK",
+        "CHK_USERS_NAME": "CHECK",
+        "CHK_USERS_SURNAME": "CHECK",
     }
 
     assert _columns(conn, "LOGIN_FAILURES") == [

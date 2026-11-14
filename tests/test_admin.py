@@ -119,6 +119,18 @@ def test_users_page_lists_users_linking_to_details(
     assert user.email in html
 
 
+def test_users_page_shows_names(admin_client: FlaskClient, db_app: Flask):
+    with db_app.app_context():
+        create_user(
+            get_db(), "ada@example.com", NEW_PASSWORD, name="Ada", surname="Lovelace"
+        )
+
+    html = admin_client.get("/admin/users").get_data(as_text=True)
+
+    assert "<th>Name</th>" in html
+    assert "<td>Ada Lovelace</td>" in html
+
+
 # Create
 
 OPEN_DIALOG = re.compile(r'<dialog id="create-user-dialog"[^>]*\sopen[\s>]')
@@ -160,6 +172,48 @@ def test_create_user(admin_client: FlaskClient, db_app: Flask):
     assert created.role is Role.REGULAR
     page = admin_client.get("/admin/users").get_data(as_text=True)
     assert "User new.reader@example.com created." in page
+
+
+def test_create_user_form_asks_for_name_and_surname(admin_client: FlaskClient):
+    html = admin_client.get("/admin/users").get_data(as_text=True)
+    dialog = html[html.index('<dialog id="create-user-dialog"') :]
+
+    assert 'name="name"' in dialog
+    assert 'name="surname"' in dialog
+
+
+@pytest.mark.parametrize(
+    ("name", "surname", "saved"),
+    [(" Ada ", "Lovelace", ("Ada", "Lovelace")), ("", "  ", (None, None))],
+)
+def test_create_user_with_name_and_surname(
+    admin_client: FlaskClient, db_app: Flask, name, surname, saved
+):
+    data = {
+        "email": "ada@example.com",
+        "password": NEW_PASSWORD,
+        "confirm": NEW_PASSWORD,
+        "name": name,
+        "surname": surname,
+    }
+    rv = admin_client.post("/admin/users", data=data)
+
+    assert rv.status_code == 302
+    created = _existing(db_app, "ada@example.com")
+    assert (created.name, created.surname) == saved
+
+
+def test_create_user_rejects_too_long_name(admin_client: FlaskClient, db_app: Flask):
+    data = {
+        "email": "ada@example.com",
+        "password": NEW_PASSWORD,
+        "confirm": NEW_PASSWORD,
+        "name": "x" * 128,
+    }
+    html = admin_client.post("/admin/users", data=data).get_data(as_text=True)
+
+    assert "Field cannot be longer than 127 characters." in html
+    assert _user(db_app, "ada@example.com") is None
 
 
 def test_htmx_create_user_redirects_via_header(admin_client: FlaskClient):
@@ -265,6 +319,32 @@ def test_details_page_shows_editable_fields(admin_client: FlaskClient, user: Use
     assert 'name="password"' in html
     assert 'name="csrf_token"' in html
     assert "At least 12 characters." in html
+
+
+def test_details_page_shows_name_and_surname_filled_in(
+    admin_client: FlaskClient, db_app: Flask
+):
+    with db_app.app_context():
+        named = create_user(
+            get_db(), "ada@example.com", NEW_PASSWORD, name="Ada", surname="Lovelace"
+        )
+
+    html = admin_client.get(_detail(named)).get_data(as_text=True)
+
+    assert re.search(r'<input[^>]*name="name"[^>]*value="Ada"', html)
+    assert re.search(r'<input[^>]*name="surname"[^>]*value="Lovelace"', html)
+
+
+def test_save_sets_and_clears_name_and_surname(
+    admin_client: FlaskClient, db_app: Flask, user: User
+):
+    _save(admin_client, user, name="Ada", surname=" Lovelace ")
+    named = _existing(db_app, user.email)
+    assert (named.name, named.surname) == ("Ada", "Lovelace")
+
+    _save(admin_client, named, name="", surname="")
+    cleared = _existing(db_app, user.email)
+    assert (cleared.name, cleared.surname) == (None, None)
 
 
 def test_own_details_page_cannot_change_role_or_lock(

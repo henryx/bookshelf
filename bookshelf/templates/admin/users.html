@@ -11,7 +11,7 @@
   </div>
   <table class="users">
     <thead>
-      <tr><th>Email</th><th>Role</th><th>Status</th></tr>
+      <tr><th>Email</th><th>Name</th><th>Role</th><th>Status</th></tr>
     </thead>
     <tbody>
       {% for user in users %}
@@ -23,6 +23,7 @@
                hx-target="#user-dialog-body" hx-indicator="closest tr">{{ user.email }}</a>
             <span class="htmx-indicator">…</span>
           </td>
+          <td>{{ user.full_name or "" }}</td>
           <td>{{ "Admin" if user.is_admin else "Regular" }}</td>
           <td>{{ "Locked" if user.is_locked else "Active" }}</td>
         </tr>

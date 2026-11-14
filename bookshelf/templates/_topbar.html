@@ -1,16 +1,28 @@
 <header class="topbar">
   <h1><a href="{{ url_for('main.index') }}">Bookshelf</a></h1>
-  <nav>
-    <span>{{ current_user.email }}</span>
-    {% if current_user.is_admin %}
-      <a class="button" href="{{ url_for('admin.users') }}">Admin</a>
-    {% endif %}
-    <form method="post" action="{{ url_for('auth.logout') }}"
-          hx-post="{{ url_for('auth.logout') }}"
-          hx-indicator="#logout-indicator" hx-disabled-elt="find button">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <button type="submit">Log out</button>
-      <span id="logout-indicator" class="htmx-indicator">…</span>
-    </form>
-  </nav>
+  {# The account menu, upper right. A <details>, so it opens without JavaScript;
+     app.js closes it on a click elsewhere or Escape. #}
+  <details class="avatar">
+    <summary>
+      <span class="avatar-label">{{ current_user.full_name or current_user.email }}</span>
+      <span class="avatar-initials" aria-hidden="true">{{ current_user.initials }}</span>
+    </summary>
+    <div class="avatar-menu">
+      <p class="avatar-who">
+        {% if current_user.full_name %}<strong>{{ current_user.full_name }}</strong>{% endif %}
+        <span>{{ current_user.email }}</span>
+      </p>
+      <a href="{{ url_for('account.account') }}">Your account</a>
+      {% if current_user.is_admin %}
+        <a href="{{ url_for('admin.users') }}">Admin</a>
+      {% endif %}
+      <form method="post" action="{{ url_for('auth.logout') }}"
+            hx-post="{{ url_for('auth.logout') }}"
+            hx-indicator="#logout-indicator" hx-disabled-elt="find button">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit">Log out</button>
+        <span id="logout-indicator" class="htmx-indicator">…</span>
+      </form>
+    </div>
+  </details>
 </header>
