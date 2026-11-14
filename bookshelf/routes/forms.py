@@ -139,7 +139,7 @@ class BookForm(FlaskForm):
     publication_year = IntegerField(
         "Year", validators=[Optional(), NumberRange(min=1, max=9999)]
     )
-    language = _optional_text("Language", 64)
+    volume = _optional_text("Volume", 32)
     tags = StringField("Tags")
     notes = TextAreaField(
         "Notes", filters=[_strip_or_none], validators=[Optional(), Length(max=4000)]
@@ -185,7 +185,7 @@ class BookForm(FlaskForm):
             isbn=self.isbn.data,
             publisher=self.publisher.data,
             publication_year=self.publication_year.data,
-            language=self.language.data,
+            volume=self.volume.data,
             notes=self.notes.data,
             tags=self.tag_names(),
         )

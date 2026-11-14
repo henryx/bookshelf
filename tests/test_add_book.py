@@ -96,7 +96,7 @@ def test_add_book_saves_it_in_the_catalogue_and_collection(db_app, client, user)
         isbn="0-552-13703-0",
         publisher="Gollancz",
         publication_year="1990",
-        language="English",
+        volume=" II ",
         tags="fantasy, Humour,  , FANTASY",
         notes="Signed copy",
         copies="2",
@@ -106,7 +106,7 @@ def test_add_book_saves_it_in_the_catalogue_and_collection(db_app, client, user)
     assert rv.headers["HX-Redirect"] == "/"
     row = _rows(
         db_app,
-        "SELECT ID, TITLE, ISBN, PUBLISHER, PUBLICATION_YEAR, LANGUAGE, NOTES FROM BOOKS",
+        "SELECT ID, TITLE, ISBN, PUBLISHER, PUBLICATION_YEAR, VOLUME, NOTES FROM BOOKS",
     )
     assert len(row) == 1
     book_id, *details = row[0]
@@ -115,7 +115,7 @@ def test_add_book_saves_it_in_the_catalogue_and_collection(db_app, client, user)
         "9780552137034",
         "Gollancz",
         1990,
-        "English",
+        "II",
         "Signed copy",
     ]
     authors = _rows(
@@ -152,7 +152,7 @@ def test_add_book_with_title_only_leaves_the_rest_empty(db_app, client):
 
     row = _rows(
         db_app,
-        "SELECT ISBN, PUBLISHER, PUBLICATION_YEAR, LANGUAGE, NOTES FROM BOOKS",
+        "SELECT ISBN, PUBLISHER, PUBLICATION_YEAR, VOLUME, NOTES FROM BOOKS",
     )
     assert row == [(None, None, None, None, None)]
 
@@ -225,7 +225,7 @@ def test_add_book_without_htmx_redirects(client):
         ({"publication_year": "10000"}, "Number must be between 1 and 9999."),
         ({"copies": "0"}, "Number must be between 1 and 999."),
         ({"copies": ""}, "This field is required."),
-        ({"language": "x" * 65}, "Field cannot be longer than 64 characters."),
+        ({"volume": "x" * 33}, "Field cannot be longer than 32 characters."),
         ({"notes": "x" * 4001}, "Field cannot be longer than 4000 characters."),
     ],
 )

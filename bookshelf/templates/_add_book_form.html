@@ -42,7 +42,7 @@
     <div class="field">{{ field("publisher", maxlength=255) }}</div>
     <div class="field">{{ field("publication_year", min=1, max=9999) }}</div>
   </div>
-  {{ field("language", maxlength=64) }}
+  {{ field("volume", "E.g. 2, II or 3/4.", maxlength=32) }}
   {{ field("tags", "Separated by commas.", autocomplete="off") }}
   {{ field("notes", rows=3, maxlength=4000) }}
   {{ field("copies", "Added to your collection with this many copies.", min=1, max=999, required=True) }}

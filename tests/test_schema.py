@@ -119,7 +119,7 @@ def _assert_complete_schema(conn: Connection) -> None:
         "ISBN",
         "PUBLISHER",
         "PUBLICATION_YEAR",
-        "LANGUAGE",
+        "VOLUME",
         "NOTES",
         "CREATED_AT",
     ]

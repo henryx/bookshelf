@@ -228,7 +228,7 @@ Decisions:
    owns each book and how many copies.
  - Every user, regular or admin, may add a book to the catalogue and edit any book in it, not only the books
    they added. Only admins may delete a book.
- - A book has a title (required) and optionally authors, ISBN, publisher, publication year, language and notes.
+ - A book has a title (required) and optionally authors, ISBN, publisher, publication year, volume and notes.
    Authors are a list of names, so a book can have several, in the order given.
  - Authors are their own records, shared between books: when a book is added or edited, each author is picked
    from the existing ones by name and surname, or created if new. All books by one author can be listed, and a misspelled
@@ -258,8 +258,8 @@ Decisions:
    picking an author is never ambiguous. Authors may share a surname (Charlotte and Emily Brontë). An author used by a book cannot be deleted; unused authors are kept until removed.
  - Tags are stored as text on each book, with no list of tags of their own.
  - Deleting a user removes their collection, which may leave books in no collection (and so deletable).
- - Sizes: title and publisher up to 255 characters, author name and surname up to 127 each, language (free
-   text, e.g. "Italian") up to 64, tag up to 64, notes up to 4000. Name and surname are limited to 127 because
+ - Sizes: title and publisher up to 255 characters, author name and surname up to 127 each, volume (free
+   text, e.g. "2", "II" or "3/4") up to 32, tag up to 64, notes up to 4000. Name and surname are limited to 127 because
    the unique index on both must fit Firebird's index key limit (8 KB pages). Who added a book is not recorded.
 
 ## Main page
@@ -269,8 +269,7 @@ Status: built at `/`, with the add-book button (see Books, "Adding a book").
 Decisions:
 
  - The main page is the book list, with a search box. There is no separate dashboard page.
- - One search box searches title, author and ISBN together. There are no separate filters (by author, tag or
-   language).
+ - One search box searches title, author and ISBN together. There are no separate filters (by author or tag).
  - The list is sorted by title by default; the user can sort it by author or by date added instead.
  - The list is shown in pages of 50 books.
  - On the phone, books are shown as a list of rows, not a grid (books have no covers; see Books).

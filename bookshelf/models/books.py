@@ -86,7 +86,7 @@ class NewBook:
     isbn: str | None = None
     publisher: str | None = None
     publication_year: int | None = None
-    language: str | None = None
+    volume: str | None = None
     notes: str | None = None
     tags: tuple[str, ...] = ()
 
@@ -348,14 +348,14 @@ def add_book(conn: Connection, user_id: UUID, book: NewBook, copies: int = 1) ->
         try:
             cur.execute(
                 "INSERT INTO BOOKS (ID, TITLE, ISBN, PUBLISHER, PUBLICATION_YEAR, "
-                "LANGUAGE, NOTES) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "VOLUME, NOTES) VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (
                     book_id.bytes,
                     book.title.strip(),
                     isbn,
                     book.publisher,
                     book.publication_year,
-                    book.language,
+                    book.volume,
                     book.notes,
                 ),
             )
