@@ -22,6 +22,7 @@ dependencies = [
     "gunicorn>=26.0.0,<27",
     "prettytable>=3.18.0,<4",
     "python-json-logger>=4.2.0,<5",
+    "wtforms>=3.3.1,<4",
 ]
 
 [dependency-groups]

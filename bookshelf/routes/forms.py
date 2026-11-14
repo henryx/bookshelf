@@ -8,6 +8,7 @@ from wtforms import (
     FormField,
     IntegerField,
     PasswordField,
+    SelectChoice,
     SelectField,
     StringField,
     TextAreaField,
@@ -89,7 +90,11 @@ class UserForm(FlaskForm):
     """An existing user's editable details; an empty password keeps the old one."""
 
     role = SelectField(
-        "Role", choices=[(Role.REGULAR.value, "Regular"), (Role.ADMIN.value, "Admin")]
+        "Role",
+        choices=[
+            SelectChoice(Role.REGULAR.value, "Regular"),
+            SelectChoice(Role.ADMIN.value, "Admin"),
+        ],
     )
     locked = BooleanField("Locked (cannot log in)")
     # Optional stops validation of an empty password, so validate_password
