@@ -18,6 +18,7 @@ Bookshelf library webapp is a webapp to manage a book library built with Flask u
 - `uv run dotenv -f dev.env run flask --app bookshelf run --debug`: Start the development server (needs the local Firebird from README.md)
 - `uv run dotenv -f dev.env run flask --app bookshelf <command>`: Run a CLI command (`init-db`, `create-admin`, `list-users`, …)
 - `uv run tox -e py3`: Run the test suite (Docker must be running: tests start Firebird via testcontainers)
+- `uv run tox -e e2e`: Run the browser tests of `app.js` (Playwright with Chromium, installed by the env; Docker must be running). Passing posargs replaces the default path: `uv run tox -e e2e -- tests/e2e -k banner`
 - `uv run tox -e lint`: Run linter
 - `uv run tox -e format`: Run formatter (`-- --check .` to only check, as CI does)
 - `uv run tox -e type`: Run type check
@@ -42,6 +43,7 @@ Bookshelf library webapp is a webapp to manage a book library built with Flask u
 - `bookshelf/static/fonts/`: vendored Fraunces, Bricolage Grotesque and JetBrains Mono (latin and latin-ext WOFF2, with their OFL licences); `@font-face` rules are at the top of `style.css`
 - `bookshelf/templates/_hero.html`: `hero(tall=False)` macro, the bookcloth band with the shelf of spines; pages fill `base.html`'s `hero` block with it (tall on main, login and setup, with the page-load reveal; slim elsewhere)
 - `tests/conftest.py`: session Firebird container, `app`/`db_app`/`empty_db_app` fixtures; autouse `setup_complete` skips the first-run wizard (overridden in `test_setup.py`)
+- `tests/e2e/`: Playwright tests of `app.js` against a live server (`live_server`, `reader_page`, `admin_page` fixtures); `py3` skips them, the `e2e` tox env runs them
 - `docs/bookshelf.md`: requirements, decisions and open questions
 - `dev.env` (dev server) and `test.env` (tests) are deliberately separate: tests wipe tables
 

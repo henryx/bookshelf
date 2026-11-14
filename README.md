@@ -120,6 +120,7 @@ addresses (no reserved or LAN-style domains such as `.local`), the same rule as 
 
 ```sh
 uv run tox -e py3                     # tests (starts Firebird via testcontainers: Docker must be running)
+uv run tox -e e2e                     # browser tests of app.js (Playwright; installs Chromium, Docker too)
 uv run tox -e lint                    # ruff check
 uv run tox -e format                  # ruff format (use `-- --check .` to only check)
 uv run tox -e type                    # ty
@@ -179,7 +180,7 @@ already exist.
 
 ## CI and releases
 
-GitHub Actions run lint, format check, type check, audit and tests on every push to
+GitHub Actions run lint, format check, type check, audit, tests and browser tests on every push to
 `main` and on pull requests, and build the image. Pushes to `main` publish
 `ghcr.io/<owner>/<repo>:latest`.
 

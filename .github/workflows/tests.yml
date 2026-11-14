@@ -25,6 +25,9 @@ jobs:
           # check only: fail on unformatted files instead of rewriting them
           - env: format
             args: -- --check .
+          # browser tests: Chromium also needs its system libraries on the runner
+          - env: e2e
+            playwright_install_args: --with-deps chromium
     steps:
       - name: Check out
         uses: actions/checkout@v7
@@ -44,3 +47,5 @@ jobs:
       # ubuntu-latest).
       - name: Run tox -e ${{ matrix.env }}
         run: uv run tox -e ${{ matrix.env }} ${{ matrix.args }}
+        env:
+          PLAYWRIGHT_INSTALL_ARGS: ${{ matrix.playwright_install_args || 'chromium' }}
