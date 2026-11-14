@@ -1,7 +1,12 @@
 {% extends "base.html" %}
 {% block title %}Set up · Bookshelf{% endblock %}
+{% from "_hero.html" import hero %}
+{% block hero %}
+  {% call hero(tall=True) %}
+    <h1>Welcome to Bookshelf</h1>
+    <p class="hero-lead">Create the administrator account to finish setting up.</p>
+  {% endcall %}
+{% endblock %}
 {% block content %}
-  <h1>Welcome to Bookshelf</h1>
-  <p>Create the administrator account to finish setting up.</p>
   {% include "_setup_form.html" %}
 {% endblock %}

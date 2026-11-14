@@ -1,7 +1,10 @@
 {% extends "base.html" %}
 {% block title %}Users · Bookshelf{% endblock %}
+{% from "_hero.html" import hero %}
+{% block hero %}
+  {% call hero() %}{% include "_topbar.html" %}{% endcall %}
+{% endblock %}
 {% block content %}
-  {% include "_topbar.html" %}
   <div class="section-header">
     <h2>Users</h2>
     <button type="button" data-dialog-open="create-user-dialog">Create user</button>

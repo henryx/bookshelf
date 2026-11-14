@@ -1,0 +1,9 @@
+{# The bookcloth band at the top of a page, with a shelf of spines along its
+   bottom edge. tall: the main, login and setup pages (big title, the page-load
+   reveal); otherwise a slim band for the other pages. #}
+{% macro hero(tall=False) %}
+  <div class="hero{{ ' hero-tall' if tall }}">
+    <div class="hero-inner">{{ caller() }}</div>
+    <div class="shelf" aria-hidden="true"><span></span><span></span><span></span></div>
+  </div>
+{% endmacro %}

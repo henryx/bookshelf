@@ -38,6 +38,8 @@ Bookshelf library webapp is a webapp to manage a book library built with Flask u
 - `bookshelf/routes/admin.py`: admin area (`/admin/users`), admins only; users list, create, details/edit, delete
 - `bookshelf/routes/setup.py`: first-run wizard; redirects every request to `/setup` until an admin exists
 - `bookshelf/templates/`, `bookshelf/static/`: Jinja templates and CSS; htmx is vendored in `static/`; `app.js` holds the error-banner, dialog, repeatable-row and suggestion handlers
+- `bookshelf/static/fonts/`: vendored Fraunces, Bricolage Grotesque and JetBrains Mono (latin and latin-ext WOFF2, with their OFL licences); `@font-face` rules are at the top of `style.css`
+- `bookshelf/templates/_hero.html`: `hero(tall=False)` macro, the bookcloth band with the shelf of spines; pages fill `base.html`'s `hero` block with it (tall on main, login and setup, with the page-load reveal; slim elsewhere)
 - `tests/conftest.py`: session Firebird container, `app`/`db_app`/`empty_db_app` fixtures; autouse `setup_complete` skips the first-run wizard (overridden in `test_setup.py`)
 - `docs/bookshelf.md`: requirements, decisions and open questions
 - `dev.env` (dev server) and `test.env` (tests) are deliberately separate: tests wipe tables

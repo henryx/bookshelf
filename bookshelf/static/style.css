@@ -1,57 +1,227 @@
+/* Bookshelf: bookcloth green with one sharp accent, date-stamp ink.
+   Fonts are vendored in static/fonts (SIL Open Font License, see the OFL files). */
+
+@font-face {
+  font-family: "Fraunces";
+  src: url("fonts/fraunces-latin.woff2") format("woff2");
+  font-weight: 100 900;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "Fraunces";
+  src: url("fonts/fraunces-latin-ext.woff2") format("woff2");
+  font-weight: 100 900;
+  font-display: swap;
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+  font-family: "Bricolage Grotesque";
+  src: url("fonts/bricolage-grotesque-latin.woff2") format("woff2");
+  font-weight: 200 800;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "Bricolage Grotesque";
+  src: url("fonts/bricolage-grotesque-latin-ext.woff2") format("woff2");
+  font-weight: 200 800;
+  font-display: swap;
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("fonts/jetbrains-mono-latin.woff2") format("woff2");
+  font-weight: 100 800;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("fonts/jetbrains-mono-latin-ext.woff2") format("woff2");
+  font-weight: 100 800;
+  font-display: swap;
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
 :root {
-  --bg: #fafaf7;
-  --fg: #1f1f1f;
-  --muted: #666;
-  --accent: #2f5d8a;
-  --error: #b3261e;
-  --border: #d8d8d0;
-  font-family: system-ui, sans-serif;
   color-scheme: light dark;
+
+  /* Dominant: bottle-green bookcloth, from the deepest shadow to sage. */
+  --cloth: #1f4b3a;
+  --cloth-deep: #143327;
+  --cloth-darkest: #0b1f16;
+  --cloth-light: #2e6650;
+  --cloth-bright: #3d7a5f;
+  --sage: #9db8a6;
+  --bone: #d8e2d6;
+
+  /* The one sharp accent: library date-stamp ink. Main actions and focus only. */
+  --stamp: #e0245e;
+  --on-stamp: #ffffff;
+
+  /* Page: cool sage paper and green-black ink. */
+  --paper: #e9efe8;
+  --paper-raised: #f5f8f4;
+  --ink: #14231c;
+  --ink-muted: #4c5e55;
+  --rule: #c3d1c6;
+  --on-cloth: #eef3ee;
+  --on-cloth-muted: #b5c9bb;
+  --lamp: rgb(255 236 200 / 0.2);
+  --shade: rgb(11 31 22 / 0.35);
+  --error: #a3201a;
+  --error-wash: #f8e3e1;
+
+  --font-display: "Fraunces", Georgia, serif;
+  --font-body: "Bricolage Grotesque", "Trebuchet MS", sans-serif;
+  --font-mono: "JetBrains Mono", Menlo, monospace;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #1a1a1a;
-    --fg: #ececec;
-    --muted: #a0a0a0;
-    --accent: #8ab4e0;
-    --error: #f2b8b5;
-    --border: #3a3a3a;
+    --paper: #0f1b16;
+    --paper-raised: #16261f;
+    --ink: #e2ebe4;
+    --ink-muted: #a3b6aa;
+    --rule: #2c4339;
+    --shade: rgb(0 0 0 / 0.5);
+    --error: #f2a9a3;
+    --error-wash: #3a1513;
   }
 }
 
+/* Base */
+
 body {
   margin: 0;
-  background: var(--bg);
-  color: var(--fg);
+  font-family: var(--font-body);
+  font-size: 1.0625rem;
+  line-height: 1.5;
+  color: var(--ink);
+  /* Laid paper: faint horizontal lines, and the hero's green spilling down. */
+  background:
+    radial-gradient(120% 40rem at 50% 0%, rgb(31 75 58 / 0.1), transparent 70%),
+    repeating-linear-gradient(0deg, rgb(31 75 58 / 0.035) 0 1px, transparent 1px 7px),
+    var(--paper);
+  background-attachment: fixed;
 }
 
 main {
   max-width: 40rem;
   margin: 0 auto;
-  padding: 1rem;
+  padding: 1.5rem 1rem;
+}
+
+h1,
+h2 {
+  font-family: var(--font-display);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  margin: 0;
+}
+
+/* Page and dialog titles: three times the body text. */
+h2 {
+  font-size: clamp(2.25rem, 8vw, 3.25rem);
+  margin-bottom: 1rem;
+}
+
+a {
+  color: var(--cloth-light);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 0.2em;
+}
+
+@media (prefers-color-scheme: dark) {
+  a {
+    color: var(--sage);
+  }
+}
+
+:focus-visible {
+  outline: 3px solid var(--stamp);
+  outline-offset: 2px;
+}
+
+/* Forms */
+
+input,
+select,
+textarea {
+  font: inherit;
+  padding: 0.625rem 0.75rem;
+  border: 2px solid var(--rule);
+  border-radius: 0.5rem;
+  background: var(--paper-raised);
+  color: var(--ink);
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--cloth-light);
+}
+
+input[type="checkbox"] {
+  width: 1.25rem;
+  height: 1.25rem;
+  padding: 0;
+  accent-color: var(--cloth);
+}
+
+/* Data, not prose: set in mono. */
+#book-isbn,
+#book-publication_year,
+#book-copies {
+  font-family: var(--font-mono);
+}
+
+label,
+legend,
+.label {
+  font-weight: 800;
+  font-size: 0.9375rem;
 }
 
 .card {
   display: grid;
   gap: 0.5rem;
-  padding: 1rem;
-  border: 1px solid var(--border);
-  border-radius: 0.5rem;
+  padding: 1.5rem;
+  border-top: 0.375rem solid var(--cloth);
+  border-radius: 0.75rem;
+  background: var(--paper-raised);
+  box-shadow: 0 1rem 2rem -1rem var(--shade);
 }
 
-input,
-textarea,
-button {
+.card > label,
+.card > .label {
+  margin-top: 0.5rem;
+}
+
+.card > button[type="submit"] {
+  justify-self: start;
+  margin-top: 1rem;
+}
+
+/* Buttons: the main action in stamp ink; the rest outlined. */
+
+button,
+a.button {
   font: inherit;
-  padding: 0.5rem;
-}
-
-button {
-  background: var(--accent);
-  color: var(--bg);
-  border: 0;
-  border-radius: 0.25rem;
+  font-weight: 800;
+  padding: 0.625rem 1.25rem;
+  border: 2px solid var(--stamp);
+  border-radius: 999px;
+  background: var(--stamp);
+  color: var(--on-stamp);
+  text-decoration: none;
   cursor: pointer;
 }
 
@@ -60,27 +230,223 @@ button:disabled {
   cursor: progress;
 }
 
+button.secondary,
+.row-button {
+  background: transparent;
+  border-color: var(--rule);
+  color: var(--ink);
+}
+
+.danger {
+  margin-top: 1.5rem;
+}
+
+.danger button {
+  background: transparent;
+  border-color: var(--error);
+  color: var(--error);
+}
+
+/* Messages */
+
 .error {
   color: var(--error);
+  font-size: 0.9375rem;
+  font-weight: 800;
   margin: 0;
 }
 
 .hint {
-  color: var(--muted);
+  color: var(--ink-muted);
   font-size: 0.875rem;
   margin: 0;
 }
+
+.error-banner {
+  max-width: 40rem;
+  margin: 1rem auto;
+  padding: 0.875rem 1.25rem;
+  border-left: 0.375rem solid var(--error);
+  border-radius: 0.5rem;
+  background: var(--error-wash);
+  color: var(--error);
+}
+
+.error-banner:empty {
+  display: none;
+}
+
+.flash {
+  margin: 0 0 1.5rem;
+  padding: 0.875rem 1.25rem;
+  border-left: 0.375rem solid var(--cloth-light);
+  border-radius: 0.5rem;
+  background: var(--paper-raised);
+}
+
+.htmx-indicator {
+  display: none;
+  color: var(--ink-muted);
+}
+
+.htmx-request .htmx-indicator,
+.htmx-request.htmx-indicator {
+  display: inline;
+}
+
+/* Hero: a band of bookcloth under a reading lamp, with a shelf of spines
+   along its bottom edge. The one bold element of every page. */
+
+.hero {
+  position: relative;
+  overflow: hidden;
+  color: var(--on-cloth);
+  background:
+    radial-gradient(60rem 26rem at 85% -6rem, var(--lamp), transparent 70%),
+    repeating-linear-gradient(0deg, rgb(255 255 255 / 0.012) 0 1px, transparent 1px 2px),
+    repeating-linear-gradient(90deg, rgb(0 0 0 / 0.03) 0 1px, transparent 1px 2px),
+    linear-gradient(180deg, var(--cloth) 0%, var(--cloth-deep) 100%);
+}
+
+.hero-inner {
+  position: relative;
+  max-width: 40rem;
+  margin: 0 auto;
+  padding: 1rem 1rem 1.75rem;
+}
+
+.hero-tall .hero-inner {
+  padding-top: 1.25rem;
+  padding-bottom: 2.5rem;
+}
+
+/* The hero title: six times the body text on the tall bands. More specific
+   than .topbar h1, the small title of the slim bands. */
+.hero-tall .hero-inner h1 {
+  font-size: clamp(3.5rem, 14vw, 6.5rem);
+  margin: 1.5rem 0 0.75rem;
+}
+
+.hero-lead {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 200;
+  color: var(--on-cloth);
+}
+
+.hero a {
+  color: inherit;
+}
+
+.hero .hint {
+  color: var(--on-cloth-muted);
+}
+
+.hero button,
+.hero a.button {
+  padding: 0.5rem 1rem;
+  background: transparent;
+  border-color: rgb(238 243 238 / 0.35);
+  color: var(--on-cloth);
+}
+
+.hero input,
+.hero select {
+  border-color: transparent;
+  background: var(--paper-raised);
+  color: var(--ink);
+}
+
+/* Spines: 20 books in a 400px pattern, each drawn by one of three layers of
+   different heights. Every spine has its own slot (no layer overlaps
+   another), so each is whole and stands on the shelf board. */
+.shelf {
+  position: relative;
+  height: 4.5rem;
+  --board: 0.625rem;
+}
+
+.hero:not(.hero-tall) .shelf {
+  height: 2.25rem;
+}
+
+.shelf span {
+  position: absolute;
+  inset: auto 0 var(--board);
+  transform-origin: bottom;
+}
+
+.shelf span:nth-child(1) {
+  height: calc(100% - var(--board));
+  background: repeating-linear-gradient(90deg,
+    transparent 0 16px, var(--cloth-deep) 16px 38px,
+    transparent 38px 52px, var(--cloth-darkest) 52px 70px,
+    transparent 70px 72px, var(--cloth-bright) 72px 98px,
+    transparent 98px 154px, var(--cloth-light) 154px 184px,
+    transparent 184px 238px, var(--cloth-darkest) 238px 262px,
+    transparent 262px 300px, var(--sage) 300px 316px,
+    transparent 316px 362px, var(--cloth-deep) 362px 382px,
+    transparent 382px 400px);
+}
+
+.shelf span:nth-child(2) {
+  height: calc(86% - var(--board));
+  background: repeating-linear-gradient(90deg,
+    var(--cloth-light) 0 14px, transparent 14px 114px,
+    var(--bone) 114px 134px, transparent 134px 186px,
+    var(--cloth-darkest) 186px 198px, transparent 198px 200px,
+    var(--cloth-bright) 200px 220px, transparent 220px 276px,
+    var(--cloth-deep) 276px 298px, transparent 298px 348px,
+    var(--sage) 348px 360px, transparent 360px 400px);
+}
+
+.shelf span:nth-child(3) {
+  height: calc(74% - var(--board));
+  background: repeating-linear-gradient(90deg,
+    transparent 0 40px, var(--sage) 40px 50px,
+    transparent 50px 100px, var(--cloth-deep) 100px 112px,
+    transparent 112px 136px, var(--cloth-light) 136px 152px,
+    transparent 152px 222px, var(--bone) 222px 236px,
+    transparent 236px 264px, var(--cloth-bright) 264px 274px,
+    transparent 274px 318px, var(--cloth-darkest) 318px 346px,
+    transparent 346px 384px, var(--cloth-light) 384px 398px,
+    transparent 398px 400px);
+}
+
+/* Lamp light falls from the right: the shelf darkens towards its ends. */
+.shelf::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, rgb(0 0 0 / 0.4), transparent 30% 75%, rgb(0 0 0 / 0.2));
+  pointer-events: none;
+}
+
+/* The shelf board, with a lit front edge. */
+.shelf::before {
+  content: "";
+  position: absolute;
+  inset: auto 0 0;
+  height: var(--board);
+  background: linear-gradient(180deg, rgb(255 255 255 / 0.18) 0 2px, var(--cloth-darkest) 2px);
+  z-index: 1;
+}
+
+/* Top bar: inside the hero on every page that has one. */
 
 .topbar {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 1rem;
+  gap: 0.75rem 1rem;
   flex-wrap: wrap;
 }
 
+.topbar h1 {
+  font-size: 1.75rem;
+}
+
 .topbar h1 a {
-  color: inherit;
   text-decoration: none;
 }
 
@@ -89,40 +455,233 @@ button:disabled {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  font-size: 0.9375rem;
 }
 
-.htmx-indicator {
-  display: none;
-  color: var(--muted);
+.topbar nav > span {
+  font-weight: 200;
+  overflow-wrap: anywhere;
 }
 
-.htmx-request .htmx-indicator,
-.htmx-request.htmx-indicator {
-  display: inline;
+/* On the tall band the nav sits above a big title. */
+.hero-tall .topbar {
+  display: grid;
+  grid-template-columns: 1fr auto;
 }
 
-.error-banner {
-  max-width: 40rem;
-  margin: 1rem auto 0;
+.hero-tall .topbar nav {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+/* Search, inside the main page's hero. */
+
+.book-search {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+}
+
+.book-search input[type="search"] {
+  flex: 1 1 14rem;
+  font-size: 1.125rem;
   padding: 0.75rem 1rem;
-  border: 1px solid var(--error);
-  border-radius: 0.5rem;
-  color: var(--error);
 }
 
-.error-banner:empty {
-  display: none;
+.book-search label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 200;
 }
 
-a {
-  color: var(--accent);
+/* The page-load reveal: the spines rise onto the shelf one layer after the
+   other, then the title and the search settle into place. */
+
+@keyframes spines-rise {
+  from {
+    transform: scaleY(0);
+  }
 }
 
-.flash {
-  padding: 0.75rem 1rem;
-  border: 1px solid var(--accent);
-  border-radius: 0.5rem;
+@keyframes settle {
+  from {
+    opacity: 0;
+    transform: translateY(0.75rem);
+  }
 }
+
+.hero-tall .shelf span {
+  animation: spines-rise 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.hero-tall .shelf span:nth-child(2) {
+  animation-delay: 0.1s;
+}
+
+.hero-tall .shelf span:nth-child(3) {
+  animation-delay: 0.2s;
+}
+
+.hero-tall h1,
+.hero-tall .hero-lead,
+.hero-tall .book-search {
+  animation: settle 0.6s cubic-bezier(0.22, 1, 0.36, 1) 0.3s both;
+}
+
+.hero-tall .hero-lead,
+.hero-tall .book-search {
+  animation-delay: 0.45s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-tall .shelf span,
+  .hero-tall h1,
+  .hero-tall .hero-lead,
+  .hero-tall .book-search {
+    animation: none;
+  }
+}
+
+/* Book list: one row per book, its title joined to the year by a dotted
+   leader, as in a book's table of contents. */
+
+.book-count {
+  font-family: var(--font-mono);
+  margin-bottom: 0.5rem;
+}
+
+.books {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.books li {
+  display: grid;
+  grid-template-columns: minmax(0, max-content) minmax(1.5rem, 1fr) auto;
+  grid-template-areas:
+    "title leader year"
+    "authors authors authors";
+  column-gap: 0.5rem;
+  align-items: baseline;
+  padding: 0.75rem 0;
+}
+
+.books li::before {
+  content: "";
+  grid-area: leader;
+  border-bottom: 2px dotted var(--rule);
+}
+
+/* No year: nothing to lead to. */
+.books li:not(:has(.book-year))::before {
+  visibility: hidden;
+}
+
+.book-title {
+  grid-area: title;
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.book-authors {
+  grid-area: authors;
+  font-weight: 200;
+}
+
+.book-year {
+  grid-area: year;
+  font-family: var(--font-mono);
+  font-size: 0.9375rem;
+  color: var(--ink-muted);
+}
+
+.pages {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 1.25rem;
+  margin: 1.5rem 0;
+  font-family: var(--font-mono);
+  font-size: 0.9375rem;
+}
+
+/* Floating action button: a round stamp over the bottom-right corner. */
+.fab {
+  position: fixed;
+  right: max(1.5rem, env(safe-area-inset-right));
+  bottom: max(1.5rem, env(safe-area-inset-bottom));
+  display: grid;
+  place-items: center;
+  width: 4rem;
+  height: 4rem;
+  border-radius: 50%;
+  background: var(--stamp);
+  color: var(--on-stamp);
+  font-size: 2.75rem;
+  font-weight: 200;
+  line-height: 1;
+  text-decoration: none;
+  box-shadow: 0 0.75rem 1.5rem -0.5rem rgb(224 36 94 / 0.6), 0 0 0 0.25rem rgb(224 36 94 / 0.15);
+  transition: transform 0.15s;
+}
+
+.fab:hover {
+  transform: translateY(-2px) rotate(-6deg);
+}
+
+/* Room below the list so the button never covers the last row or the page links. */
+#book-list {
+  padding-bottom: 6rem;
+}
+
+/* Dialogs: a raised sheet with a cloth head band. */
+
+dialog {
+  width: min(32rem, calc(100vw - 2rem));
+  padding: 1.25rem 1.5rem 1.5rem;
+  border: 0;
+  border-top: 0.5rem solid var(--cloth);
+  border-radius: 0.75rem;
+  background: var(--paper-raised);
+  color: var(--ink);
+  box-shadow: 0 1.5rem 3rem -1rem var(--shade);
+}
+
+dialog::backdrop {
+  background: rgb(11 31 22 / 0.55);
+  backdrop-filter: blur(2px);
+}
+
+dialog .card {
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+
+.section-header h2 {
+  margin-bottom: 0.5rem;
+}
+
+.section-header button.secondary {
+  border-color: transparent;
+  padding: 0.5rem 0.75rem;
+}
+
+/* Admin: users table. */
 
 .users {
   width: 100%;
@@ -131,10 +690,15 @@ a {
 
 .users th,
 .users td {
-  padding: 0.5rem;
-  border-bottom: 1px solid var(--border);
+  padding: 0.75rem 0.5rem;
+  border-bottom: 1px solid var(--rule);
   text-align: left;
   vertical-align: middle;
+}
+
+.users th {
+  font-weight: 800;
+  font-size: 0.9375rem;
 }
 
 /* Narrow screens: one card per user instead of a wide table. */
@@ -146,7 +710,7 @@ a {
   .users tr {
     display: grid;
     padding: 0.5rem 0;
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid var(--rule);
   }
 
   .users td {
@@ -155,148 +719,18 @@ a {
   }
 }
 
-a.button {
-  padding: 0.5rem;
-  background: var(--accent);
-  color: var(--bg);
-  border-radius: 0.25rem;
-  text-decoration: none;
-}
-
-.label {
-  font-weight: 600;
-}
-
 .checkbox {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-}
-
-.danger {
-  margin-top: 1rem;
-}
-
-.danger button {
-  background: var(--error);
-}
-
-.section-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 1rem;
-}
-
-button.secondary {
-  background: transparent;
-  color: var(--fg);
-}
-
-dialog {
-  width: min(32rem, calc(100vw - 2rem));
-  padding: 1rem;
-  border: 1px solid var(--border);
-  border-radius: 0.5rem;
-  background: var(--bg);
-  color: var(--fg);
-}
-
-dialog::backdrop {
-  background: rgb(0 0 0 / 0.4);
-}
-
-.book-search {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem;
-  margin: 1rem 0;
-}
-
-.book-search input[type="search"] {
-  flex: 1 1 12rem;
-}
-
-.book-search label {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-select {
-  font: inherit;
-  padding: 0.5rem;
-}
-
-/* One row per book: title, then authors and year. */
-.books {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.books li {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  column-gap: 0.75rem;
-  padding: 0.5rem 0;
-  border-bottom: 1px solid var(--border);
-}
-
-.book-title {
-  font-weight: 600;
-}
-
-.book-authors,
-.book-year {
-  color: var(--muted);
-}
-
-.pages {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 1rem;
-  margin: 1rem 0;
-}
-
-/* Floating action button: a round "+" over the bottom-right corner. */
-.fab {
-  position: fixed;
-  right: max(1.5rem, env(safe-area-inset-right));
-  bottom: max(1.5rem, env(safe-area-inset-bottom));
-  display: grid;
-  place-items: center;
-  width: 3.5rem;
-  height: 3.5rem;
-  border-radius: 50%;
-  background: var(--accent);
-  color: var(--bg);
-  font-size: 2rem;
-  line-height: 1;
-  text-decoration: none;
-  box-shadow: 0 3px 6px rgb(0 0 0 / 0.25), 0 1px 3px rgb(0 0 0 / 0.2);
-  transition: box-shadow 0.15s, transform 0.15s;
-}
-
-.fab:hover,
-.fab:focus-visible {
-  box-shadow: 0 6px 12px rgb(0 0 0 / 0.3), 0 2px 4px rgb(0 0 0 / 0.2);
-  transform: translateY(-1px);
-}
-
-/* Room below the list so the button never covers the last row or the page links. */
-#book-list {
-  padding-bottom: 5rem;
+  margin-top: 0.5rem;
 }
 
 /* Author rows of the add-book form: name, surname and a +/- button. */
 .author-rows {
   display: grid;
   gap: 0.5rem;
-  margin: 0;
+  margin: 0.5rem 0 0;
   padding: 0;
   border: 0;
 }
@@ -308,7 +742,7 @@ select {
 
 .author-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 2.5rem;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 2.75rem;
   gap: 0.5rem;
 }
 
@@ -324,12 +758,9 @@ select {
 
 .row-button {
   padding: 0;
-  font-size: 1.25rem;
+  font-size: 1.375rem;
+  font-weight: 200;
   line-height: 1;
-}
-
-.row-button.secondary {
-  border: 1px solid var(--border);
 }
 
 /* Form fields side by side: the first takes the room left by the narrow one. */
@@ -338,6 +769,7 @@ select {
   grid-template-columns: minmax(0, 1fr) 7rem;
   gap: 0.5rem;
   align-items: start;
+  margin-top: 0.5rem;
 }
 
 .field {

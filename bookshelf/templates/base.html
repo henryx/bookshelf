@@ -6,12 +6,16 @@
   {# Swap 4xx/5xx responses too, so server errors reach the page (htmx ignores them by default). #}
   <meta name="htmx-config" content='{"responseHandling": [{"code": "204", "swap": false}, {"code": "[23]..", "swap": true}, {"code": "[45]..", "swap": true, "error": true}, {"code": "...", "swap": false}]}'>
   <title>{% block title %}Bookshelf{% endblock %}</title>
+  {# The hero title's face: fetched early, so the page-load reveal shows it, not a fallback. #}
+  <link rel="preload" href="{{ url_for('static', filename='fonts/fraunces-latin.woff2') }}"
+        as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
   <script src="{{ url_for('static', filename='htmx.min.js') }}" defer></script>
   <script src="{{ url_for('static', filename='app.js') }}" defer></script>
 </head>
 <body>
   <div id="error-banner" class="error-banner" role="alert" aria-live="assertive"></div>
+  {% block hero %}{% endblock %}
   <main>
     {% for message in get_flashed_messages() %}
       <p class="flash" role="status">{{ message }}</p>

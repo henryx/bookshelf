@@ -5,7 +5,7 @@
   <a href="{{ url }}" hx-get="{{ url }}" hx-target="#book-list" hx-push-url="true"
      hx-indicator="#book-pages-indicator">{{ label }}</a>
 {%- endmacro %}
-<p class="hint">{{ books.total }} book{{ "" if books.total == 1 else "s" }}</p>
+<p class="hint book-count">{{ books.total }} book{{ "" if books.total == 1 else "s" }}</p>
 {% if books.books %}
   <ul class="books">
     {% for book in books.books %}
