@@ -1,9 +1,17 @@
-from flask import Blueprint, render_template, request
-from flask_login import login_required
+from flask import Blueprint, current_app, flash, render_template, request, url_for
+from flask_login import current_user, login_required
+from werkzeug.wrappers import Response as BaseResponse
 
 from bookshelf.db import get_db
-from bookshelf.models.books import SEARCH_MAX_LENGTH, Sort, list_books
-from bookshelf.routes import is_htmx
+from bookshelf.models.books import (
+    SEARCH_MAX_LENGTH,
+    BookExistsError,
+    Sort,
+    add_book,
+    list_books,
+)
+from bookshelf.routes import htmx_redirect, is_htmx
+from bookshelf.routes.forms import BookForm
 
 __all__ = ["main_route"]
 
@@ -35,4 +43,30 @@ def index() -> str:
         sort=sort,
         sorts=Sort,
         search_max_length=SEARCH_MAX_LENGTH,
+        form=BookForm(),
     )
+
+
+def _render_add(form: BookForm) -> str:
+    """The form alone for htmx (it lives in the main page's dialog), else a page."""
+    template = "_add_book_form.html" if is_htmx() else "add_book.html"
+    return render_template(template, form=form)
+
+
+@main_route.route("/books/new", methods=("GET", "POST"))
+@login_required
+def new_book() -> BaseResponse | str:
+    """Add a book to the catalogue and to the current user's collection."""
+    form = BookForm()
+    if not form.validate_on_submit():
+        return _render_add(form)
+    book = form.to_book()
+    try:
+        add_book(get_db(), current_user.id, book, copies=form.copies.data or 1)
+    except BookExistsError as e:
+        form.form_errors.append(str(e))
+        return _render_add(form)
+
+    current_app.logger.info("Book %r added by %s", book.title, current_user.email)
+    flash(f"Book “{book.title}” added.")
+    return htmx_redirect(url_for("main.index"))

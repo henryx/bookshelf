@@ -15,14 +15,18 @@
     }
   });
 
-  // Dialogs: [data-dialog-open="<id>"] opens that <dialog> as a modal;
+  // Dialogs: [data-dialog-open="<id>"] opens that <dialog> as a modal (a
+  // link opener is not followed: its href is the no-JavaScript fallback);
   // [data-dialog-close] closes the dialog it is in. Escape also closes it.
   document.addEventListener("click", function (event) {
     var opener = event.target.closest("[data-dialog-open]");
     if (opener) {
       var dialog = document.getElementById(opener.dataset.dialogOpen);
-      if (dialog && !dialog.open) {
-        dialog.showModal();
+      if (dialog) {
+        event.preventDefault();
+        if (!dialog.open) {
+          dialog.showModal();
+        }
       }
       return;
     }

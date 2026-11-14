@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{# Without JavaScript the floating button opens this page instead of the dialog. #}
+{% block title %}Add book · Bookshelf{% endblock %}
+{% block content %}
+  {% include "_topbar.html" %}
+  <h2>Add book</h2>
+  {% include "_add_book_form.html" %}
+{% endblock %}

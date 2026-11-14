@@ -41,6 +41,7 @@ main {
 }
 
 input,
+textarea,
 button {
   font: inherit;
   padding: 0.5rem;
@@ -259,4 +260,34 @@ select {
   align-items: center;
   gap: 1rem;
   margin: 1rem 0;
+}
+
+/* Floating action button: a round "+" over the bottom-right corner. */
+.fab {
+  position: fixed;
+  right: max(1.5rem, env(safe-area-inset-right));
+  bottom: max(1.5rem, env(safe-area-inset-bottom));
+  display: grid;
+  place-items: center;
+  width: 3.5rem;
+  height: 3.5rem;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--bg);
+  font-size: 2rem;
+  line-height: 1;
+  text-decoration: none;
+  box-shadow: 0 3px 6px rgb(0 0 0 / 0.25), 0 1px 3px rgb(0 0 0 / 0.2);
+  transition: box-shadow 0.15s, transform 0.15s;
+}
+
+.fab:hover,
+.fab:focus-visible {
+  box-shadow: 0 6px 12px rgb(0 0 0 / 0.3), 0 2px 4px rgb(0 0 0 / 0.2);
+  transform: translateY(-1px);
+}
+
+/* Room below the list so the button never covers the last row or the page links. */
+#book-list {
+  padding-bottom: 5rem;
 }

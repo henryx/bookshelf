@@ -193,8 +193,25 @@ setup, so this is accepted rather than guarded with an extra table.
 
 ## Books
 
-Status: tables created by `init-db` (`BOOKS`, `AUTHORS`, `BOOK_AUTHORS`, `BOOK_TAGS`, `COLLECTION_BOOKS`); no
-pages yet.
+Status: tables created by `init-db` (`BOOKS`, `AUTHORS`, `BOOK_AUTHORS`, `BOOK_TAGS`, `COLLECTION_BOOKS`). Books
+can be listed (see Main page) and added; not yet edited or deleted.
+
+### Adding a book
+
+A round "+" button floats over the bottom-right corner of the main page. It opens a dialog with the book's
+fields and the number of copies the user owns (1 by default); "Add book" saves it to the catalogue and to the
+user's collection, and the list reloads with a confirmation. Without JavaScript the button opens the same form
+as a page (`/books/new`).
+
+Decisions:
+
+ - Authors are typed one per line, in order, since a name may contain a comma ("Tolkien, J. R. R."). Tags are
+   separated by commas. Blank entries are skipped, and an author or tag repeated (ignoring case) is kept once.
+ - An author whose name matches an existing one (ignoring case) is that author, keeping its existing spelling.
+ - The ISBN must be a valid ISBN-10 or ISBN-13, check digit included, so a mistyped ISBN is caught; it is saved
+   as ISBN-13. An ISBN already in the catalogue is refused with a message naming it.
+ - The publication year is between 1 and 9999; copies between 1 and 999.
+ - Empty optional fields are stored as NULL.
 
 Decisions:
 
@@ -239,7 +256,7 @@ Decisions:
 
 ## Main page
 
-Status: built at `/` (read-only: books cannot be added from the web yet, see Books).
+Status: built at `/`, with the add-book button (see Books, "Adding a book").
 
 Decisions:
 
