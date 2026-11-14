@@ -41,7 +41,19 @@
   {{ field("isbn", "ISBN-10 or ISBN-13; hyphens and spaces are fine.", autocomplete="off") }}
   {# Publisher and year side by side; the year needs only a few digits. #}
   <div class="field-row">
-    <div class="field">{{ field("publisher", maxlength=255) }}</div>
+    {# Typing lists matching publishers in the <datalist> (app.js sends the text as q). #}
+    <div class="field">
+      {{ field("publisher", maxlength=255, autocomplete="off", list="book-publisher-suggestions",
+               data_suggest=True, **{
+                 "hx-get": url_for("main.publisher_suggestions"),
+                 "hx-trigger": "input changed delay:200ms",
+                 "hx-target": "#book-publisher-suggestions",
+                 "hx-swap": "innerHTML",
+                 "hx-sync": "this:replace",
+                 "hx-indicator": "closest .field",
+               }) }}
+      <datalist id="book-publisher-suggestions"></datalist>
+    </div>
     <div class="field">{{ field("publication_year", min=1, max=9999) }}</div>
   </div>
   {{ field("volume", "E.g. 2, II or 3/4.", maxlength=32) }}

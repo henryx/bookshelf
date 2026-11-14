@@ -216,6 +216,9 @@ Decisions:
    of the row. The list is the browser's own suggestion list (`<datalist>`), so it needs little JavaScript
    and works with the keyboard and screen readers, but its look is the browser's. Without JavaScript the
    fields work as plain inputs, with no suggestions.
+ - The publisher field suggests the same way: up to 10 publishers already used in the catalogue that start
+   with the text, ignoring case (spellings differing only in case are one publisher). Picking one fills the
+   field.
  - Tags are separated by commas. Blank tags are skipped, and a tag repeated (ignoring case) is kept once.
  - An author whose name and surname match an existing one (ignoring case) is that author, keeping its
    existing spelling.
@@ -256,9 +259,9 @@ Decisions:
  - The library can be exported as a CSV file. There is no import in the first version.
  - ISBNs are stored as 13 digits: hyphens and spaces are removed and an ISBN-10 is converted to its ISBN-13, so
    the same book typed either way is caught as a duplicate.
- - Titles, author names and surnames, and tags ignore case when compared and sorted ("Sci-fi" and "sci-fi"
+ - Titles, publishers, author names and surnames, and tags ignore case when compared and sorted ("Sci-fi" and "sci-fi"
    are one tag), but not accents ("Citta" and "Città" differ). All are trimmed; titles, surnames and tags
-   cannot be blank. An author's name (the given name) may be empty, stored as '' rather than NULL so that
+   cannot be blank (an empty publisher is stored as NULL). An author's name (the given name) may be empty, stored as '' rather than NULL so that
    uniqueness still holds.
  - An author is a name and a surname, and that pair is unique: two different authors cannot share both, so
    picking an author is never ambiguous. Authors may share a surname (Charlotte and Emily Brontë). An author used by a book cannot be deleted; unused authors are kept until removed.

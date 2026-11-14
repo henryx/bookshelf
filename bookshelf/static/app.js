@@ -79,23 +79,23 @@
     }
   });
 
-  // Author suggestions: each author field asks the server for matching
-  // authors as you type, sending its text as q (its own name is the form
-  // field's, e.g. authors-0-name). Picking a suggestion from the field's
-  // <datalist> puts "Name Surname" in the field; it is then split into the
-  // row's name and surname fields.
-  function isAuthorField(el) {
-    return el instanceof HTMLInputElement && el.matches("[data-author-field]");
-  }
-
+  // Suggestions: a [data-suggest] field (an author's name or surname, the
+  // publisher) asks the server for matches as you type, sending its text as
+  // q instead of under its own form name (e.g. authors-0-name).
   document.addEventListener("htmx:configRequest", function (event) {
     var input = event.detail.elt;
-    if (!isAuthorField(input)) {
+    if (!(input instanceof HTMLInputElement) || !input.matches("[data-suggest]")) {
       return;
     }
     delete event.detail.parameters[input.name];
     event.detail.parameters.q = input.value;
   });
+
+  // Picking an author from a field's <datalist> puts "Name Surname" in the
+  // field; it is then split into the row's name and surname fields.
+  function isAuthorField(el) {
+    return el instanceof HTMLInputElement && el.matches("[data-author-field]");
+  }
 
   document.addEventListener("input", function (event) {
     var input = event.target;

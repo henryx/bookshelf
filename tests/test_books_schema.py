@@ -108,6 +108,19 @@ def test_date_added_is_set_automatically(conn: Connection):
     assert _count(conn, "SELECT COUNT(*) FROM BOOKS WHERE CREATED_AT IS NULL") == 0
 
 
+def test_publishers_match_ignoring_case(conn: Connection):
+    _run(
+        conn,
+        "INSERT INTO BOOKS (ID, TITLE, PUBLISHER) VALUES (?, ?, ?)",
+        (uuid4().bytes, "Mort", "Gollancz"),
+    )
+
+    assert (
+        _count(conn, "SELECT COUNT(*) FROM BOOKS WHERE PUBLISHER = ?", ("GOLLANCZ",))
+        == 1
+    )
+
+
 def test_titles_sort_and_match_ignoring_case(conn: Connection):
     for title in ("zebra", "Apple", "Mango"):
         _add_book(conn, title)

@@ -34,7 +34,7 @@ TABLES: dict[str, str] = {
         )
     """,
     # The shared catalogue: one row per title, however many copies users own.
-    # TITLE ignores case (UNICODE_CI) when compared and sorted. ISBN is 13
+    # TITLE and PUBLISHER ignore case (UNICODE_CI) when compared and sorted. ISBN is 13
     # digits, ISBN-10 converted by the app. VOLUME is free text ("2", "II",
     # "3/4"). CREATED_AT is the date added.
     "BOOKS": """
@@ -42,7 +42,7 @@ TABLES: dict[str, str] = {
             ID UUID NOT NULL,
             TITLE VARCHAR(255) NOT NULL COLLATE UNICODE_CI,
             ISBN CHAR(13),
-            PUBLISHER VARCHAR(255),
+            PUBLISHER VARCHAR(255) COLLATE UNICODE_CI,
             PUBLICATION_YEAR SMALLINT,
             VOLUME VARCHAR(32),
             NOTES VARCHAR(4000),
@@ -199,6 +199,8 @@ INDEXES: dict[str, str] = {
     ),
     # Book list sorted by title, or by date added (newest first).
     "IDX_BOOKS_TITLE": "CREATE INDEX IDX_BOOKS_TITLE ON BOOKS (TITLE)",
+    # Publisher suggestions: publishers starting with the typed text.
+    "IDX_BOOKS_PUBLISHER": "CREATE INDEX IDX_BOOKS_PUBLISHER ON BOOKS (PUBLISHER)",
     "IDX_BOOKS_CREATED_AT": (
         "CREATE DESCENDING INDEX IDX_BOOKS_CREATED_AT ON BOOKS (CREATED_AT)"
     ),

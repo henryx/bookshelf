@@ -19,6 +19,7 @@ from bookshelf.models.books import (
     add_book,
     list_books,
     suggest_authors,
+    suggest_publishers,
 )
 from bookshelf.routes import htmx_redirect, is_htmx
 from bookshelf.routes.forms import BookForm
@@ -103,3 +104,11 @@ def author_suggestions() -> str:
         abort(400, description="Unknown author field.")
     authors = suggest_authors(get_db(), request.args.get("q", ""), field)
     return render_template("_author_suggestions.html", authors=authors)
+
+
+@main_route.route("/publishers/suggestions", methods=("GET",))
+@login_required
+def publisher_suggestions() -> str:
+    """<option>s for the publisher's <datalist>: publishers starting with `q`."""
+    publishers = suggest_publishers(get_db(), request.args.get("q", ""))
+    return render_template("_publisher_suggestions.html", publishers=publishers)

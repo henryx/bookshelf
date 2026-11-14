@@ -316,8 +316,9 @@ select {
   grid-column: 1 / -1;
 }
 
-/* Looking up author suggestions. */
-.author-row.htmx-request input {
+/* Looking up author or publisher suggestions. */
+.author-row.htmx-request input,
+.field.htmx-request input {
   cursor: progress;
 }
 

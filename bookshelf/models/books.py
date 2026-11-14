@@ -21,6 +21,7 @@ __all__ = [
     "list_books",
     "normalise_isbn",
     "suggest_authors",
+    "suggest_publishers",
 ]
 
 # Firebird GDS code for "violation of PRIMARY or UNIQUE KEY constraint".
@@ -30,6 +31,8 @@ PAGE_SIZE = 50
 SUGGESTIONS_LIMIT = 10
 # AUTHORS.NAME and SURNAME; a longer text matches no author.
 _AUTHOR_NAME_MAX_LENGTH = 127
+# BOOKS.PUBLISHER; a longer text matches no publisher.
+_PUBLISHER_MAX_LENGTH = 255
 # The longest searched text (TITLE, or an author's name and surname); a
 # longer text matches nothing.
 SEARCH_MAX_LENGTH = 255
@@ -420,3 +423,21 @@ def suggest_authors(conn: Connection, text: str, field: AuthorField) -> list[Aut
     with conn.cursor() as cur:
         cur.execute(query, (text, SUGGESTIONS_LIMIT))
         return [Author(name, surname) for name, surname in cur.fetchall()]
+
+
+def suggest_publishers(conn: Connection, text: str) -> list[str]:
+    """
+    Up to SUGGESTIONS_LIMIT publishers used in the catalogue that start with
+    `text`, ignoring case; spellings differing only in case are one
+    publisher. Blank or too long text suggests nothing.
+    """
+    text = text.strip()
+    if not text or len(text) > _PUBLISHER_MAX_LENGTH:
+        return []
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT DISTINCT PUBLISHER FROM BOOKS WHERE PUBLISHER STARTING WITH ? "
+            "ORDER BY PUBLISHER FETCH FIRST ? ROWS ONLY",
+            (text, SUGGESTIONS_LIMIT),
+        )
+        return [publisher for (publisher,) in cur.fetchall()]

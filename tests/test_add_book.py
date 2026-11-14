@@ -461,3 +461,67 @@ def test_author_inputs_ask_for_suggestions(client):
         assert 'hx-swap="innerHTML"' in input_tag[0]
         assert f'<datalist id="book-authors-0-{field}-suggestions">' in html
     assert '<datalist id="book-authors-__index__-name-suggestions">' in html
+
+
+# Publisher suggestions
+
+
+def _suggest_publisher(client: FlaskClient, q: str):
+    return client.get("/publishers/suggestions", query_string={"q": q}, headers=HTMX)
+
+
+def _values(html: str) -> list[str]:
+    return re.findall(r'<option value="([^"]*)"', html)
+
+
+def test_publisher_suggestions_by_start_ignoring_case(client):
+    _post(client, title="Mort", publisher="Gollancz")
+    _post(client, title="Thud", publisher="GOLLANCZ")
+    _post(client, title="Dune", publisher="Chilton Books")
+    _post(client, title="Emma", publisher="Gollancz Classics")
+
+    html = _suggest_publisher(client, "gol").get_data(as_text=True)
+
+    assert len(_values(html)) == 2
+    assert _values(html)[0].casefold() == "gollancz"
+    assert _values(html)[1] == "Gollancz Classics"
+
+
+def test_publisher_suggestions_do_not_match_inside_names(client):
+    _post(client, title="Dune", publisher="Chilton Books")
+
+    assert _values(_suggest_publisher(client, "books").get_data(as_text=True)) == []
+
+
+@pytest.mark.parametrize("q", ["", "   ", "x" * 256])
+def test_no_publisher_suggestions_for_blank_or_too_long_text(client, q):
+    _post(client, title="Mort", publisher="Gollancz")
+
+    rv = _suggest_publisher(client, q)
+
+    assert rv.status_code == 200
+    assert _values(rv.get_data(as_text=True)) == []
+
+
+def test_publisher_suggestions_are_limited(client):
+    for n in range(12):
+        _post(client, title=f"Book {n}", publisher=f"Press {n:02}")
+
+    assert (
+        len(_values(_suggest_publisher(client, "press").get_data(as_text=True))) == 10
+    )
+
+
+def test_publisher_suggestions_require_login(db_client):
+    assert db_client.get("/publishers/suggestions?q=g").status_code == 302
+
+
+def test_publisher_input_asks_for_suggestions(client):
+    html = client.get("/books/new").get_data(as_text=True)
+
+    input_tag = re.search(r'<input [^>]*id="book-publisher"[^>]*>', html)
+    assert input_tag
+    assert 'list="book-publisher-suggestions"' in input_tag[0]
+    assert 'hx-get="/publishers/suggestions"' in input_tag[0]
+    assert 'hx-swap="innerHTML"' in input_tag[0]
+    assert '<datalist id="book-publisher-suggestions">' in html

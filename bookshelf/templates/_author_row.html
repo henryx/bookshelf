@@ -9,7 +9,7 @@
   {% set id = "book-" ~ prefix ~ "-" ~ field %}
   <input id="{{ id }}" name="{{ prefix }}-{{ field }}" value="{{ value or '' }}"
          maxlength="127" autocomplete="off" placeholder="{{ placeholder }}"
-         aria-label="Author {{ field }}" list="{{ id }}-suggestions" data-author-field="{{ field }}"
+         aria-label="Author {{ field }}" list="{{ id }}-suggestions" data-suggest data-author-field="{{ field }}"
          hx-get="{{ url_for('main.author_suggestions') }}" hx-vals='{"field": "{{ field }}"}'
          hx-trigger="input changed delay:200ms" hx-target="#{{ id }}-suggestions" hx-swap="innerHTML"
          hx-sync="this:replace" hx-indicator="closest .author-row">

@@ -131,6 +131,7 @@ def _assert_complete_schema(conn: Connection) -> None:
         "CHK_BOOKS_TITLE": "CHECK",
     }
     assert _index_columns(conn, "IDX_BOOKS_TITLE") == ["TITLE"]
+    assert _index_columns(conn, "IDX_BOOKS_PUBLISHER") == ["PUBLISHER"]
     assert _index_columns(conn, "IDX_BOOKS_CREATED_AT") == ["CREATED_AT"]
 
     assert _columns(conn, "AUTHORS") == ["ID", "NAME", "SURNAME"]
