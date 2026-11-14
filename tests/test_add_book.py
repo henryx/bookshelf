@@ -1,8 +1,10 @@
 """Adding a book from the main page."""
 
 import re
+from uuid import uuid4
 
 import pytest
+from firebird.driver import connect
 from flask import Flask
 from flask.testing import FlaskClient
 
@@ -323,6 +325,46 @@ def test_add_book_model_returns_id_listed_in_catalogue(db_app, user):
     assert [(b.id, b.title, b.authors) for b in books] == [
         (book_id, "Dune", (Author("Frank", "Herbert"),))
     ]
+
+
+def test_add_book_uses_author_added_concurrently(db_app, user):
+    """
+    An author committed by someone else after this transaction started is not
+    visible to it, so its insert clashes: the book gets that author instead.
+    """
+    cfg = db_app.config
+    with db_app.app_context():
+        conn = get_db()
+        with conn.cursor() as cur:
+            # Start this request's transaction, as loading the user does.
+            cur.execute("SELECT COUNT(*) FROM AUTHORS")
+            cur.fetchone()
+        with (
+            connect(
+                cfg["DATABASE_DSN"],
+                user=cfg["DATABASE_USER"],
+                password=cfg["DATABASE_PASSWORD"],
+                charset="UTF8",
+            ) as other,
+            other.cursor() as cur,
+        ):
+            cur.execute(
+                "INSERT INTO AUTHORS (ID, NAME, SURNAME) VALUES (?, ?, ?)",
+                (uuid4().bytes, "Frank", "Herbert"),
+            )
+            other.commit()
+
+        add_book(
+            conn, user.id, NewBook(title="Dune", authors=(Author("FRANK", "HERBERT"),))
+        )
+        # The book was added in its own transaction: end the old snapshot.
+        conn.rollback()
+        books = list_books(conn).books
+
+    assert [(b.title, b.authors) for b in books] == [
+        ("Dune", (Author("Frank", "Herbert"),))
+    ]
+    assert _scalar(db_app, "SELECT COUNT(*) FROM AUTHORS") == 1
 
 
 # Author rows

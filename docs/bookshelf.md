@@ -259,7 +259,10 @@ Decisions:
    author (name and surname, ignoring case) cannot be listed twice: the repeated row is marked and nothing is
    saved.
  - An author whose name and surname match an existing one (ignoring case) is that author, keeping its
-   existing spelling.
+   existing spelling. This holds even when someone else adds the same new author while the book is being saved:
+   the book uses theirs. For this a book is saved in its own read-committed transaction; in the request's
+   snapshot transaction neither the lookup nor the foreign key check would see an author committed after it
+   started, and the save would fail.
  - Typing in an author's name or surname field lists, under the field, up to 10 existing authors whose name
    (or surname) starts with the text, ignoring case, shown as "Name Surname". Picking one fills both fields
    of the row.

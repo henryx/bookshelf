@@ -3,7 +3,14 @@ from dataclasses import dataclass
 from enum import StrEnum
 from uuid import UUID, uuid4
 
-from firebird.driver import Connection, Cursor, DatabaseError
+from firebird.driver import (
+    Connection,
+    Cursor,
+    DatabaseError,
+    DefaultAction,
+    Isolation,
+    tpb,
+)
 
 __all__ = [
     "PAGE_SIZE",
@@ -342,12 +349,57 @@ def _author_id(cur: Cursor, author: Author) -> bytes:
             (author_id, author.name, author.surname),
         )
     except DatabaseError as e:
-        # Added by someone else since the lookup: use theirs.
+        # Committed by someone else since the lookup: use theirs. The
+        # transaction is read committed (see add_book), so it sees that row.
         existing = _find_author(cur, author)
         if _UNIQUE_KEY_VIOLATION not in e.gds_codes or existing is None:
             raise
         return existing
     return author_id
+
+
+def _insert_book(
+    cur: Cursor,
+    user_id: UUID,
+    book_id: UUID,
+    book: NewBook,
+    isbn: str | None,
+    copies: int,
+) -> None:
+    try:
+        cur.execute(
+            "INSERT INTO BOOKS (ID, TITLE, ISBN, PUBLISHER, PUBLICATION_YEAR, "
+            "VOLUME, NOTES) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                book_id.bytes,
+                book.title.strip(),
+                isbn,
+                book.publisher,
+                book.publication_year,
+                book.volume,
+                book.notes,
+            ),
+        )
+    except DatabaseError as e:
+        # The ID is new, so the only key that can clash is the ISBN.
+        if isbn is not None and _UNIQUE_KEY_VIOLATION in e.gds_codes:
+            raise BookExistsError(isbn) from e
+        raise
+    for order, author in enumerate(_unique_authors(book.authors), start=1):
+        cur.execute(
+            "INSERT INTO BOOK_AUTHORS (BOOK_ID, AUTHOR_ID, SORT_ORDER) "
+            "VALUES (?, ?, ?)",
+            (book_id.bytes, _author_id(cur, author), order),
+        )
+    for tag in _unique_ignoring_case(book.tags):
+        cur.execute(
+            "INSERT INTO BOOK_TAGS (BOOK_ID, TAG) VALUES (?, ?)",
+            (book_id.bytes, tag),
+        )
+    cur.execute(
+        "INSERT INTO COLLECTION_BOOKS (USER_ID, BOOK_ID, COPIES) VALUES (?, ?, ?)",
+        (user_id.bytes, book_id.bytes, copies),
+    )
 
 
 def add_book(conn: Connection, user_id: UUID, book: NewBook, copies: int = 1) -> UUID:
@@ -357,46 +409,23 @@ def add_book(conn: Connection, user_id: UUID, book: NewBook, copies: int = 1) ->
     created; one with a name but no surname is refused by the database.
     Raises InvalidIsbnError for a bad ISBN and BookExistsError if the ISBN
     is already in the catalogue.
+
+    The transaction is its own, read committed, and leaves the connection's
+    main one alone. A snapshot transaction could not use an author committed
+    by someone else after it started: neither its lookup nor the foreign key
+    check on BOOK_AUTHORS would see that author, though its insert clashes.
     """
     isbn = normalise_isbn(book.isbn) if book.isbn else None
     book_id = uuid4()
-    with conn.cursor() as cur:
-        try:
-            cur.execute(
-                "INSERT INTO BOOKS (ID, TITLE, ISBN, PUBLISHER, PUBLICATION_YEAR, "
-                "VOLUME, NOTES) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (
-                    book_id.bytes,
-                    book.title.strip(),
-                    isbn,
-                    book.publisher,
-                    book.publication_year,
-                    book.volume,
-                    book.notes,
-                ),
-            )
-        except DatabaseError as e:
-            conn.rollback()
-            # The ID is new, so the only key that can clash is the ISBN.
-            if isbn is not None and _UNIQUE_KEY_VIOLATION in e.gds_codes:
-                raise BookExistsError(isbn) from e
-            raise
-        for order, author in enumerate(_unique_authors(book.authors), start=1):
-            cur.execute(
-                "INSERT INTO BOOK_AUTHORS (BOOK_ID, AUTHOR_ID, SORT_ORDER) "
-                "VALUES (?, ?, ?)",
-                (book_id.bytes, _author_id(cur, author), order),
-            )
-        for tag in _unique_ignoring_case(book.tags):
-            cur.execute(
-                "INSERT INTO BOOK_TAGS (BOOK_ID, TAG) VALUES (?, ?)",
-                (book_id.bytes, tag),
-            )
-        cur.execute(
-            "INSERT INTO COLLECTION_BOOKS (USER_ID, BOOK_ID, COPIES) VALUES (?, ?, ?)",
-            (user_id.bytes, book_id.bytes, copies),
-        )
-    conn.commit()
+    with (
+        conn.transaction_manager(
+            tpb(Isolation.READ_COMMITTED_RECORD_VERSION),
+            default_action=DefaultAction.ROLLBACK,
+        ) as transaction,
+        transaction.cursor() as cur,
+    ):
+        _insert_book(cur, user_id, book_id, book, isbn, copies)
+        transaction.commit()
     return book_id
 
 
