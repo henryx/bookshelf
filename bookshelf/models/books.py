@@ -8,7 +8,9 @@ from firebird.driver import Connection, Cursor, DatabaseError
 __all__ = [
     "PAGE_SIZE",
     "SEARCH_MAX_LENGTH",
+    "SUGGESTIONS_LIMIT",
     "Author",
+    "AuthorField",
     "Book",
     "BookExistsError",
     "BookPage",
@@ -18,12 +20,16 @@ __all__ = [
     "add_book",
     "list_books",
     "normalise_isbn",
+    "suggest_authors",
 ]
 
 # Firebird GDS code for "violation of PRIMARY or UNIQUE KEY constraint".
 _UNIQUE_KEY_VIOLATION = 335544665
 
 PAGE_SIZE = 50
+SUGGESTIONS_LIMIT = 10
+# AUTHORS.NAME and SURNAME; a longer text matches no author.
+_AUTHOR_NAME_MAX_LENGTH = 127
 # The longest searched text (TITLE, or an author's name and surname); a
 # longer text matches nothing.
 SEARCH_MAX_LENGTH = 255
@@ -43,6 +49,13 @@ class BookExistsError(Exception):
     def __init__(self, isbn: str) -> None:
         super().__init__(f"A book with ISBN {isbn} is already in the catalogue.")
         self.isbn = isbn
+
+
+class AuthorField(StrEnum):
+    """The author field whose start is matched by suggest_authors."""
+
+    NAME = "name"
+    SURNAME = "surname"
 
 
 class Sort(StrEnum):
@@ -382,3 +395,28 @@ def add_book(conn: Connection, user_id: UUID, book: NewBook, copies: int = 1) ->
         )
     conn.commit()
     return book_id
+
+
+def suggest_authors(conn: Connection, text: str, field: AuthorField) -> list[Author]:
+    """
+    Up to SUGGESTIONS_LIMIT authors whose name (or surname) starts with
+    `text`, ignoring case. Blank or too long text suggests nothing.
+    """
+    text = text.strip()
+    if not text or len(text) > _AUTHOR_NAME_MAX_LENGTH:
+        return []
+    # STARTING WITH follows the columns' UNICODE_CI collation: case is ignored.
+    match field:
+        case AuthorField.NAME:
+            query = (
+                "SELECT NAME, SURNAME FROM AUTHORS WHERE NAME STARTING WITH ? "
+                "ORDER BY NAME, SURNAME FETCH FIRST ? ROWS ONLY"
+            )
+        case AuthorField.SURNAME:
+            query = (
+                "SELECT NAME, SURNAME FROM AUTHORS WHERE SURNAME STARTING WITH ? "
+                "ORDER BY SURNAME, NAME FETCH FIRST ? ROWS ONLY"
+            )
+    with conn.cursor() as cur:
+        cur.execute(query, (text, SUGGESTIONS_LIMIT))
+        return [Author(name, surname) for name, surname in cur.fetchall()]

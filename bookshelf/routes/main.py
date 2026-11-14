@@ -1,14 +1,24 @@
-from flask import Blueprint, current_app, flash, render_template, request, url_for
+from flask import (
+    Blueprint,
+    abort,
+    current_app,
+    flash,
+    render_template,
+    request,
+    url_for,
+)
 from flask_login import current_user, login_required
 from werkzeug.wrappers import Response as BaseResponse
 
 from bookshelf.db import get_db
 from bookshelf.models.books import (
     SEARCH_MAX_LENGTH,
+    AuthorField,
     BookExistsError,
     Sort,
     add_book,
     list_books,
+    suggest_authors,
 )
 from bookshelf.routes import htmx_redirect, is_htmx
 from bookshelf.routes.forms import BookForm
@@ -78,3 +88,18 @@ def new_book() -> BaseResponse | str:
     current_app.logger.info("Book %r added by %s", book.title, current_user.email)
     flash(f"Book “{book.title}” added.")
     return htmx_redirect(url_for("main.index"))
+
+
+@main_route.route("/authors/suggestions", methods=("GET",))
+@login_required
+def author_suggestions() -> str:
+    """
+    <option>s for an author row's <datalist>: authors whose name (or
+    surname, by `field`) starts with `q`.
+    """
+    try:
+        field = AuthorField(request.args.get("field"))
+    except ValueError:
+        abort(400, description="Unknown author field.")
+    authors = suggest_authors(get_db(), request.args.get("q", ""), field)
+    return render_template("_author_suggestions.html", authors=authors)

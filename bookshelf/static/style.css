@@ -316,6 +316,11 @@ select {
   grid-column: 1 / -1;
 }
 
+/* Looking up author suggestions. */
+.author-row.htmx-request input {
+  cursor: progress;
+}
+
 .row-button {
   padding: 0;
   font-size: 1.25rem;

@@ -210,6 +210,11 @@ Decisions:
    and the server shows it again with the row added or removed, saving nothing.
  - The surname is required in a row with a name; the name may be left empty for an author known by one name
    ("Homer"). Empty rows are skipped, and an author repeated in the rows (ignoring case) is kept once.
+ - Typing in an author's name or surname field lists, under the field, up to 10 existing authors whose name
+   (or surname) starts with the text, ignoring case, shown as "Name Surname". Picking one fills both fields
+   of the row. The list is the browser's own suggestion list (`<datalist>`), so it needs little JavaScript
+   and works with the keyboard and screen readers, but its look is the browser's. Without JavaScript the
+   fields work as plain inputs, with no suggestions.
  - Tags are separated by commas. Blank tags are skipped, and a tag repeated (ignoring case) is kept once.
  - An author whose name and surname match an existing one (ignoring case) is that author, keeping its
    existing spelling.

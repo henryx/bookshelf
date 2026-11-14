@@ -71,10 +71,46 @@
     var html = template.innerHTML.replace(/__index__/g, String(nextIndex(container)));
     template.insertAdjacentHTML("beforebegin", html);
     var added = template.previousElementSibling;
+    // The copy has hx-* attributes (author suggestions): let htmx see them.
+    htmx.process(added);
     var input = added && added.querySelector("input");
     if (input) {
       input.focus();
     }
+  });
+
+  // Author suggestions: each author field asks the server for matching
+  // authors as you type, sending its text as q (its own name is the form
+  // field's, e.g. authors-0-name). Picking a suggestion from the field's
+  // <datalist> puts "Name Surname" in the field; it is then split into the
+  // row's name and surname fields.
+  function isAuthorField(el) {
+    return el instanceof HTMLInputElement && el.matches("[data-author-field]");
+  }
+
+  document.addEventListener("htmx:configRequest", function (event) {
+    var input = event.detail.elt;
+    if (!isAuthorField(input)) {
+      return;
+    }
+    delete event.detail.parameters[input.name];
+    event.detail.parameters.q = input.value;
+  });
+
+  document.addEventListener("input", function (event) {
+    var input = event.target;
+    if (!isAuthorField(input) || !input.list) {
+      return;
+    }
+    var picked = Array.prototype.find.call(input.list.options, function (option) {
+      return option.value === input.value;
+    });
+    if (!picked) {
+      return;
+    }
+    var row = input.closest("[data-row]");
+    row.querySelector('[data-author-field="name"]').value = picked.dataset.name;
+    row.querySelector('[data-author-field="surname"]').value = picked.dataset.surname;
   });
 
   // A modal dialog would hide the error banner behind its backdrop.

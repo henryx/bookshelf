@@ -347,3 +347,89 @@ def test_remove_author_row_without_javascript(db_app, client):
     assert 'value="Gaiman"' not in html
     assert 'name="authors-1-surname"' not in html
     assert _scalar(db_app, "SELECT COUNT(*) FROM BOOKS") == 0
+
+
+# Author suggestions
+
+
+def _suggest(client: FlaskClient, field: str, q: str):
+    return client.get(
+        "/authors/suggestions", query_string={"field": field, "q": q}, headers=HTMX
+    )
+
+
+def _options(html: str) -> list[tuple[str, str, str]]:
+    """(value, data-name, data-surname) of each <option>."""
+    return re.findall(
+        r'<option value="([^"]*)" data-name="([^"]*)" data-surname="([^"]*)"', html
+    )
+
+
+@pytest.fixture
+def known_authors(client):
+    _post(client, title="Mort", **_authors(("Terry", "Pratchett")))
+    _post(client, title="Brooklyn", **_authors(("Colm", "Tóibín")))
+    _post(client, title="Iliad", **_authors(("", "Homer")))
+    _post(client, title="Thud", **_authors(("Terence", "Hanbury White")))
+
+
+def test_suggestions_by_name_start_ignoring_case(client, known_authors):
+    html = _suggest(client, "name", "ter").get_data(as_text=True)
+
+    assert _options(html) == [
+        ("Terence Hanbury White", "Terence", "Hanbury White"),
+        ("Terry Pratchett", "Terry", "Pratchett"),
+    ]
+
+
+def test_suggestions_by_surname_start_ignoring_case(client, known_authors):
+    html = _suggest(client, "surname", "HO").get_data(as_text=True)
+
+    assert _options(html) == [("Homer", "", "Homer")]
+
+
+def test_suggestions_do_not_match_inside_names(client, known_authors):
+    html = _suggest(client, "surname", "chett").get_data(as_text=True)
+
+    assert _options(html) == []
+
+
+@pytest.mark.parametrize("q", ["", "   ", "x" * 128])
+def test_no_suggestions_for_blank_or_too_long_text(client, known_authors, q):
+    rv = _suggest(client, "name", q)
+
+    assert rv.status_code == 200
+    assert _options(rv.get_data(as_text=True)) == []
+
+
+def test_suggestions_are_limited(client):
+    for n in range(12):
+        _post(client, title=f"Book {n}", **_authors((f"Ann {n:02}", "Smith")))
+
+    html = _suggest(client, "surname", "smith").get_data(as_text=True)
+
+    assert len(_options(html)) == 10
+
+
+def test_suggestions_reject_unknown_field(client):
+    assert _suggest(client, "title", "dune").status_code == 400
+
+
+def test_suggestions_require_login(db_client):
+    rv = db_client.get("/authors/suggestions?field=name&q=t")
+
+    assert rv.status_code == 302
+
+
+def test_author_inputs_ask_for_suggestions(client):
+    html = client.get("/books/new").get_data(as_text=True)
+
+    for field in ("name", "surname"):
+        input_tag = re.search(rf'<input id="book-authors-0-{field}"[^>]*>', html)
+        assert input_tag
+        assert f'list="book-authors-0-{field}-suggestions"' in input_tag[0]
+        assert 'hx-get="/authors/suggestions"' in input_tag[0]
+        # Not the form's outerHTML (inherited): that would replace the <datalist>.
+        assert 'hx-swap="innerHTML"' in input_tag[0]
+        assert f'<datalist id="book-authors-0-{field}-suggestions">' in html
+    assert '<datalist id="book-authors-__index__-name-suggestions">' in html

@@ -1,0 +1,4 @@
+{# Options for an author row's <datalist>; app.js fills both fields from the one picked. #}
+{% for author in authors %}
+  <option value="{{ author }}" data-name="{{ author.name }}" data-surname="{{ author.surname }}"></option>
+{% endfor %}
