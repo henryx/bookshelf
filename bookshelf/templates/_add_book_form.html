@@ -37,8 +37,11 @@
     <p id="book-authors-hint" class="hint">In order. Leave the name empty for authors known by one name.</p>
   </fieldset>
   {{ field("isbn", "ISBN-10 or ISBN-13; hyphens and spaces are fine.", autocomplete="off") }}
-  {{ field("publisher", maxlength=255) }}
-  {{ field("publication_year", min=1, max=9999) }}
+  {# Publisher and year side by side; the year needs only a few digits. #}
+  <div class="field-row">
+    <div class="field">{{ field("publisher", maxlength=255) }}</div>
+    <div class="field">{{ field("publication_year", min=1, max=9999) }}</div>
+  </div>
   {{ field("language", maxlength=64) }}
   {{ field("tags", "Separated by commas.", autocomplete="off") }}
   {{ field("notes", rows=3, maxlength=4000) }}

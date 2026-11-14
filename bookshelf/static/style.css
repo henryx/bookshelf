@@ -325,3 +325,21 @@ select {
 .row-button.secondary {
   border: 1px solid var(--border);
 }
+
+/* Form fields side by side: the first takes the room left by the narrow one. */
+.field-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 7rem;
+  gap: 0.5rem;
+  align-items: start;
+}
+
+.field {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.field input {
+  width: 100%;
+  box-sizing: border-box;
+}
