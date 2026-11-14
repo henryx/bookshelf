@@ -138,6 +138,7 @@ def test_unknown_sort_falls_back_to_title(db_app, client):
         ("leckie", ["Ancillary Justice"]),  # second author
         ("978-0-441", ["Dune"]),  # ISBN, hyphens ignored
         ("0441172717", ["Dune"]),  # ISBN-10 of the stored ISBN-13
+        ("9780441172", ["Dune"]),  # first 10 digits of the ISBN-13, as typed
         ("  Justice ", ["Ancillary Justice"]),  # spaces around ignored
         ("nothing like this", []),
     ],
@@ -149,6 +150,15 @@ def test_search_matches_title_author_or_isbn(db_app, client, search, expected):
     html = client.get("/", query_string={"q": search}).get_data(as_text=True)
 
     assert _titles(html) == expected
+
+
+def test_search_by_isbn_13_start_that_is_also_a_valid_isbn_10(db_app, client):
+    # 9780441174 is a valid ISBN-10 too: the book is still found as typed.
+    _add_book(db_app, "Dune Messiah", isbn="9780441174706")
+
+    html = client.get("/", query_string={"q": "9780441174"}).get_data(as_text=True)
+
+    assert _titles(html) == ["Dune Messiah"]
 
 
 def test_search_without_matches_says_so(db_app, client):

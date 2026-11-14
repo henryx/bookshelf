@@ -128,12 +128,13 @@ class BookPage:
 
 
 # Search: title, any author's "name surname" or ISBN contains the text,
-# ignoring case.
+# ignoring case. ISBNs are searched twice (see _isbn_searches).
 # CONTAINING '' is true, so an empty search lists every book. The CASTs keep
 # the parameters from taking the column types (CHAR(13) for ISBN).
 _COUNT_QUERY = """
     SELECT COUNT(*) FROM BOOKS b
     WHERE b.TITLE CONTAINING CAST(? AS VARCHAR(255))
+       OR b.ISBN CONTAINING CAST(? AS VARCHAR(255))
        OR b.ISBN CONTAINING CAST(? AS VARCHAR(255))
        OR EXISTS (
            SELECT 1 FROM BOOK_AUTHORS ba JOIN AUTHORS a ON a.ID = ba.AUTHOR_ID
@@ -150,6 +151,7 @@ _LIST_QUERIES: dict[Sort, str] = {
         FROM (
             SELECT b.ID, b.TITLE, b.PUBLICATION_YEAR FROM BOOKS b
             WHERE b.TITLE CONTAINING CAST(? AS VARCHAR(255))
+               OR b.ISBN CONTAINING CAST(? AS VARCHAR(255))
                OR b.ISBN CONTAINING CAST(? AS VARCHAR(255))
                OR EXISTS (
                    SELECT 1 FROM BOOK_AUTHORS ba JOIN AUTHORS a ON a.ID = ba.AUTHOR_ID
@@ -177,6 +179,7 @@ _LIST_QUERIES: dict[Sort, str] = {
             FROM BOOKS b
             WHERE b.TITLE CONTAINING CAST(? AS VARCHAR(255))
                OR b.ISBN CONTAINING CAST(? AS VARCHAR(255))
+               OR b.ISBN CONTAINING CAST(? AS VARCHAR(255))
                OR EXISTS (
                    SELECT 1 FROM BOOK_AUTHORS ba JOIN AUTHORS a ON a.ID = ba.AUTHOR_ID
                    WHERE ba.BOOK_ID = b.ID
@@ -195,6 +198,7 @@ _LIST_QUERIES: dict[Sort, str] = {
         FROM (
             SELECT b.ID, b.TITLE, b.PUBLICATION_YEAR, b.CREATED_AT FROM BOOKS b
             WHERE b.TITLE CONTAINING CAST(? AS VARCHAR(255))
+               OR b.ISBN CONTAINING CAST(? AS VARCHAR(255))
                OR b.ISBN CONTAINING CAST(? AS VARCHAR(255))
                OR EXISTS (
                    SELECT 1 FROM BOOK_AUTHORS ba JOIN AUTHORS a ON a.ID = ba.AUTHOR_ID
@@ -241,23 +245,24 @@ def normalise_isbn(text: str) -> str:
     raise InvalidIsbnError(text)
 
 
-def _isbn_search(text: str) -> str:
+def _isbn_searches(text: str) -> tuple[str, str]:
     """
-    The text to look for in ISBNs, which are stored as 13 digits: hyphens and
-    spaces removed, and an ISBN-10 turned into its ISBN-13 without the check
-    digit (the only part that differs). Other text is kept as is: it has
-    letters, so it matches no ISBN.
+    The two texts to look for in ISBNs, which are stored as 13 digits. First
+    the text as typed, with hyphens and spaces removed from digits (other text
+    is kept as is: it has letters, so it matches no ISBN). Second, for a valid
+    ISBN-10, its ISBN-13 without the check digit (the only part that differs);
+    otherwise the first again. Both are needed: the first 10 digits of an
+    ISBN-13 may also be a valid ISBN-10.
     """
     compact = _ISBN_SEPARATORS.sub("", text)
-    if _ISBN_10.fullmatch(compact):
-        return f"978{compact[:9]}"
-    if compact.isdigit():
-        return compact
-    return text
+    typed = compact if compact.isdigit() else text
+    if _ISBN_10.fullmatch(compact) and _isbn_10_valid(compact):
+        return typed, f"978{compact[:9]}"
+    return typed, typed
 
 
-def _search_params(search: str) -> tuple[str, str, str]:
-    return search, _isbn_search(search), search
+def _search_params(search: str) -> tuple[str, str, str, str]:
+    return search, *_isbn_searches(search), search
 
 
 type _BookRow = tuple[bytes, str, int | None, str | None, str | None]
