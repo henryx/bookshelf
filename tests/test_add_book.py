@@ -322,7 +322,7 @@ def test_add_book_model_returns_id_listed_in_catalogue(db_app, user):
         book_id = add_book(
             conn, user.id, NewBook(title="Dune", authors=(Author("Frank", "Herbert"),))
         )
-        books = list_books(conn).books
+        books = list_books(conn, user.id).books
 
     assert [(b.id, b.title, b.authors) for b in books] == [
         (book_id, "Dune", (Author("Frank", "Herbert"),))
@@ -361,7 +361,7 @@ def test_add_book_uses_author_added_concurrently(db_app, user):
         )
         # The book was added in its own transaction: end the old snapshot.
         conn.rollback()
-        books = list_books(conn).books
+        books = list_books(conn, user.id).books
 
     assert [(b.title, b.authors) for b in books] == [
         ("Dune", (Author("Frank", "Herbert"),))

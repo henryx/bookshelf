@@ -8,15 +8,18 @@ from flask import (
     url_for,
 )
 from flask_login import current_user, login_required
+from werkzeug.datastructures import MultiDict
 from werkzeug.wrappers import Response as BaseResponse
 
 from bookshelf.db import get_db
 from bookshelf.models.books import (
     SEARCH_MAX_LENGTH,
     AuthorField,
+    Book,
     BookExistsError,
     Sort,
     add_book,
+    find_book_by_isbn,
     list_books,
     suggest_authors,
     suggest_publishers,
@@ -24,9 +27,11 @@ from bookshelf.models.books import (
 from bookshelf.routes import htmx_redirect, is_htmx
 from bookshelf.routes.forms import BookForm
 
-__all__ = ["main_route"]
+__all__ = ["list_state", "list_url", "main_route", "render_catalogue"]
 
 main_route = Blueprint("main", __name__)
+
+type ListState = tuple[str, Sort, int]
 
 
 def _sort(value: str | None) -> Sort:
@@ -37,31 +42,62 @@ def _sort(value: str | None) -> Sort:
         return Sort.TITLE
 
 
-@main_route.route("/", methods=("GET",))
-@login_required
-def index() -> str:
-    """The book list. htmx searches and page changes get only the list."""
-    search = request.args.get("q", "").strip()
-    sort = _sort(request.args.get("sort"))
-    page = request.args.get("page", 1, type=int)
-    books = list_books(get_db(), search, sort, page)
-    # Going back in history may refetch the page with htmx: it needs all of it.
-    partial = is_htmx() and not request.headers.get("HX-History-Restore-Request")
+def list_state(values: MultiDict[str, str]) -> ListState:
+    """A book list's search, order and page, from a query string or a form."""
+    search = values.get("q", "").strip()
+    page = values.get("page", 1, type=int) or 1
+    return search, _sort(values.get("sort")), page
+
+
+def list_url(endpoint: str, values: MultiDict[str, str]) -> str:
+    """The URL of a book list (`endpoint`) showing the search, order and page in `values`."""
+    search, sort, page = list_state(values)
+    return url_for(
+        endpoint,
+        q=search or None,
+        sort=None if sort is Sort.TITLE else sort.value,
+        page=page if page > 1 else None,
+    )
+
+
+def render_catalogue(
+    values: MultiDict[str, str], *, partial: bool, notice: str | None = None
+) -> str:
+    """
+    The catalogue with the search, order and page in `values`: the list
+    alone when `partial`, else the main page. `notice` is shown above it.
+    """
+    search, sort, page = list_state(values)
     return render_template(
         "_book_list.html" if partial else "main.html",
-        books=books,
+        books=list_books(get_db(), current_user.id, search, sort, page),
         search=search,
         sort=sort,
         sorts=Sort,
         search_max_length=SEARCH_MAX_LENGTH,
+        list_endpoint="main.index",
+        notice=notice,
         form=BookForm(),
     )
 
 
-def _render_add(form: BookForm) -> str:
-    """The form alone for htmx (it lives in the main page's dialog), else a page."""
+@main_route.route("/", methods=("GET",))
+@login_required
+def index() -> str:
+    """The book list. htmx searches and page changes get only the list."""
+    # Going back in history may refetch the page with htmx: it needs all of it.
+    partial = is_htmx() and not request.headers.get("HX-History-Restore-Request")
+    return render_catalogue(request.args, partial=partial)
+
+
+def _render_add(form: BookForm, existing: Book | None = None) -> str:
+    """
+    The form alone for htmx (it lives in the main page's dialog), else a page.
+    `existing`: the catalogue book whose ISBN was typed, to offer adding it
+    to the user's collection instead.
+    """
     template = "_add_book_form.html" if is_htmx() else "add_book.html"
-    return render_template(template, form=form)
+    return render_template(template, form=form, existing=existing)
 
 
 @main_route.route("/books/new", methods=("GET", "POST"))
@@ -84,7 +120,7 @@ def new_book() -> BaseResponse | str:
         add_book(get_db(), current_user.id, book, copies=form.copies.data or 1)
     except BookExistsError as e:
         form.form_errors.append(str(e))
-        return _render_add(form)
+        return _render_add(form, find_book_by_isbn(get_db(), current_user.id, e.isbn))
 
     current_app.logger.info("Book %r added by %s", book.title, current_user.email)
     flash(f"Book “{book.title}” added.")

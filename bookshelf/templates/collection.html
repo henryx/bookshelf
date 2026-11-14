@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% from "_hero.html" import hero %}
+{% block title %}Your collection · Bookshelf{% endblock %}
+{% block hero %}
+  {% call hero() %}
+    {% include "_topbar.html" %}
+    {% include "_book_search.html" %}
+  {% endcall %}
+{% endblock %}
+{% block content %}
+  <h2>Your collection</h2>
+  <div id="book-list">
+    {% include "_book_list.html" %}
+  </div>
+{% endblock %}

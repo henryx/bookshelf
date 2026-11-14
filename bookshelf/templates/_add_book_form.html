@@ -6,6 +6,23 @@
   {% for error in form.form_errors %}
     <p class="error" role="alert">{{ error }}</p>
   {% endfor %}
+  {# The ISBN typed is already in the catalogue: offer that book instead. The button
+     posts this form (its copies) to the collection; without JavaScript via formaction. #}
+  {% if existing %}
+    <div class="existing-book">
+      {% if existing.copies %}
+        <p>“{{ existing.title }}” is already in your collection
+          ({{ existing.copies }} {{ "copy" if existing.copies == 1 else "copies" }}).
+          <a href="{{ url_for('collection.index') }}">Your collection</a></p>
+      {% else %}
+        {% set add_url = url_for("collection.add", book_id=existing.id) %}
+        <button type="submit" class="secondary" formaction="{{ add_url }}" formnovalidate
+                hx-post="{{ add_url }}" hx-disabled-elt="this">
+          Add “{{ existing.title }}” to your collection
+        </button>
+      {% endif %}
+    </div>
+  {% endif %}
 
   {% macro field(name, hint=None) %}
     {% set f = form[name] %}

@@ -205,7 +205,8 @@ Status: built, in the top bar of every page after login.
 
 The upper right corner of the top bar shows who is logged in: their name and surname (or their email, without a
 name) next to a round avatar with their initials (or the email's first letter). On a phone only the avatar is
-shown. Clicking it opens a menu with the name and the email, "Your account", "Admin" (admins only) and "Log out".
+shown. Clicking it opens a menu with the name and the email, "Your account", "Your collection", "Admin" (admins
+only) and "Log out".
 
 Decisions:
 
@@ -233,7 +234,8 @@ Decisions:
 ## Books
 
 Status: tables created by `init-db` (`BOOKS`, `AUTHORS`, `BOOK_AUTHORS`, `BOOK_TAGS`, `COLLECTION_BOOKS`). Books
-can be listed (see Main page) and added (see "Adding a book"); not yet edited or deleted.
+can be listed (see Main page), added (see "Adding a book") and kept in a collection (see "Your collection"); not yet
+edited or deleted.
 
 Decisions:
 
@@ -314,7 +316,10 @@ Decisions:
  - Publisher and year share a row; the year field is narrow.
  - Tags are separated by commas. Blank tags are skipped, and a tag repeated (ignoring case) is kept once.
  - The ISBN must be a valid ISBN-10 or ISBN-13, check digit included, so a mistyped ISBN is caught; it is saved
-   as ISBN-13. An ISBN already in the catalogue is refused with a message naming it.
+   as ISBN-13. An ISBN already in the catalogue is refused with a message naming it. Under the message the
+   form offers to add that book to the user's collection instead, with the copies typed in the form (a button
+   posting the form to the collection; without JavaScript through `formaction`). If the book is already in their
+   collection, the form says so, with its copies.
  - The publication year is between 1 and 9999; copies between 1 and 999.
 
 Known limitations:
@@ -336,6 +341,8 @@ Decisions:
  - The list is shown in pages of 50 books.
  - On the phone, books are shown as a list of rows, not a grid (books have no covers; see Books).
  - Each row shows the title, the authors ("Name Surname", in their order) and the publication year.
+ - Under that, a book in the user's collection shows a stamp, "In your collection · 2" (the copies), linking to
+   their collection; any other book an "Add to collection" button, which adds it with one copy.
  - Sorting by author uses each book's first author (surname, then name), then the title; books without
    authors come last. Date added sorts newest first.
  - The search ignores case and spaces around it. An author matches on name, surname or both ("Frank
@@ -345,3 +352,29 @@ Decisions:
    reload only the list, and the address bar keeps the search, order and page so they can be bookmarked.
    Without JavaScript the search is a plain form and the page links are plain links.
  - A page number out of range shows the nearest page.
+
+## Your collection
+
+Status: built at `/collection`, linked from the account menu.
+
+The books the user owns, from the shared catalogue: the same list as the main page (search, order, pages of 50),
+showing only their books. Each row has the number of copies, editable, with "Save", and a "Remove" button.
+
+Decisions:
+
+ - The collection has its own page; the main page stays the whole catalogue.
+ - Books are added to the collection from the main page's rows, or from the add-book form when the ISBN typed is
+   already in the catalogue (see "Adding a book"). Adding a book already in the collection changes nothing and
+   says so.
+ - Removing a book takes one click, with no confirmation: it only leaves the collection, and can be added again
+   from the main page (with one copy).
+ - Copies are between 1 and 999, as when adding a book.
+ - With htmx, the rows' buttons (add, save, remove) reload only the list, keeping its search, order and page,
+   with a message above it. Without JavaScript they are plain forms, and the server redirects back to the list
+   with the same search, order and page and the message shown on it.
+ - "Date added" orders the collection by when each book entered the catalogue: the collection does not record
+   when a book joined it.
+
+Known limitations:
+
+ - Saving copies or removing a book reloads the list, so the focus goes back to the top of the page.

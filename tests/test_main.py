@@ -221,7 +221,7 @@ def test_htmx_request_returns_only_the_list(db_app, client):
     html = client.get("/?q=dune", headers=HTMX).get_data(as_text=True)
 
     assert "<html" not in html
-    assert 'name="q"' not in html
+    assert 'id="book-search-q"' not in html  # the search box
     assert _titles(html) == ["Dune"]
 
 
@@ -231,12 +231,12 @@ def test_htmx_history_restore_returns_full_page(db_app, client):
     assert "<html" in rv.get_data(as_text=True)
 
 
-def test_list_books_returns_total_and_pages(db_app):
+def test_list_books_returns_total_and_pages(db_app, user):
     for n in range(3):
         _add_book(db_app, f"Book {n}")
 
     with db_app.app_context():
-        page = list_books(get_db(), "", Sort.TITLE, 2, page_size=2)
+        page = list_books(get_db(), user.id, "", Sort.TITLE, 2, page_size=2)
 
     assert [book.title for book in page.books] == ["Book 2"]
     assert page.total == 3

@@ -14,6 +14,7 @@ from bookshelf.routes import is_htmx
 from bookshelf.routes.account import account_route
 from bookshelf.routes.admin import admin_route
 from bookshelf.routes.auth import auth_route, login_manager
+from bookshelf.routes.collection import collection_route
 from bookshelf.routes.main import main_route
 from bookshelf.routes.setup import setup_route
 
@@ -70,6 +71,7 @@ def create_app(overrides: Mapping[str, object] | None = None) -> Flask:
     app.register_blueprint(setup_route)
     app.register_blueprint(auth_route)
     app.register_blueprint(main_route)
+    app.register_blueprint(collection_route)
     app.register_blueprint(account_route)
     app.register_blueprint(admin_route)
     return app

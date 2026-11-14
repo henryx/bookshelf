@@ -1,10 +1,29 @@
-{# The book list and its page links: part of main.html, and the htmx response for searches and pages. #}
+{# A book list and its page links: the catalogue (list_endpoint main.index) or the
+   user's collection (collection.index). Part of main.html and collection.html, and
+   the htmx response for searches, pages and the rows' buttons, which swap the whole
+   list so the count and pages stay right. notice / list_error: shown above the list. #}
+{% set in_collection = list_endpoint == "collection.index" %}
 {% macro page_link(number, label) -%}
-  {%- set url = url_for('main.index', q=search or None,
+  {%- set url = url_for(list_endpoint, q=search or None,
                         sort=None if sort == sorts.TITLE else sort.value, page=number) -%}
   <a href="{{ url }}" hx-get="{{ url }}" hx-target="#book-list" hx-push-url="true"
      hx-indicator="#book-pages-indicator">{{ label }}</a>
 {%- endmacro %}
+{# A row button's form: posts to url, keeping the list's search, order and page, so
+   the list comes back as it was (without JavaScript, the redirect keeps them). #}
+{% macro row_form(url, form_class="") -%}
+  <form class="{{ form_class }}" method="post" action="{{ url }}"
+        hx-post="{{ url }}" hx-target="#book-list" hx-swap="innerHTML"
+        hx-indicator="closest li" hx-disabled-elt="find button">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="q" value="{{ search }}">
+    <input type="hidden" name="sort" value="{{ sort }}">
+    <input type="hidden" name="page" value="{{ books.page }}">
+    {{ caller() }}
+  </form>
+{%- endmacro %}
+{% if notice %}<p class="flash" role="status">{{ notice }}</p>{% endif %}
+{% if list_error %}<p class="error" role="alert">{{ list_error }}</p>{% endif %}
 <p class="hint book-count">{{ books.total }} book{{ "" if books.total == 1 else "s" }}</p>
 {% if books.books %}
   <ul class="books">
@@ -13,11 +32,36 @@
         <span class="book-title">{{ book.title }}</span>
         {% if book.authors %}<span class="book-authors">{{ book.authors | join(", ") }}</span>{% endif %}
         {% if book.publication_year %}<span class="book-year">{{ book.publication_year }}</span>{% endif %}
+        <div class="book-actions">
+          {% if in_collection %}
+            {% call row_form(url_for("collection.copies", book_id=book.id), "copies-form") %}
+              <label>
+                <span class="hint">Copies</span>
+                <input type="number" name="copies" value="{{ book.copies }}" min="1" max="999" required
+                       aria-label="Copies of {{ book.title }}">
+              </label>
+              <button type="submit" class="secondary">Save</button>
+            {% endcall %}
+            {% call row_form(url_for("collection.remove", book_id=book.id)) %}
+              <button type="submit" class="secondary" aria-label="Remove {{ book.title }} from your collection">Remove</button>
+            {% endcall %}
+          {% elif book.copies %}
+            <a class="in-collection" href="{{ url_for('collection.index') }}">In your collection · {{ book.copies }}</a>
+          {% else %}
+            {% call row_form(url_for("collection.add", book_id=book.id)) %}
+              <input type="hidden" name="copies" value="1">
+              <button type="submit" class="secondary" aria-label="Add {{ book.title }} to your collection">Add to collection</button>
+            {% endcall %}
+          {% endif %}
+          <span class="htmx-indicator">…</span>
+        </div>
       </li>
     {% endfor %}
   </ul>
 {% elif search %}
   <p>No books match “{{ search }}”.</p>
+{% elif in_collection %}
+  <p>Your collection is empty. Add books to it from <a href="{{ url_for('main.index') }}">the catalogue</a>.</p>
 {% else %}
   <p>No books in the library yet.</p>
 {% endif %}

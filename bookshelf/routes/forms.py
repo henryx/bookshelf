@@ -31,6 +31,7 @@ __all__ = [
     "AccountForm",
     "AuthorForm",
     "BookForm",
+    "CopiesForm",
     "LoginForm",
     "NewAccountForm",
     "NewUserForm",
@@ -148,6 +149,24 @@ class AuthorForm(Form):
         return Author(self.name.data or "", self.surname.data or "")
 
 
+# Copies of a book one user may record owning.
+_MAX_COPIES = 999
+
+
+def _copies_field(label: str) -> IntegerField:
+    return IntegerField(
+        label,
+        default=1,
+        validators=[InputRequired(), NumberRange(min=1, max=_MAX_COPIES)],
+    )
+
+
+class CopiesForm(FlaskForm):
+    """How many copies of a book the current user owns."""
+
+    copies = _copies_field("Copies")
+
+
 class BookForm(FlaskForm):
     """A new book: authors as rows of name and surname, tags separated by commas."""
 
@@ -167,11 +186,7 @@ class BookForm(FlaskForm):
     notes = TextAreaField(
         "Notes", filters=[_strip_or_none], validators=[Optional(), Length(max=4000)]
     )
-    copies = IntegerField(
-        "Copies you own",
-        default=1,
-        validators=[InputRequired(), NumberRange(min=1, max=999)],
-    )
+    copies = _copies_field("Copies you own")
 
     def add_author_row(self) -> None:
         """One more empty author row (the + button without JavaScript)."""

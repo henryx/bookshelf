@@ -3,26 +3,7 @@
 {% block hero %}
   {% call hero(tall=True) %}
     {% include "_topbar.html" %}
-    {# Without JavaScript the form is a plain GET; with htmx typing or changing the order reloads only the list. #}
-    <form class="book-search" role="search" method="get" action="{{ url_for('main.index') }}"
-          hx-get="{{ url_for('main.index') }}"
-          hx-trigger="submit, input changed delay:300ms from:#book-search-q, change from:#book-search-sort"
-          hx-target="#book-list" hx-push-url="true" hx-sync="this:replace"
-          hx-indicator="#book-search-indicator" hx-disabled-elt="find button">
-      <input id="book-search-q" type="search" name="q" value="{{ search }}"
-             maxlength="{{ search_max_length }}" placeholder="Title, author or ISBN"
-             aria-label="Search books">
-      <label>
-        <span class="hint">Sort by</span>
-        <select id="book-search-sort" name="sort">
-          <option value="{{ sorts.TITLE }}" {%- if sort == sorts.TITLE %} selected{% endif %}>Title</option>
-          <option value="{{ sorts.AUTHOR }}" {%- if sort == sorts.AUTHOR %} selected{% endif %}>Author</option>
-          <option value="{{ sorts.ADDED }}" {%- if sort == sorts.ADDED %} selected{% endif %}>Date added</option>
-        </select>
-      </label>
-      <button type="submit">Search</button>
-      <span id="book-search-indicator" class="htmx-indicator">…</span>
-    </form>
+    {% include "_book_search.html" %}
   {% endcall %}
 {% endblock %}
 {% block content %}

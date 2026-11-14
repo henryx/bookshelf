@@ -33,13 +33,14 @@ Bookshelf library webapp is a webapp to manage a book library built with Flask u
 - `gunicorn.conf.py`: gunicorn settings (bind, workers, timeout, log level, logging); loaded from the working directory
 - `bookshelf/cli.py`: Flask CLI commands; admin operations go through `_require_admin`
 - `bookshelf/db/`: per-process `ConnectionPool`; `get_db` takes a connection for the app context and teardown returns it (rolled back); `schema.py` holds table DDL and `init_db`
-- `bookshelf/models/`: data access and domain logic (`users.py`: users with optional name and surname, login limits; `books.py`: book list, add book, ISBN checks, author and publisher suggestions)
-- `bookshelf/routes/`: blueprints (`auth`, `main`, `account`, `setup`, `admin`); `__init__.py` has the `is_htmx()` and `htmx_redirect()` helpers; `forms.py` holds the Flask-WTF forms
-- `bookshelf/routes/main.py`: book list (`/`), add book (`/books/new`), suggestions (`/authors/suggestions`, `/publishers/suggestions`)
+- `bookshelf/models/`: data access and domain logic (`users.py`: users with optional name and surname, login limits; `books.py`: book list, add book, ISBN checks, author and publisher suggestions, the user's collection)
+- `bookshelf/routes/`: blueprints (`auth`, `main`, `collection`, `account`, `setup`, `admin`); `__init__.py` has the `is_htmx()` and `htmx_redirect()` helpers; `forms.py` holds the Flask-WTF forms
+- `bookshelf/routes/main.py`: book list (`/`), add book (`/books/new`), suggestions (`/authors/suggestions`, `/publishers/suggestions`); `list_state()` / `list_url()` read a list's search, order and page, `render_catalogue()` renders the catalogue
+- `bookshelf/routes/collection.py`: the current user's collection (`/collection`), and adding a book to it, changing its copies and removing it (`/collection/books/<id>/add|copies|remove`)
 - `bookshelf/routes/account.py`: the current user's account page (`/account`): name, surname, password (needs the current one)
 - `bookshelf/routes/admin.py`: admin area (`/admin/users`), admins only; users list, create, details/edit, delete
 - `bookshelf/routes/setup.py`: first-run wizard; redirects every request to `/setup` until an admin exists
-- `bookshelf/templates/`, `bookshelf/static/`: Jinja templates and CSS; htmx is vendored in `static/`; `app.js` holds the error-banner, dialog, account-menu, repeatable-row and suggestion handlers; `_topbar.html` is the top bar with the account menu (`<details class="avatar">`); `_name_fields.html` renders a person's name and surname (takes `id_prefix`)
+- `bookshelf/templates/`, `bookshelf/static/`: Jinja templates and CSS; htmx is vendored in `static/`; `app.js` holds the error-banner, dialog, account-menu, repeatable-row and suggestion handlers; `_topbar.html` is the top bar with the account menu (`<details class="avatar">`); `_name_fields.html` renders a person's name and surname (takes `id_prefix`); `_book_list.html` and `_book_search.html` serve both the catalogue and the collection (`list_endpoint`)
 - `bookshelf/static/fonts/`: vendored Fraunces, Bricolage Grotesque and JetBrains Mono (latin and latin-ext WOFF2, with their OFL licences); `@font-face` rules are at the top of `style.css`
 - `bookshelf/templates/_hero.html`: `hero(tall=False)` macro, the bookcloth band with the shelf of spines; pages fill `base.html`'s `hero` block with it (tall on main, login and setup, with the page-load reveal; slim elsewhere)
 - `tests/conftest.py`: session Firebird container, `app`/`db_app`/`empty_db_app` fixtures; autouse `setup_complete` skips the first-run wizard (overridden in `test_setup.py`)

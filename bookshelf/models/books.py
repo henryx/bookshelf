@@ -1,5 +1,5 @@
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import StrEnum
 from uuid import UUID, uuid4
 
@@ -25,8 +25,14 @@ __all__ = [
     "NewBook",
     "Sort",
     "add_book",
+    "add_to_collection",
+    "find_book",
+    "find_book_by_isbn",
     "list_books",
+    "list_collection",
     "normalise_isbn",
+    "remove_from_collection",
+    "set_copies",
     "suggest_authors",
     "suggest_publishers",
 ]
@@ -89,12 +95,16 @@ class Author:
 
 @dataclass(frozen=True)
 class Book:
-    """A book as shown in the book list."""
+    """
+    A book as shown in the book lists. copies: how many the current user
+    owns, or None when the book is not in their collection.
+    """
 
     id: UUID
     title: str
     authors: tuple[Author, ...]
     publication_year: int | None
+    copies: int | None = None
 
 
 @dataclass(frozen=True)
@@ -144,10 +154,11 @@ _COUNT_QUERY = """
 """
 
 # One page of books, then a row per author (one with NULL for a book without
-# authors), in the page's order and each book's author order.
+# authors), in the page's order and each book's author order, with the
+# current user's copies (NULL when the book is not in their collection).
 _LIST_QUERIES: dict[Sort, str] = {
     Sort.TITLE: """
-        SELECT p.ID, p.TITLE, p.PUBLICATION_YEAR, a.NAME, a.SURNAME
+        SELECT p.ID, p.TITLE, p.PUBLICATION_YEAR, cb.COPIES, a.NAME, a.SURNAME
         FROM (
             SELECT b.ID, b.TITLE, b.PUBLICATION_YEAR FROM BOOKS b
             WHERE b.TITLE CONTAINING CAST(? AS VARCHAR(255))
@@ -161,13 +172,14 @@ _LIST_QUERIES: dict[Sort, str] = {
             ORDER BY b.TITLE, b.ID
             OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
         ) p
+        LEFT JOIN COLLECTION_BOOKS cb ON cb.BOOK_ID = p.ID AND cb.USER_ID = ?
         LEFT JOIN BOOK_AUTHORS ba ON ba.BOOK_ID = p.ID
         LEFT JOIN AUTHORS a ON a.ID = ba.AUTHOR_ID
         ORDER BY p.TITLE, p.ID, ba.SORT_ORDER
     """,
     # By first author's surname, then name; books without authors last.
     Sort.AUTHOR: """
-        SELECT p.ID, p.TITLE, p.PUBLICATION_YEAR, a.NAME, a.SURNAME
+        SELECT p.ID, p.TITLE, p.PUBLICATION_YEAR, cb.COPIES, a.NAME, a.SURNAME
         FROM (
             SELECT b.ID, b.TITLE, b.PUBLICATION_YEAR,
                    (SELECT FIRST 1 fa.SURNAME
@@ -188,13 +200,14 @@ _LIST_QUERIES: dict[Sort, str] = {
             ORDER BY FIRST_SURNAME NULLS LAST, FIRST_NAME, b.TITLE, b.ID
             OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
         ) p
+        LEFT JOIN COLLECTION_BOOKS cb ON cb.BOOK_ID = p.ID AND cb.USER_ID = ?
         LEFT JOIN BOOK_AUTHORS ba ON ba.BOOK_ID = p.ID
         LEFT JOIN AUTHORS a ON a.ID = ba.AUTHOR_ID
         ORDER BY p.FIRST_SURNAME NULLS LAST, p.FIRST_NAME, p.TITLE, p.ID, ba.SORT_ORDER
     """,
     # Newest first.
     Sort.ADDED: """
-        SELECT p.ID, p.TITLE, p.PUBLICATION_YEAR, a.NAME, a.SURNAME
+        SELECT p.ID, p.TITLE, p.PUBLICATION_YEAR, cb.COPIES, a.NAME, a.SURNAME
         FROM (
             SELECT b.ID, b.TITLE, b.PUBLICATION_YEAR, b.CREATED_AT FROM BOOKS b
             WHERE b.TITLE CONTAINING CAST(? AS VARCHAR(255))
@@ -208,11 +221,124 @@ _LIST_QUERIES: dict[Sort, str] = {
             ORDER BY b.CREATED_AT DESC, b.ID
             OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
         ) p
+        LEFT JOIN COLLECTION_BOOKS cb ON cb.BOOK_ID = p.ID AND cb.USER_ID = ?
         LEFT JOIN BOOK_AUTHORS ba ON ba.BOOK_ID = p.ID
         LEFT JOIN AUTHORS a ON a.ID = ba.AUTHOR_ID
         ORDER BY p.CREATED_AT DESC, p.ID, ba.SORT_ORDER
     """,
 }
+
+# The same search as _COUNT_QUERY, in one user's collection.
+_COLLECTION_COUNT_QUERY = """
+    SELECT COUNT(*) FROM BOOKS b
+    JOIN COLLECTION_BOOKS cb ON cb.BOOK_ID = b.ID
+    WHERE cb.USER_ID = ?
+      AND (b.TITLE CONTAINING CAST(? AS VARCHAR(255))
+       OR b.ISBN CONTAINING CAST(? AS VARCHAR(255))
+       OR b.ISBN CONTAINING CAST(? AS VARCHAR(255))
+       OR EXISTS (
+           SELECT 1 FROM BOOK_AUTHORS ba JOIN AUTHORS a ON a.ID = ba.AUTHOR_ID
+           WHERE ba.BOOK_ID = b.ID
+             AND (a.NAME || ' ' || a.SURNAME) CONTAINING CAST(? AS VARCHAR(255))
+       ))
+"""
+
+# As _LIST_QUERIES, in one user's collection. "Date added" is the date the
+# book entered the catalogue: collections do not record when a book joined.
+_COLLECTION_QUERIES: dict[Sort, str] = {
+    Sort.TITLE: """
+        SELECT p.ID, p.TITLE, p.PUBLICATION_YEAR, p.COPIES, a.NAME, a.SURNAME
+        FROM (
+            SELECT b.ID, b.TITLE, b.PUBLICATION_YEAR, cb.COPIES FROM BOOKS b
+            JOIN COLLECTION_BOOKS cb ON cb.BOOK_ID = b.ID
+            WHERE cb.USER_ID = ?
+              AND (b.TITLE CONTAINING CAST(? AS VARCHAR(255))
+               OR b.ISBN CONTAINING CAST(? AS VARCHAR(255))
+               OR b.ISBN CONTAINING CAST(? AS VARCHAR(255))
+               OR EXISTS (
+                   SELECT 1 FROM BOOK_AUTHORS ba JOIN AUTHORS a ON a.ID = ba.AUTHOR_ID
+                   WHERE ba.BOOK_ID = b.ID
+                     AND (a.NAME || ' ' || a.SURNAME) CONTAINING CAST(? AS VARCHAR(255))
+               ))
+            ORDER BY b.TITLE, b.ID
+            OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
+        ) p
+        LEFT JOIN BOOK_AUTHORS ba ON ba.BOOK_ID = p.ID
+        LEFT JOIN AUTHORS a ON a.ID = ba.AUTHOR_ID
+        ORDER BY p.TITLE, p.ID, ba.SORT_ORDER
+    """,
+    Sort.AUTHOR: """
+        SELECT p.ID, p.TITLE, p.PUBLICATION_YEAR, p.COPIES, a.NAME, a.SURNAME
+        FROM (
+            SELECT b.ID, b.TITLE, b.PUBLICATION_YEAR, cb.COPIES,
+                   (SELECT FIRST 1 fa.SURNAME
+                    FROM BOOK_AUTHORS fba JOIN AUTHORS fa ON fa.ID = fba.AUTHOR_ID
+                    WHERE fba.BOOK_ID = b.ID ORDER BY fba.SORT_ORDER) AS FIRST_SURNAME,
+                   (SELECT FIRST 1 fa.NAME
+                    FROM BOOK_AUTHORS fba JOIN AUTHORS fa ON fa.ID = fba.AUTHOR_ID
+                    WHERE fba.BOOK_ID = b.ID ORDER BY fba.SORT_ORDER) AS FIRST_NAME
+            FROM BOOKS b
+            JOIN COLLECTION_BOOKS cb ON cb.BOOK_ID = b.ID
+            WHERE cb.USER_ID = ?
+              AND (b.TITLE CONTAINING CAST(? AS VARCHAR(255))
+               OR b.ISBN CONTAINING CAST(? AS VARCHAR(255))
+               OR b.ISBN CONTAINING CAST(? AS VARCHAR(255))
+               OR EXISTS (
+                   SELECT 1 FROM BOOK_AUTHORS ba JOIN AUTHORS a ON a.ID = ba.AUTHOR_ID
+                   WHERE ba.BOOK_ID = b.ID
+                     AND (a.NAME || ' ' || a.SURNAME) CONTAINING CAST(? AS VARCHAR(255))
+               ))
+            ORDER BY FIRST_SURNAME NULLS LAST, FIRST_NAME, b.TITLE, b.ID
+            OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
+        ) p
+        LEFT JOIN BOOK_AUTHORS ba ON ba.BOOK_ID = p.ID
+        LEFT JOIN AUTHORS a ON a.ID = ba.AUTHOR_ID
+        ORDER BY p.FIRST_SURNAME NULLS LAST, p.FIRST_NAME, p.TITLE, p.ID, ba.SORT_ORDER
+    """,
+    Sort.ADDED: """
+        SELECT p.ID, p.TITLE, p.PUBLICATION_YEAR, p.COPIES, a.NAME, a.SURNAME
+        FROM (
+            SELECT b.ID, b.TITLE, b.PUBLICATION_YEAR, b.CREATED_AT, cb.COPIES
+            FROM BOOKS b
+            JOIN COLLECTION_BOOKS cb ON cb.BOOK_ID = b.ID
+            WHERE cb.USER_ID = ?
+              AND (b.TITLE CONTAINING CAST(? AS VARCHAR(255))
+               OR b.ISBN CONTAINING CAST(? AS VARCHAR(255))
+               OR b.ISBN CONTAINING CAST(? AS VARCHAR(255))
+               OR EXISTS (
+                   SELECT 1 FROM BOOK_AUTHORS ba JOIN AUTHORS a ON a.ID = ba.AUTHOR_ID
+                   WHERE ba.BOOK_ID = b.ID
+                     AND (a.NAME || ' ' || a.SURNAME) CONTAINING CAST(? AS VARCHAR(255))
+               ))
+            ORDER BY b.CREATED_AT DESC, b.ID
+            OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
+        ) p
+        LEFT JOIN BOOK_AUTHORS ba ON ba.BOOK_ID = p.ID
+        LEFT JOIN AUTHORS a ON a.ID = ba.AUTHOR_ID
+        ORDER BY p.CREATED_AT DESC, p.ID, ba.SORT_ORDER
+    """,
+}
+
+# One book, a row per author as in the lists, with the user's copies.
+_FIND_BOOK_QUERY = """
+    SELECT b.ID, b.TITLE, b.PUBLICATION_YEAR, cb.COPIES, a.NAME, a.SURNAME
+    FROM BOOKS b
+    LEFT JOIN COLLECTION_BOOKS cb ON cb.BOOK_ID = b.ID AND cb.USER_ID = ?
+    LEFT JOIN BOOK_AUTHORS ba ON ba.BOOK_ID = b.ID
+    LEFT JOIN AUTHORS a ON a.ID = ba.AUTHOR_ID
+    WHERE b.ID = ?
+    ORDER BY ba.SORT_ORDER
+"""
+
+_FIND_BOOK_BY_ISBN_QUERY = """
+    SELECT b.ID, b.TITLE, b.PUBLICATION_YEAR, cb.COPIES, a.NAME, a.SURNAME
+    FROM BOOKS b
+    LEFT JOIN COLLECTION_BOOKS cb ON cb.BOOK_ID = b.ID AND cb.USER_ID = ?
+    LEFT JOIN BOOK_AUTHORS ba ON ba.BOOK_ID = b.ID
+    LEFT JOIN AUTHORS a ON a.ID = ba.AUTHOR_ID
+    WHERE b.ISBN = ?
+    ORDER BY ba.SORT_ORDER
+"""
 
 _ISBN_SEPARATORS = re.compile(r"[\s-]")
 _ISBN_10 = re.compile(r"\d{9}[\dXx]")
@@ -265,23 +391,29 @@ def _search_params(search: str) -> tuple[str, str, str, str]:
     return search, *_isbn_searches(search), search
 
 
-type _BookRow = tuple[bytes, str, int | None, str | None, str | None]
+# ID, TITLE, PUBLICATION_YEAR, the user's COPIES, then one author's NAME, SURNAME.
+type _BookRow = tuple[bytes, str, int | None, int | None, str | None, str | None]
 
 
 def _books(rows: list[_BookRow]) -> list[Book]:
     """Group the per-author rows into books, keeping their order."""
     books: dict[bytes, Book] = {}
-    for book_id, title, year, name, surname in rows:
-        book = books.get(book_id) or Book(UUID(bytes=book_id), title, (), year)
+    for book_id, title, year, copies, name, surname in rows:
+        book = books.get(book_id) or Book(UUID(bytes=book_id), title, (), year, copies)
         if surname is not None:
-            author = Author(name or "", surname)
-            book = Book(book.id, title, (*book.authors, author), year)
+            book = replace(book, authors=(*book.authors, Author(name or "", surname)))
         books[book_id] = book
     return list(books.values())
 
 
+def _nearest_page(total: int, page: int, page_size: int) -> int:
+    """`page`, or the nearest existing page when it is out of range."""
+    return min(max(page, 1), BookPage([], total, 1, page_size).pages)
+
+
 def list_books(
     conn: Connection,
+    user_id: UUID,
     search: str = "",
     sort: Sort = Sort.TITLE,
     page: int = 1,
@@ -290,7 +422,8 @@ def list_books(
 ) -> BookPage:
     """
     One page of the catalogue, filtered by `search` (title, author or ISBN,
-    ignoring case). A page out of range gives the nearest existing page.
+    ignoring case), with the copies `user_id` owns of each book. A page out
+    of range gives the nearest existing page.
     """
     search = search.strip()
     if len(search) > SEARCH_MAX_LENGTH:
@@ -299,10 +432,98 @@ def list_books(
     with conn.cursor() as cur:
         cur.execute(_COUNT_QUERY, params)
         (total,) = cur.fetchone()
-        result = BookPage([], total, 1, page_size)
-        page = min(max(page, 1), result.pages)
-        cur.execute(_LIST_QUERIES[sort], (*params, (page - 1) * page_size, page_size))
+        page = _nearest_page(total, page, page_size)
+        offset = (page - 1) * page_size
+        cur.execute(_LIST_QUERIES[sort], (*params, offset, page_size, user_id.bytes))
         return BookPage(_books(cur.fetchall()), total, page, page_size)
+
+
+def list_collection(
+    conn: Connection,
+    user_id: UUID,
+    search: str = "",
+    sort: Sort = Sort.TITLE,
+    page: int = 1,
+    *,
+    page_size: int = PAGE_SIZE,
+) -> BookPage:
+    """One page of the books in `user_id`'s collection, as list_books."""
+    search = search.strip()
+    if len(search) > SEARCH_MAX_LENGTH:
+        return BookPage([], 0, 1, page_size)
+    params = (user_id.bytes, *_search_params(search))
+    with conn.cursor() as cur:
+        cur.execute(_COLLECTION_COUNT_QUERY, params)
+        (total,) = cur.fetchone()
+        page = _nearest_page(total, page, page_size)
+        offset = (page - 1) * page_size
+        cur.execute(_COLLECTION_QUERIES[sort], (*params, offset, page_size))
+        return BookPage(_books(cur.fetchall()), total, page, page_size)
+
+
+def find_book(conn: Connection, user_id: UUID, book_id: UUID) -> Book | None:
+    """The catalogue book `book_id`, with the copies `user_id` owns; None if unknown."""
+    with conn.cursor() as cur:
+        cur.execute(_FIND_BOOK_QUERY, (user_id.bytes, book_id.bytes))
+        books = _books(cur.fetchall())
+    return books[0] if books else None
+
+
+def find_book_by_isbn(conn: Connection, user_id: UUID, isbn: str) -> Book | None:
+    """The catalogue book with this ISBN-13, as find_book; None if there is none."""
+    with conn.cursor() as cur:
+        cur.execute(_FIND_BOOK_BY_ISBN_QUERY, (user_id.bytes, isbn))
+        books = _books(cur.fetchall())
+    return books[0] if books else None
+
+
+def add_to_collection(
+    conn: Connection, user_id: UUID, book_id: UUID, copies: int = 1
+) -> bool:
+    """
+    Add a catalogue book to the user's collection with `copies` copies.
+    False, changing nothing, when it is already there.
+    """
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO COLLECTION_BOOKS (USER_ID, BOOK_ID, COPIES) "
+                "VALUES (?, ?, ?)",
+                (user_id.bytes, book_id.bytes, copies),
+            )
+    except DatabaseError as e:
+        if _UNIQUE_KEY_VIOLATION not in e.gds_codes:
+            raise
+        return False
+    conn.commit()
+    return True
+
+
+def set_copies(conn: Connection, user_id: UUID, book_id: UUID, copies: int) -> bool:
+    """Set how many copies of a book the user owns; False if it is not in their collection."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE COLLECTION_BOOKS SET COPIES = ? WHERE USER_ID = ? AND BOOK_ID = ?",
+            (copies, user_id.bytes, book_id.bytes),
+        )
+        updated = cur.affected_rows > 0
+    conn.commit()
+    return updated
+
+
+def remove_from_collection(conn: Connection, user_id: UUID, book_id: UUID) -> bool:
+    """
+    Remove a book from the user's collection, leaving it in the catalogue.
+    False if it was not there.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            "DELETE FROM COLLECTION_BOOKS WHERE USER_ID = ? AND BOOK_ID = ?",
+            (user_id.bytes, book_id.bytes),
+        )
+        removed = cur.affected_rows > 0
+    conn.commit()
+    return removed
 
 
 def _unique_authors(authors: tuple[Author, ...]) -> list[Author]:
