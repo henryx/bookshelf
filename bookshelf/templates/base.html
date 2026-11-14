@@ -3,8 +3,9 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  {# Swap 4xx/5xx responses too, so server errors reach the page (htmx ignores them by default). #}
-  <meta name="htmx-config" content='{"responseHandling": [{"code": "204", "swap": false}, {"code": "[23]..", "swap": true}, {"code": "[45]..", "swap": true, "error": true}, {"code": "...", "swap": false}]}'>
+  {# Swap 4xx/5xx responses too, so server errors reach the page (htmx ignores them by default).
+     No inline <style> from htmx: the CSP forbids it, and its indicator rules are in style.css. #}
+  <meta name="htmx-config" content='{"includeIndicatorStyles": false, "responseHandling": [{"code": "204", "swap": false}, {"code": "[23]..", "swap": true}, {"code": "[45]..", "swap": true, "error": true}, {"code": "...", "swap": false}]}'>
   <title>{% block title %}Bookshelf{% endblock %}</title>
   {# The hero title's face: fetched early, so the page-load reveal shows it, not a fallback. #}
   <link rel="preload" href="{{ url_for('static', filename='fonts/fraunces-latin.woff2') }}"

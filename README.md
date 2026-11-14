@@ -144,6 +144,10 @@ Behind a reverse proxy that terminates HTTPS, set `APP_TRUSTED_PROXIES` to the n
 optional: failed-login limits are per client IP, so without it every client shares the proxy's IP
 and 20 failed logins from anyone block logins for everyone.
 
+The app sets its own security headers (a strict `Content-Security-Policy`, `X-Frame-Options: DENY`,
+`X-Content-Type-Options` and `Referrer-Policy`). `Strict-Transport-Security` is left to the proxy that
+terminates HTTPS: set it there, e.g. `Strict-Transport-Security: max-age=31536000`.
+
 Schedule `prune-login-failures` on the host, or the failed-login table only grows. For example, hourly
 from cron:
 

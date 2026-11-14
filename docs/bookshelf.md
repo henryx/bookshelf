@@ -17,6 +17,12 @@ Decisions:
    Until the first release is tagged the schema is not final: tables are changed by editing their `CREATE TABLE`
    in place, with no migration steps, and development databases are recreated. Once a release is tagged, changes to
    released tables will need upgrade steps for existing databases (see README, "Schema changes").
+ - Every response carries security headers: a Content-Security-Policy allowing only the app's own scripts,
+   styles, fonts and images (no inline code, no plugins, forms posting only to the app) and forbidding frames,
+   `X-Frame-Options: DENY` for older browsers, `X-Content-Type-Options: nosniff` and
+   `Referrer-Policy: same-origin`. So no page can be framed by another site (clickjacking), and pages must not
+   use inline `<script>`, `<style>` or `style=""`: htmx's own inline indicator styles are turned off
+   (`includeIndicatorStyles`), their rules being in `style.css`. HSTS is set by the HTTPS proxy, not the app.
 
 ## Authentication
 

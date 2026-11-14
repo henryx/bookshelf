@@ -64,6 +64,7 @@ def create_app(overrides: Mapping[str, object] | None = None) -> Flask:
         )
 
     app.register_error_handler(Exception, handle_error)
+    app.after_request(add_security_headers)
     db.init_app(app)
     cli.init_app(app)
     login_manager.init_app(app)
@@ -75,6 +76,26 @@ def create_app(overrides: Mapping[str, object] | None = None) -> Flask:
     app.register_blueprint(account_route)
     app.register_blueprint(admin_route)
     return app
+
+
+# Only the app's own scripts, styles, fonts and images, with no inline code;
+# no plugins, no <base> elsewhere, forms posting only here, and never shown in
+# a frame (frame-ancestors, and X-Frame-Options for older browsers).
+SECURITY_HEADERS = {
+    "Content-Security-Policy": (
+        "default-src 'self'; base-uri 'self'; form-action 'self'; "
+        "frame-ancestors 'none'; object-src 'none'"
+    ),
+    "X-Frame-Options": "DENY",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "same-origin",
+}
+
+
+def add_security_headers(response: Response) -> Response:
+    """Set SECURITY_HEADERS on every response (HSTS is left to the HTTPS proxy)."""
+    response.headers.update(SECURITY_HEADERS)
+    return response
 
 
 GENERIC_ERROR = "Something went wrong. Please try again."
