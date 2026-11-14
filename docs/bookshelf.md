@@ -194,38 +194,7 @@ setup, so this is accepted rather than guarded with an extra table.
 ## Books
 
 Status: tables created by `init-db` (`BOOKS`, `AUTHORS`, `BOOK_AUTHORS`, `BOOK_TAGS`, `COLLECTION_BOOKS`). Books
-can be listed (see Main page) and added; not yet edited or deleted.
-
-### Adding a book
-
-A round "+" button floats over the bottom-right corner of the main page. It opens a dialog with the book's
-fields and the number of copies the user owns (1 by default); "Add book" saves it to the catalogue and to the
-user's collection, and the list reloads with a confirmation. Without JavaScript the button opens the same form
-as a page (`/books/new`).
-
-Decisions:
-
- - Each author is a row of two fields, name and surname, in order. The first row has a "+" button that adds
-   a row; each added row has a "−" button that removes it. Without JavaScript these buttons submit the form,
-   and the server shows it again with the row added or removed, saving nothing.
- - The surname is required in a row with a name; the name may be left empty for an author known by one name
-   ("Homer"). Empty rows are skipped. The same author (name and surname, ignoring case) cannot be listed
-   twice: the repeated row is marked and nothing is saved.
- - Typing in an author's name or surname field lists, under the field, up to 10 existing authors whose name
-   (or surname) starts with the text, ignoring case, shown as "Name Surname". Picking one fills both fields
-   of the row. The list is the browser's own suggestion list (`<datalist>`), so it needs little JavaScript
-   and works with the keyboard and screen readers, but its look is the browser's. Without JavaScript the
-   fields work as plain inputs, with no suggestions.
- - The publisher field suggests the same way: up to 10 publishers already used in the catalogue that start
-   with the text, ignoring case (spellings differing only in case are one publisher). Picking one fills the
-   field.
- - Tags are separated by commas. Blank tags are skipped, and a tag repeated (ignoring case) is kept once.
- - An author whose name and surname match an existing one (ignoring case) is that author, keeping its
-   existing spelling.
- - The ISBN must be a valid ISBN-10 or ISBN-13, check digit included, so a mistyped ISBN is caught; it is saved
-   as ISBN-13. An ISBN already in the catalogue is refused with a message naming it.
- - The publication year is between 1 and 9999; copies between 1 and 999.
- - Empty optional fields are stored as NULL.
+can be listed (see Main page) and added (see "Adding a book"); not yet edited or deleted.
 
 Decisions:
 
@@ -238,12 +207,17 @@ Decisions:
  - Every user, regular or admin, may add a book to the catalogue and edit any book in it, not only the books
    they added. Only admins may delete a book.
  - A book has a title (required) and optionally authors, ISBN, publisher, publication year, volume and notes.
-   Authors are a list of names, so a book can have several, in the order given.
+   A book can have several authors, in the order given; each author is a name and a surname.
  - Authors are their own records, shared between books: when a book is added or edited, each author is picked
-   from the existing ones by name and surname, or created if new. All books by one author can be listed, and a misspelled
-   name is fixed once for every book.
+   from the existing ones by name and surname, or created if new. All books by one author can be listed, and a
+   misspelled name is fixed once for every book.
+ - An author is a name and a surname, and that pair is unique: two different authors cannot share both, so
+   picking an author is never ambiguous. Authors may share a surname (Charlotte and Emily Brontë). The name (the
+   given name) may be empty, for authors known by one name ("Homer"); it is stored as '' rather than NULL so that
+   uniqueness still holds. An author used by a book cannot be deleted; unused authors are kept until removed.
  - Books are classified by free tags only: a book can have any number of tags, typed freely. There are no
-   genres, series or shelf locations.
+   genres, series or shelf locations. Tags are stored as text on each book, with no list of tags of their own.
+ - The volume is free text ("2", "II", "3/4"), since volumes are numbered in many ways. Books have no language.
  - A book is a title: one record in the catalogue however many copies exist. The number of copies belongs to a
    user's collection: each user records how many copies of the book they own (at least one), so two users
    owning the same book is still one catalogue record.
@@ -259,17 +233,54 @@ Decisions:
  - The library can be exported as a CSV file. There is no import in the first version.
  - ISBNs are stored as 13 digits: hyphens and spaces are removed and an ISBN-10 is converted to its ISBN-13, so
    the same book typed either way is caught as a duplicate.
- - Titles, publishers, author names and surnames, and tags ignore case when compared and sorted ("Sci-fi" and "sci-fi"
-   are one tag), but not accents ("Citta" and "Città" differ). All are trimmed; titles, surnames and tags
-   cannot be blank (an empty publisher is stored as NULL). An author's name (the given name) may be empty, stored as '' rather than NULL so that
-   uniqueness still holds.
- - An author is a name and a surname, and that pair is unique: two different authors cannot share both, so
-   picking an author is never ambiguous. Authors may share a surname (Charlotte and Emily Brontë). An author used by a book cannot be deleted; unused authors are kept until removed.
- - Tags are stored as text on each book, with no list of tags of their own.
+ - Titles, publishers, author names and surnames, and tags ignore case when compared and sorted ("Sci-fi" and
+   "sci-fi" are one tag), but not accents ("Citta" and "Città" differ). All are trimmed; titles, surnames and
+   tags cannot be blank. Empty optional fields (publisher, volume, notes, …) are stored as NULL.
  - Deleting a user removes their collection, which may leave books in no collection (and so deletable).
- - Sizes: title and publisher up to 255 characters, author name and surname up to 127 each, volume (free
-   text, e.g. "2", "II" or "3/4") up to 32, tag up to 64, notes up to 4000. Name and surname are limited to 127 because
-   the unique index on both must fit Firebird's index key limit (8 KB pages). Who added a book is not recorded.
+ - Sizes: title and publisher up to 255 characters, author name and surname up to 127 each, volume up to 32,
+   tag up to 64, notes up to 4000. Name and surname are limited to 127 because the unique index on both must
+   fit Firebird's index key limit (8 KB pages). Who added a book is not recorded.
+
+### Adding a book
+
+Status: built (`/books/new`, with suggestions from `/authors/suggestions` and `/publishers/suggestions`).
+
+A round "+" button floats over the bottom-right corner of the main page. It opens a dialog with the book's
+fields and the number of copies the user owns (1 by default); "Add book" saves it to the catalogue and to the
+user's collection, and the list reloads with a confirmation. Without JavaScript the button opens the same form
+as a page (`/books/new`).
+
+Decisions:
+
+ - Each author is a row of two fields, name and surname, in order. The first row has a "+" button that adds
+   a row; each added row has a "−" button that removes it. Without JavaScript these buttons submit the form,
+   and the server shows it again with the row added or removed, saving nothing.
+ - The surname is required in a row with a name; the name may be left empty. Empty rows are skipped. The same
+   author (name and surname, ignoring case) cannot be listed twice: the repeated row is marked and nothing is
+   saved.
+ - An author whose name and surname match an existing one (ignoring case) is that author, keeping its
+   existing spelling.
+ - Typing in an author's name or surname field lists, under the field, up to 10 existing authors whose name
+   (or surname) starts with the text, ignoring case, shown as "Name Surname". Picking one fills both fields
+   of the row.
+ - The publisher field suggests the same way: up to 10 publishers already used in the catalogue that start
+   with the text, ignoring case (spellings differing only in case are one publisher). Picking one fills the
+   field.
+ - Suggestions use the browser's own suggestion list (`<datalist>`): it needs little JavaScript and works with
+   the keyboard and screen readers, but its look is the browser's. Without JavaScript the fields are plain
+   inputs, with no suggestions.
+ - Publisher and year share a row; the year field is narrow.
+ - Tags are separated by commas. Blank tags are skipped, and a tag repeated (ignoring case) is kept once.
+ - The ISBN must be a valid ISBN-10 or ISBN-13, check digit included, so a mistyped ISBN is caught; it is saved
+   as ISBN-13. An ISBN already in the catalogue is refused with a message naming it.
+ - The publication year is between 1 and 9999; copies between 1 and 999.
+
+Known limitations:
+
+ - A repeated author is refused when the form is submitted, not while typing; the suggestions still list
+   authors already in another row.
+ - If two authors have the same full name split differently ("Anne Marie" + "Smith" and "Anne" +
+   "Marie Smith"), picking either suggestion fills the row with the first one.
 
 ## Main page
 
@@ -282,13 +293,12 @@ Decisions:
  - The list is sorted by title by default; the user can sort it by author or by date added instead.
  - The list is shown in pages of 50 books.
  - On the phone, books are shown as a list of rows, not a grid (books have no covers; see Books).
- - Each row shows the title, the authors in their order and the publication year.
+ - Each row shows the title, the authors ("Name Surname", in their order) and the publication year.
  - Sorting by author uses each book's first author (surname, then name), then the title; books without
-   authors come last. Date added
-   sorts newest first.
+   authors come last. Date added sorts newest first.
  - The search ignores case and spaces around it. An author matches on name, surname or both ("Frank
-   Herbert"). In ISBNs, hyphens and spaces are ignored, and an ISBN-10 finds
-   the book stored with the matching ISBN-13.
+   Herbert"). In ISBNs, hyphens and spaces are ignored, and an ISBN-10 finds the book stored with the
+   matching ISBN-13.
  - With htmx, typing in the search box (after a short pause), changing the order and moving between pages
    reload only the list, and the address bar keeps the search, order and page so they can be bookmarked.
    Without JavaScript the search is a plain form and the page links are plain links.

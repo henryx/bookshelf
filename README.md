@@ -78,6 +78,14 @@ All settings come from environment variables:
 | `APP_WORKERS` | no | 2 × CPUs + 1 | gunicorn worker processes; set it in containers with a CPU limit |
 | `APP_TIMEOUT` | no | `30` | Seconds before gunicorn restarts a worker stuck on a request |
 
+## Books
+
+The main page is the book list: one search box over title, author and ISBN, sorting by title, author or date
+added, in pages of 50. The round "+" button at the bottom right opens the "Add book" dialog. Authors are rows of
+name and surname ("+" adds a row, "−" removes one). The author and publisher fields suggest existing entries as
+you type, and picking an author fills both name and surname. The book is added to the shared catalogue and to
+your own collection. Details and decisions are in [docs/bookshelf.md](docs/bookshelf.md).
+
 ## User management
 
 Admins manage users in the web app: the "Admin" button next to their email opens the users list. "Create user"
@@ -157,8 +165,14 @@ already exist.
   references.
 
 - Until the first release is tagged, the schema is not final: change a table by editing its `CREATE TABLE`
-  in `TABLES` directly, and recreate your development database (drop it, then run `init-db`). Tests always
-  start from an empty database.
+  in `TABLES` directly, and recreate your development database (drop it, then run `init-db` or the setup
+  wizard). Tests always start from an empty database. With the Docker container from "Development setup",
+  delete the container and its volume, then start it again with the same `docker run` command:
+
+  ```sh
+  docker rm -f bookshelf-firebird
+  docker volume rm bookshelf-firebird-data
+  ```
 - Once a release is tagged, released tables must not be edited in place: changes to them will need upgrade
   steps that `init-db` applies to existing databases. That mechanism will be added with the first change that
   needs it.

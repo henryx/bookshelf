@@ -32,11 +32,12 @@ Bookshelf library webapp is a webapp to manage a book library built with Flask u
 - `gunicorn.conf.py`: gunicorn settings (bind, workers, timeout, log level, logging); loaded from the working directory
 - `bookshelf/cli.py`: Flask CLI commands; admin operations go through `_require_admin`
 - `bookshelf/db/`: per-process `ConnectionPool`; `get_db` takes a connection for the app context and teardown returns it (rolled back); `schema.py` holds table DDL and `init_db`
-- `bookshelf/models/`: data access and domain logic (`users.py`)
+- `bookshelf/models/`: data access and domain logic (`users.py`; `books.py`: book list, add book, ISBN checks, author and publisher suggestions)
 - `bookshelf/routes/`: blueprints (`auth`, `main`, `setup`, `admin`); `__init__.py` has the `is_htmx()` and `htmx_redirect()` helpers; `forms.py` holds the Flask-WTF forms
+- `bookshelf/routes/main.py`: book list (`/`), add book (`/books/new`), suggestions (`/authors/suggestions`, `/publishers/suggestions`)
 - `bookshelf/routes/admin.py`: admin area (`/admin/users`), admins only; users list, create, details/edit, delete
 - `bookshelf/routes/setup.py`: first-run wizard; redirects every request to `/setup` until an admin exists
-- `bookshelf/templates/`, `bookshelf/static/`: Jinja templates and CSS; htmx is vendored in `static/`; `app.js` holds the error-banner and dialog handlers
+- `bookshelf/templates/`, `bookshelf/static/`: Jinja templates and CSS; htmx is vendored in `static/`; `app.js` holds the error-banner, dialog, repeatable-row and suggestion handlers
 - `tests/conftest.py`: session Firebird container, `app`/`db_app`/`empty_db_app` fixtures; autouse `setup_complete` skips the first-run wizard (overridden in `test_setup.py`)
 - `docs/bookshelf.md`: requirements, decisions and open questions
 - `dev.env` (dev server) and `test.env` (tests) are deliberately separate: tests wipe tables
@@ -83,7 +84,7 @@ Avoid generic AI aesthetics. Make creative, distinctive choices.
 
 ### Color & theme
 - Commit to a single dominant color with one sharp accent.
-- All colors live in CSS variables in `app/globals.css`.
+- All colors live in CSS variables in `bookshelf/static/style.css`.
 - Forbidden: purple-to-blue gradients on white backgrounds.
 
 ### Backgrounds
@@ -119,6 +120,10 @@ Avoid generic AI aesthetics. Make creative, distinctive choices.
 - When two forms can share a page (e.g. two dialogs), give their element ids a prefix (`_new_password_fields.html` takes `id_prefix`)
 - Always include `hx-indicator` for loading states
 - Handle `HX-Request` header for partial vs full page responses
+- Elements inside an htmx form inherit its `hx-*` attributes (e.g. `hx-swap="outerHTML"`): give inner htmx elements their own `hx-target` and `hx-swap`
+- Repeatable rows: a `[data-rows]` container with `[data-row]` rows, a `<template data-row-template>` (`__index__` placeholder), `[data-row-add]` / `[data-row-remove]` submit buttons (the server adds or removes the row without JavaScript)
+- Suggestions: an input with `data-suggest`, `list` and `hx-get` filling its `<datalist>`; `app.js` sends the text as `q`
+- WTForms renders `data_*` / `aria_*` keyword arguments with hyphens but not `hx_*`: pass htmx attributes as a dict (`**{"hx-get": ...}`)
 
 ### Forms
 - Use Flask-WTF (`FlaskForm`) for forms; keep CSRF protection enabled
