@@ -35,6 +35,8 @@
       {% endwith %}
     </template>
     <p id="book-authors-hint" class="hint">In order. Leave the name empty for authors known by one name.</p>
+    {# The list's own errors; each row's errors are shown in the row. #}
+    {% for error in form.authors.errors if error is string %}<p class="error">{{ error }}</p>{% endfor %}
   </fieldset>
   {{ field("isbn", "ISBN-10 or ISBN-13; hyphens and spaces are fine.", autocomplete="off") }}
   {# Publisher and year side by side; the year needs only a few digits. #}

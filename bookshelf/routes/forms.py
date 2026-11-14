@@ -161,6 +161,25 @@ class BookForm(FlaskForm):
         if not self.authors.entries:
             self.authors.append_entry()
 
+    def validate_authors(self, field: FieldList) -> None:
+        """
+        Refuse an author listed twice (same name and surname, ignoring case):
+        the repeated row is marked. Empty rows are not authors.
+        """
+        seen: set[tuple[str, str]] = set()
+        repeated = False
+        for entry in field.entries:
+            author = entry.form.to_author()
+            key = (author.name.casefold(), author.surname.casefold())
+            if not any(key):
+                continue
+            if key in seen:
+                entry.form.surname.errors.append("This author is already listed.")
+                repeated = True
+            seen.add(key)
+        if repeated:
+            raise ValidationError("Each author can be listed only once.")
+
     def tag_names(self) -> tuple[str, ...]:
         return tuple((self.tags.data or "").split(","))
 

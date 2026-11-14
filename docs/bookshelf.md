@@ -209,7 +209,8 @@ Decisions:
    a row; each added row has a "−" button that removes it. Without JavaScript these buttons submit the form,
    and the server shows it again with the row added or removed, saving nothing.
  - The surname is required in a row with a name; the name may be left empty for an author known by one name
-   ("Homer"). Empty rows are skipped, and an author repeated in the rows (ignoring case) is kept once.
+   ("Homer"). Empty rows are skipped. The same author (name and surname, ignoring case) cannot be listed
+   twice: the repeated row is marked and nothing is saved.
  - Typing in an author's name or surname field lists, under the field, up to 10 existing authors whose name
    (or surname) starts with the text, ignoring case, shown as "Name Surname". Picking one fills both fields
    of the row. The list is the browser's own suggestion list (`<datalist>`), so it needs little JavaScript

@@ -190,10 +190,38 @@ def test_add_book_keeps_author_rows_in_order_despite_gaps(db_app, client):
     assert authors == [("First",), ("Second",)]
 
 
-def test_add_book_drops_repeated_author(db_app, client):
-    _post(client, **_authors(("Ann", "Leckie"), ("ann", "LECKIE")))
+@pytest.mark.parametrize(
+    "rows",
+    [
+        (("Ann", "Leckie"), ("Ann", "Leckie")),
+        (("Ann", "Leckie"), ("Neil", "Gaiman"), (" ann ", "LECKIE ")),
+        (("", "Homer"), ("", "homer")),
+    ],
+)
+def test_add_book_refuses_the_same_author_twice(db_app, client, rows):
+    rv = _post(client, **_authors(*rows))
+    html = rv.get_data(as_text=True)
 
-    assert _scalar(db_app, "SELECT COUNT(*) FROM BOOK_AUTHORS") == 1
+    assert rv.status_code == 200
+    assert html.count("This author is already listed.") == 1
+    assert "Each author can be listed only once." in html
+    assert _scalar(db_app, "SELECT COUNT(*) FROM BOOKS") == 0
+
+
+def test_add_book_marks_only_the_repeated_row(client):
+    html = _post(
+        client, **_authors(("Ann", "Leckie"), ("Neil", "Gaiman"), ("Ann", "Leckie"))
+    ).get_data(as_text=True)
+
+    rows = re.findall(r'<div class="author-row".*?</div>', html, re.DOTALL)
+    marked = ["already listed" in row for row in rows if "authors-__index__" not in row]
+    assert marked == [False, False, True]
+
+
+def test_add_book_allows_authors_sharing_a_surname(db_app, client):
+    _post(client, **_authors(("Charlotte", "Brontë"), ("Emily", "Brontë")))
+
+    assert _scalar(db_app, "SELECT COUNT(*) FROM BOOK_AUTHORS") == 2
 
 
 def test_add_book_without_htmx_redirects(client):
