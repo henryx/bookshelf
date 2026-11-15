@@ -43,7 +43,14 @@ from bookshelf.models.books import (
 from bookshelf.routes import htmx_redirect, is_htmx
 from bookshelf.routes.forms import BookForm, EditBookForm
 
-__all__ = ["author_filter", "list_state", "list_url", "main_route", "render_catalogue"]
+__all__ = [
+    "author_filter",
+    "book_list_endpoint",
+    "list_state",
+    "list_url",
+    "main_route",
+    "render_catalogue",
+]
 
 main_route = Blueprint("main", __name__)
 
@@ -140,14 +147,22 @@ def index() -> str:
     return render_catalogue(request.args, partial=partial)
 
 
+def _add_list(values: MultiDict[str, str]) -> str:
+    """The list the add-book form was opened from: "collection", or "" for the catalogue."""
+    return "collection" if book_list_endpoint(values) == "collection.index" else ""
+
+
 def _render_add(form: BookForm, existing: Book | None = None) -> str:
     """
-    The form alone for htmx (it lives in the main page's dialog), else a page.
+    The form alone for htmx (it lives in the dialog of the catalogue and of
+    the collection), else a page.
     `existing`: the catalogue book whose ISBN was typed, to offer adding it
     to the user's collection instead.
     """
     template = "_add_book_form.html" if is_htmx() else "add_book.html"
-    return render_template(template, form=form, existing=existing)
+    return render_template(
+        template, form=form, existing=existing, add_list=_add_list(request.values)
+    )
 
 
 @main_route.route("/books/new", methods=("GET", "POST"))
@@ -174,10 +189,10 @@ def new_book() -> BaseResponse | str:
 
     current_app.logger.info("Book %r added by %s", book.title, current_user.email)
     flash(f"Book “{book.title}” added.")
-    return htmx_redirect(url_for("main.index"))
+    return htmx_redirect(url_for(book_list_endpoint(request.form)))
 
 
-def _book_list_endpoint(values: MultiDict[str, str]) -> str:
+def book_list_endpoint(values: MultiDict[str, str]) -> str:
     """The list a book was opened from: the collection or (by default) the catalogue."""
     return "collection.index" if values.get("list") == "collection" else "main.index"
 
@@ -197,7 +212,7 @@ def _render_book(
     else:
         template = "_edit_book_form.html"
     search, sort, page = list_state(values)
-    endpoint = _book_list_endpoint(values)
+    endpoint = book_list_endpoint(values)
     return render_template(
         template,
         form=form,
@@ -334,7 +349,7 @@ def book(book_id: UUID) -> BaseResponse | str:
         _edited_fields(details, form, isbn, replace_isbn),
     )
     flash(f"Book “{details.title}” saved.")
-    return htmx_redirect(list_url(_book_list_endpoint(values), values))
+    return htmx_redirect(list_url(book_list_endpoint(values), values))
 
 
 def _list_after_delete(values: MultiDict[str, str], deleted: DeletedBook) -> str:
@@ -343,10 +358,10 @@ def _list_after_delete(values: MultiDict[str, str], deleted: DeletedBook) -> str
     when that author went with the book (they had no other book).
     """
     if _author_param(values) not in deleted.authors_deleted:
-        return list_url(_book_list_endpoint(values), values)
+        return list_url(book_list_endpoint(values), values)
     others = values.copy()
     others.pop("author")
-    return list_url(_book_list_endpoint(others), others)
+    return list_url(book_list_endpoint(others), others)
 
 
 @main_route.post("/books/<uuid:book_id>/delete")

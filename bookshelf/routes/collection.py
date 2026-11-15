@@ -26,9 +26,10 @@ from bookshelf.models.books import (
     set_read,
 )
 from bookshelf.routes import htmx_redirect, is_htmx
-from bookshelf.routes.forms import CopiesForm, ReadForm
+from bookshelf.routes.forms import BookForm, CopiesForm, ReadForm
 from bookshelf.routes.main import (
     author_filter,
+    book_list_endpoint,
     list_state,
     list_url,
     render_catalogue,
@@ -72,6 +73,8 @@ def _render_collection(
         author=author,
         notice=notice,
         list_error=error,
+        form=BookForm(formdata=None),
+        add_list="collection",
     )
 
 
@@ -101,7 +104,8 @@ def add(book_id: UUID) -> BaseResponse | str:
     """
     Add a catalogue book to the current user's collection: from a row of
     the catalogue (the list is shown again, keeping its search and page), or
-    from the add-book form when its ISBN is already in the catalogue.
+    from the add-book form when its ISBN is already in the catalogue (back to
+    the list the form was opened from).
     """
     book = _book_or_404(book_id)
     form = CopiesForm()
@@ -125,7 +129,7 @@ def add(book_id: UUID) -> BaseResponse | str:
     if _from_list():
         return render_catalogue(request.form, partial=True, notice=notice)
     flash(notice)
-    return htmx_redirect(list_url("main.index", request.form))
+    return htmx_redirect(list_url(book_list_endpoint(request.form), request.form))
 
 
 def _collection_response(message: str, *, error: bool = False) -> BaseResponse | str:

@@ -20,6 +20,19 @@
     {% include "_book_list.html" %}
   </div>
 
+  {# Floating add button: opens the dialog below; without JavaScript the link opens the add page.
+     Either way, adding the book comes back here. #}
+  <a class="fab" href="{{ url_for('main.new_book', list='collection') }}" data-dialog-open="add-book-dialog"
+     aria-label="Add book" title="Add book"><span aria-hidden="true">+</span></a>
+
+  <dialog id="add-book-dialog" aria-labelledby="add-book-title">
+    <div class="section-header">
+      <h2 id="add-book-title">Add book</h2>
+      <button type="button" class="secondary" data-dialog-close aria-label="Close">✕</button>
+    </div>
+    {% include "_add_book_form.html" %}
+  </dialog>
+
   {# Filled with a book's details by the titles in the list, then opened (app.js). #}
   <dialog id="book-dialog" aria-labelledby="book-dialog-title">
     <div class="section-header">

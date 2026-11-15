@@ -1,8 +1,11 @@
-{# The add-book form: in the main page's dialog, on the add page, and the htmx response when it has errors. #}
+{# The add-book form: in the dialog of the catalogue and of the collection, on the add page, and the
+   htmx response when it has errors. add_list: "collection" when opened from the collection, where
+   adding the book goes back to; "" for the catalogue. #}
 <form id="add-book-form" class="card" method="post" action="{{ url_for('main.new_book') }}"
       hx-post="{{ url_for('main.new_book') }}" hx-target="this" hx-swap="outerHTML"
       hx-indicator="#add-book-indicator" hx-disabled-elt="find button">
   {{ form.hidden_tag() }}
+  {% if add_list %}<input type="hidden" name="list" value="{{ add_list }}">{% endif %}
   {% for error in form.form_errors %}
     <p class="error" role="alert">{{ error }}</p>
   {% endfor %}

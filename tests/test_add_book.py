@@ -638,3 +638,36 @@ def test_series_and_volume_share_a_row_and_plot_is_labelled(client):
     one_row = r'<div class="field-row">(?:(?!field-row).)*name="series"(?:(?!field-row).)*name="volume"'
     assert re.search(one_row, html, re.DOTALL)
     assert '<label for="book-plot">Plot</label>' in html
+
+
+def test_collection_page_has_the_add_button_and_dialog(client):
+    html = client.get("/collection").get_data(as_text=True)
+
+    assert 'href="/books/new?list=collection"' in html
+    assert 'data-dialog-open="add-book-dialog"' in html
+    assert '<dialog id="add-book-dialog"' in html
+    assert '<input type="hidden" name="list" value="collection">' in html
+
+
+def test_catalogue_add_form_has_no_list_field(client):
+    html = client.get("/").get_data(as_text=True)
+
+    assert 'name="list"' not in html
+
+
+def test_add_book_from_the_collection_goes_back_to_it(client):
+    rv = _post(client, title="Dune", list="collection")
+
+    assert rv.headers["HX-Redirect"] == "/collection/"
+
+
+def test_add_book_from_the_catalogue_goes_back_to_it(client):
+    rv = _post(client, title="Dune")
+
+    assert rv.headers["HX-Redirect"] == "/"
+
+
+def test_add_page_from_the_collection_keeps_the_list(client):
+    html = client.get("/books/new?list=collection").get_data(as_text=True)
+
+    assert '<input type="hidden" name="list" value="collection">' in html

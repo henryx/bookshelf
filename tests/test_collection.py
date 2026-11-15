@@ -499,6 +499,23 @@ def test_duplicate_isbn_offers_to_add_the_existing_book(db_app, client, other):
     assert f'hx-post="/collection/books/{emma}/add"' in html
 
 
+def test_duplicate_isbn_offer_from_the_collection_keeps_the_list(db_app, client, other):
+    emma = _book(db_app, other, "Emma", isbn="9780141439587")
+    form = {"title": "Emma", "isbn": "9780141439587", "copies": "1"}
+
+    offer = client.post(
+        "/books/new", data={**form, "list": "collection"}, headers=HTMX
+    ).get_data(as_text=True)
+    rv = client.post(
+        f"/collection/books/{emma}/add",
+        data={**form, "list": "collection"},
+        headers=HTMX,
+    )
+
+    assert '<input type="hidden" name="list" value="collection">' in offer
+    assert rv.headers["HX-Redirect"] == "/collection/"
+
+
 def test_duplicate_isbn_of_a_book_in_the_collection_says_so(db_app, client, user):
     dune = _book(db_app, user, "Dune", isbn="9780441172719", copies=2)
 

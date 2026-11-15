@@ -347,10 +347,11 @@ Decisions:
 
 Status: built (`/books/new`, with suggestions from `/authors/suggestions` and `/publishers/suggestions`).
 
-A round "+" button floats over the bottom-right corner of the main page. It opens a dialog with the book's
-fields and the number of copies the user owns (1 by default); "Add book" saves it to the catalogue and to the
-user's collection, and the list reloads with a confirmation. Without JavaScript the button opens the same form
-as a page (`/books/new`).
+A round "+" button floats over the bottom-right corner of the main page and of "Your collection". It opens a
+dialog with the book's fields and the number of copies the user owns (1 by default); "Add book" saves it to the
+catalogue and to the user's collection, and the page it was opened from reloads with a confirmation. Without
+JavaScript the button opens the same form as a page (`/books/new`, `/books/new?list=collection` from the
+collection).
 
 Decisions:
 
@@ -540,7 +541,10 @@ Decisions:
  - The collection has its own page; the main page stays the whole catalogue.
  - The collection is the first page: logging in, finishing the first-run wizard, the top bar's title and the
    error page's "Back to Bookshelf" lead to it, since a user mostly works with their own books. The catalogue
-   keeps `/`; adding a book is done there (the collection has no add button).
+   keeps `/`.
+ - The collection has the same "+" button as the main page (see "Adding a book"): the form carries
+   `list=collection`, so adding a book, or adding the catalogue book whose ISBN was typed, comes back to the
+   collection.
  - Books are added to the collection from the main page's rows, or from the add-book form when the ISBN typed is
    already in the catalogue (see "Adding a book"). Adding a book already in the collection changes nothing and
    says so.
