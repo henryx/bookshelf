@@ -256,7 +256,10 @@ Decisions:
    `copies`, `read`. Authors ("Name Surname", or "Surname" alone, as for "Homer") and categories are both
    separated by ", "; read is `yes` or `no`. On import the last word of an author is the surname,
    and a `year` holding a whole date ("1991-05-12", "12/05/1991", "May 12, 1991") gives its year (its only
-   four-digit number); a year that cannot be told ("12/05/91", "1991-2001") is a bad row. The export is UTF-8
+   four-digit number); a year that cannot be told ("12/05/91", "1991-2001") is a bad row. An ISBN tolerates
+   what spreadsheets and copying do to it: invisible characters (zero-width spaces, byte order marks) are
+   dropped, and a leading `'` or a trailing `.0` / `,0` (an ISBN saved as a number) taken off; one in scientific
+   notation ("9.78886E+12") has lost its digits, so the row is refused saying so. The export is UTF-8
    with a byte order mark (so spreadsheets read it as UTF-8), ordered by title.
  - An import needs a header with `title`; the other columns are optional and in any order (missing ones are
    empty, copies 1 and not read). Other columns are ignored, and named in the import's summary ("Ignored 2

@@ -252,6 +252,47 @@ def test_import_reports_values_too_long(db_app, user):
 
 
 @pytest.mark.parametrize(
+    "isbn",
+    [
+        "9788861924314.0",
+        "9788861924314,00",
+        "'9788861924314",
+        "9788861924314\u200b",
+        "\ufeff978-88-6192-431-4",
+        "\u00a09788861924314\u00a0",
+    ],
+)
+def test_import_tolerates_isbns_mangled_by_spreadsheets(db_app, user, isbn):
+    report = _import(db_app, user, f'title,isbn\nDune,"{isbn}"\n')
+
+    assert report.errors == []
+    with db_app.app_context():
+        conn = get_db()
+        book_id = list_collection(conn, user.id).books[0].id
+        details = find_book_details(conn, book_id)
+    assert details is not None
+    assert details.isbn == "9788861924314"
+
+
+@pytest.mark.parametrize("isbn", ["9.78886E+12", "9,78886192431E+12", "9.78886e12"])
+def test_import_explains_isbns_in_scientific_notation(db_app, user, isbn):
+    report = _import(db_app, user, f'title,isbn\nDune,"{isbn}"\n')
+
+    message = (
+        f"Row 2: the ISBN became a number in a spreadsheet ({isbn}), which lost its "
+        "digits: format the column as text and enter the ISBN again."
+    )
+    assert report.errors == [message]
+
+
+@pytest.mark.parametrize("isbn", ["9788861924315.0", "978886192431.5"])
+def test_import_still_refuses_wrong_isbns(db_app, user, isbn):
+    report = _import(db_app, user, f'title,isbn\nDune,"{isbn}"\n')
+
+    assert report.errors == ["Row 2: not a valid ISBN."]
+
+
+@pytest.mark.parametrize(
     "year",
     ["1991", "1991-05-12", "12/05/1991", "May 12, 1991", "1991-05-12T10:30:00"],
 )
