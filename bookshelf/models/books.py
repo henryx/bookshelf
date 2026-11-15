@@ -600,19 +600,25 @@ def find_book_by_isbn(conn: Connection, user_id: UUID, isbn: str) -> Book | None
 
 
 def add_to_collection(
-    conn: Connection, user_id: UUID, book_id: UUID, copies: int = 1
+    conn: Connection,
+    user_id: UUID,
+    book_id: UUID,
+    copies: int = 1,
+    *,
+    read: bool = False,
 ) -> bool:
     """
-    Add a catalogue book to the user's collection with `copies` copies.
+    Add a catalogue book to the user's collection with `copies` copies,
+    marked as `read` or not.
     False, changing nothing, when it is already there; UnknownBookError when
     the catalogue has no such book.
     """
     try:
         with conn.cursor() as cur:
             cur.execute(
-                "INSERT INTO COLLECTION_BOOKS (USER_ID, BOOK_ID, COPIES) "
-                "VALUES (?, ?, ?)",
-                (user_id.bytes, book_id.bytes, copies),
+                "INSERT INTO COLLECTION_BOOKS (USER_ID, BOOK_ID, COPIES, IS_READ) "
+                "VALUES (?, ?, ?, ?)",
+                (user_id.bytes, book_id.bytes, copies, read),
             )
     except DatabaseError as e:
         if _FOREIGN_KEY_VIOLATION in e.gds_codes:
@@ -781,6 +787,7 @@ def _insert_book(
     book: NewBook,
     isbn: str | None,
     copies: int,
+    read: bool,
 ) -> None:
     try:
         cur.execute(
@@ -809,15 +816,23 @@ def _insert_book(
             (book_id.bytes, tag),
         )
     cur.execute(
-        "INSERT INTO COLLECTION_BOOKS (USER_ID, BOOK_ID, COPIES) VALUES (?, ?, ?)",
-        (user_id.bytes, book_id.bytes, copies),
+        "INSERT INTO COLLECTION_BOOKS (USER_ID, BOOK_ID, COPIES, IS_READ) "
+        "VALUES (?, ?, ?, ?)",
+        (user_id.bytes, book_id.bytes, copies, read),
     )
 
 
-def add_book(conn: Connection, user_id: UUID, book: NewBook, copies: int = 1) -> UUID:
+def add_book(
+    conn: Connection,
+    user_id: UUID,
+    book: NewBook,
+    copies: int = 1,
+    *,
+    read: bool = False,
+) -> UUID:
     """
     Add a book to the catalogue and to the user's collection with `copies`
-    copies, in one transaction. Authors are picked by name and surname, or
+    copies, marked as `read` or not, in one transaction. Authors are picked by name and surname, or
     created; one with a name but no surname is refused by the database.
     Raises InvalidIsbnError for a bad ISBN and BookExistsError if the ISBN
     is already in the catalogue.
@@ -836,7 +851,7 @@ def add_book(conn: Connection, user_id: UUID, book: NewBook, copies: int = 1) ->
         ) as transaction,
         transaction.cursor() as cur,
     ):
-        _insert_book(cur, user_id, book_id, book, isbn, copies)
+        _insert_book(cur, user_id, book_id, book, isbn, copies, read)
         transaction.commit()
     return book_id
 

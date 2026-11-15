@@ -102,3 +102,41 @@ def test_tick_read_on_the_collection_page(reader_page: Page, live_server: str, d
     expect(reader_page.locator(".read-form button")).to_be_hidden()
     reader_page.reload()
     expect(reader_page.get_by_label("Dune read")).to_be_checked()
+
+
+def test_csv_import_reloads_the_list_with_its_report(
+    reader_page: Page, live_server: str, dune
+):
+    reader_page.goto(f"{live_server}/collection")
+    reader_page.get_by_label("Import books from CSV").set_input_files(
+        files=[
+            {
+                "name": "books.csv",
+                "mimeType": "text/csv",
+                "buffer": b"title,copies\nDune,1\nEmma,2\n,3\n",
+            }
+        ]
+    )
+    url = reader_page.url
+
+    reader_page.get_by_role("button", name="Import", exact=True).click()
+
+    book_list = reader_page.locator("#book-list")
+    expect(book_list).to_contain_text(
+        "1 book added to your collection (1 new to the catalogue); "
+        "1 already in your collection, skipped."
+    )
+    expect(book_list).to_contain_text("Row 4: the title is required.")
+    expect(reader_page.locator(".book-title")).to_have_text(["Dune", "Emma"])
+    assert reader_page.url == url
+
+
+def test_csv_export_downloads_the_collection(reader_page: Page, live_server: str, dune):
+    reader_page.goto(f"{live_server}/collection")
+
+    with reader_page.expect_download() as download:
+        reader_page.get_by_role("link", name="Export CSV").click()
+
+    assert download.value.suggested_filename.startswith("bookshelf-collection-")
+    text = download.value.path().read_text(encoding="utf-8-sig")
+    assert text.splitlines()[1].startswith("Dune,")

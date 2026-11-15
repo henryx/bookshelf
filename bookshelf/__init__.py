@@ -51,6 +51,8 @@ def create_app(overrides: Mapping[str, object] | None = None) -> Flask:
         LOGIN_MAX_IP_FAILURES=cfg.login_max_ip_failures,
         LOGIN_BLOCK_MINUTES=cfg.login_block_minutes,
         MIN_PASSWORD_LENGTH=cfg.min_password_length,
+        # Largest request body (413 above it): room for a collection CSV import.
+        MAX_CONTENT_LENGTH=1024 * 1024,
     )
     if overrides:
         app.config.update(overrides)

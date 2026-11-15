@@ -1,5 +1,6 @@
 from flask import current_app
 from flask_wtf import FlaskForm
+from flask_wtf.file import FileAllowed, FileField, FileRequired
 from wtforms import (
     BooleanField,
     EmailField,
@@ -33,6 +34,7 @@ __all__ = [
     "BookForm",
     "CopiesForm",
     "EditBookForm",
+    "ImportForm",
     "LoginForm",
     "NewAccountForm",
     "NewUserForm",
@@ -256,6 +258,18 @@ class EditBookForm(FlaskForm):
             normalise_isbn(field.data)
         except InvalidIsbnError as e:
             raise ValidationError("Not a valid ISBN.") from e
+
+
+class ImportForm(FlaskForm):
+    """A CSV file of books to add to the current user's collection."""
+
+    file = FileField(
+        "CSV file",
+        validators=[
+            FileRequired("Choose a CSV file to import."),
+            FileAllowed(["csv"], "Choose a .csv file."),
+        ],
+    )
 
 
 class ReadForm(FlaskForm):

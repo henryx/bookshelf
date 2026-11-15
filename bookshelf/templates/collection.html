@@ -15,6 +15,24 @@
       <a href="{{ url_for('main.index', author=author.id) }}">All books by {{ author.author }}</a></p>
   {% else %}
     <h2>Your collection</h2>
+    {# CSV of the whole collection. With htmx the import reloads only the list (keeping
+       the search and order); without JavaScript it shows the page again. #}
+    <div class="collection-csv">
+      <form class="csv-import" method="post" action="{{ url_for('collection.import_csv') }}"
+            enctype="multipart/form-data"
+            hx-post="{{ url_for('collection.import_csv') }}" hx-encoding="multipart/form-data"
+            hx-include=".book-search" hx-target="#book-list" hx-swap="innerHTML"
+            hx-indicator="#csv-import-indicator" hx-disabled-elt="find button">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label>
+          <span class="hint">Import books from CSV</span>
+          <input type="file" name="file" accept=".csv,text/csv" required>
+        </label>
+        <button type="submit" class="secondary">Import</button>
+        <span id="csv-import-indicator" class="htmx-indicator">…</span>
+      </form>
+      <a class="button secondary" href="{{ url_for('collection.export') }}" download>Export CSV</a>
+    </div>
   {% endif %}
   <div id="book-list">
     {% include "_book_list.html" %}
