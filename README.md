@@ -84,13 +84,24 @@ The main page is the book list: one search box over title, author and ISBN, sort
 added, in pages of 50. The round "+" button at the bottom right opens the "Add book" dialog. Authors are rows of
 name and surname ("+" adds a row, "−" removes one). The author and publisher fields suggest existing entries as
 you type, and picking an author fills both name and surname. The book is added to the shared catalogue and to
-your own collection. Details and decisions are in [docs/bookshelf.md](docs/bookshelf.md).
+your own collection.
+
+Clicking a book's title opens it in a dialog to edit every field but the title; the ISBN can be set while the
+book has none, and only admins can change or remove one already set. "Your collection" (in the account menu)
+lists your own books, with their copies.
+
+"Authors" (in the account menu) lists every author with their number of books. Renaming an author changes them
+on every book; renaming to a name another author already has merges the two. An author's name, on that page or
+under any book, opens their books: in the catalogue (`/?author=<id>`), or in your collection
+(`/collection?author=<id>`) when you are browsing it. Details and decisions are in
+[docs/bookshelf.md](docs/bookshelf.md).
 
 ## User management
 
-Admins manage users in the web app: the "Admin" button next to their email opens the users list. "Create user"
-opens a dialog to add a regular user, and clicking a user's email opens a dialog to change their role, lock state
-or password, or to delete them. The same operations are available from the CLI.
+Admins manage users in the web app: the "Admin" link in the account menu (top right) opens the users list.
+"Create user" opens a dialog to add a regular user, and clicking a user's email opens a dialog to change their
+role, lock state or password, or to delete them. The same operations are available from the CLI. Deleting or
+demoting an admin is refused when no other admin would remain.
 
 ### CLI
 
@@ -101,7 +112,7 @@ characters long (12 by default).
 
 | Command | What it does |
 |---|---|
-| `init-db` | Create missing tables, columns, constraints and indexes (safe to rerun) |
+| `init-db` | Create missing tables, columns, constraints and indexes, and create or replace the functions (safe to rerun) |
 | `prune-login-failures` | Delete failed logins older than `APP_LOGIN_BLOCK_MINUTES` (run periodically, e.g. hourly from cron) |
 | `create-admin EMAIL` | Create the first admin (refused once any admin exists) |
 | `create-user EMAIL` | Create a regular user |
@@ -113,8 +124,9 @@ characters long (12 by default).
 
 All commands except `init-db`, `prune-login-failures` and `create-admin` require admin credentials
 (`--admin-email`, or prompted, plus the admin password). Admins cannot lock, demote or
-delete their own account. `create-admin` and `create-user` only accept valid email
-addresses (no reserved or LAN-style domains such as `.local`), the same rule as the login form.
+delete their own account, and demoting or deleting the only admin left is refused.
+`create-admin` and `create-user` only accept valid email addresses (no reserved or LAN-style
+domains such as `.local`), the same rule as the login form.
 
 ## Tests and checks
 
@@ -155,14 +167,16 @@ from cron:
 0 * * * * docker exec <container> /app/venv/bin/flask --app bookshelf prune-login-failures
 ```
 
-After upgrading, run `init-db` again: it adds any new tables, columns, constraints and indexes to an existing database.
+After upgrading, run `init-db` again: it adds any new tables, columns, constraints and indexes to an existing
+database, and replaces the functions (such as the book search) with the current ones.
 New check constraints apply to rows written from then on; Firebird does not recheck existing rows.
 
 ## Schema changes
 
-The schema lives in `bookshelf/db/schema.py`: `DOMAINS`, `TABLES`, `CONSTRAINTS` and `INDEXES`, created in
-that order. `init-db` creates whatever is missing and is safe to rerun, but it does not change objects that
-already exist.
+The schema lives in `bookshelf/db/schema.py`: `DOMAINS`, `TABLES`, `CONSTRAINTS`, `INDEXES` and `FUNCTIONS`,
+created in that order. `init-db` creates whatever is missing and is safe to rerun, but it does not change objects
+that already exist, except functions: each is `CREATE OR ALTER`ed on every run, so a change to one (e.g.
+`BOOK_MATCHES`, the book lists' search) reaches existing databases with no upgrade step.
 
 - `TABLES` holds only columns, with their types, `NOT NULL` and defaults. Every table constraint (primary key,
   unique, check, foreign key) is a named `ALTER TABLE … ADD CONSTRAINT` in `CONSTRAINTS`, never written inside

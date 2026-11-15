@@ -11,8 +11,8 @@ Frontend is developed using HTMX library as PWA, to permit to install on mobile 
 Decisions:
 
  - Data access uses `firebird-driver` with literal SQL queries; no ORM.
- - The schema is created by `init-db`, which creates missing domains, tables, constraints and indexes and is safe
-   to rerun. Tables are created with their columns only; every constraint is added separately with a name of our
+ - The schema is created by `init-db`, which creates missing domains, tables, constraints and indexes, creates or
+   replaces the PSQL functions (`BOOK_MATCHES`, the book lists' search), and is safe to rerun. Tables are created with their columns only; every constraint is added separately with a name of our
    own (`PK_USERS`, `UQ_USERS_EMAIL`, …) instead of one Firebird generates.
    Until the first release is tagged the schema is not final: tables are changed by editing their `CREATE TABLE`
    in place, with no migration steps, and development databases are recreated. Once a release is tagged, changes to
@@ -154,7 +154,8 @@ email, the name and surname (optional) and the password (typed twice). New users
 **Rules.** Emails and passwords follow the rules used everywhere else: a valid email not used by another user, and
 a password of at least `APP_MIN_PASSWORD_LENGTH` characters (12 by default). An admin cannot demote, lock or delete
 their own account, so at least one active admin always remains; they may change their own password and stay logged
-in.
+in. Deleting or demoting an admin is also refused when no other admin would remain ("… is the only admin left"),
+which only two admins removing each other at the same moment could otherwise cause.
 
 **Effects.** Changes apply from the user's next request: a locked user, or one whose password changed, is logged out
 on every device, "remember me" cookie included, and a demoted admin loses the admin area. After a save, a creation
@@ -198,8 +199,11 @@ Every CLI operation except `create-admin` requires valid admin credentials (corr
 locked) and is logged with the admin who performed it. An admin cannot lock, demote or delete their own account.
 
 Because every admin operation needs an active (not locked) admin, and no admin can lock, demote or delete
-themselves, the admin performing an operation always remains an active admin. The CLI therefore can never leave
-the system without an active admin, so the last admin needs no separate protection.
+themselves, the admin performing an operation always remains an active admin. Two admins removing each other at the
+same moment (from the CLI or the admin area) could still both succeed and leave no admin, and the next process
+would then open the setup wizard to anyone (see "First run"). So deleting or demoting an admin first updates the
+other admins' rows, unchanged, inside its transaction: two such removals at once conflict, and one fails with an
+error instead of both succeeding. With no other admin left it is refused (`LastAdminError`).
 
 Known limitation: two `create-admin` runs at the same moment can both find no admin and both succeed, leaving two
 admins. Firebird 3 cannot enforce "only one admin" with a constraint, and `create-admin` is run by hand once at
@@ -211,8 +215,8 @@ Status: built, in the top bar of every page after login.
 
 The upper right corner of the top bar shows who is logged in: their name and surname (or their email, without a
 name) next to a round avatar with their initials (or the email's first letter). On a phone only the avatar is
-shown. Clicking it opens a menu with the name and the email, "Your account", "Your collection", "Admin" (admins
-only) and "Log out".
+shown. Clicking it opens a menu with the name and the email, "Your account", "Your collection", "Authors",
+"Admin" (admins only) and "Log out".
 
 Decisions:
 
@@ -240,8 +244,9 @@ Decisions:
 ## Books
 
 Status: tables created by `init-db` (`BOOKS`, `AUTHORS`, `BOOK_AUTHORS`, `BOOK_TAGS`, `COLLECTION_BOOKS`). Books
-can be listed (see Main page), added (see "Adding a book") and kept in a collection (see "Your collection"); not yet
-edited or deleted.
+can be listed (see Main page, and "One author's books"), added (see "Adding a book"), edited (every field but
+the title, see "Editing a book") and kept in a collection (see "Your collection"); not yet deleted. Authors are
+listed and renamed on their own page (see "Authors").
 
 Decisions:
 
@@ -252,16 +257,19 @@ Decisions:
    removing it leaves the book in the catalogue. Users change only their own collection. Every user can see who
    owns each book and how many copies.
  - Every user, regular or admin, may add a book to the catalogue and edit any book in it, not only the books
-   they added. Only admins may delete a book.
+   they added; which fields can be edited is in "Editing a book". Only admins may delete a book.
  - A book has a title (required) and optionally authors, ISBN, publisher, publication year, volume and notes.
    A book can have several authors, in the order given; each author is a name and a surname.
  - Authors are their own records, shared between books: when a book is added or edited, each author is picked
-   from the existing ones by name and surname, or created if new. All books by one author can be listed, and a
-   misspelled name is fixed once for every book.
+   from the existing ones by name and surname, or created if new. All books by one author can be listed. A
+   misspelled name is fixed once for every book by renaming the author (see "Authors"), or on one book by editing
+   it (see "Editing a book").
  - An author is a name and a surname, and that pair is unique: two different authors cannot share both, so
    picking an author is never ambiguous. Authors may share a surname (Charlotte and Emily Brontë). The name (the
    given name) may be empty, for authors known by one name ("Homer"); it is stored as '' rather than NULL so that
-   uniqueness still holds. An author used by a book cannot be deleted; unused authors are kept until removed.
+   uniqueness still holds. An author used by a book cannot be deleted. An author no book uses any more after a book
+   is edited is deleted, and so is an author merged into another by a rename; there is no other way to delete
+   one.
  - Books are classified by free tags only: a book can have any number of tags, typed freely. There are no
    genres, series or shelf locations. Tags are stored as text on each book, with no list of tags of their own.
  - The volume is free text ("2", "II", "3/4"), since volumes are numbered in many ways. Books have no language.
@@ -335,6 +343,74 @@ Known limitations:
  - If two authors have the same full name split differently ("Anne Marie" + "Smith" and "Anne" +
    "Marie Smith"), picking either suggestion fills the row with the first one.
 
+### Editing a book
+
+Status: built at `/books/<id>`, opened from the titles in the main page and in "Your collection".
+
+Clicking a book's title, in the main page or in "Your collection", opens the book in a modal dialog over the
+list. Every field but the title can be changed; "Save" applies the changes, closes the dialog and
+reloads the list with a confirmation. Without JavaScript the title is a link to the same form as a page
+(`/books/<id>`).
+
+Decisions:
+
+ - Editable: authors, publisher, publication year, volume, notes and tags, with the same fields, rules and
+   suggestions as when adding a book. Each may be emptied: an empty publisher, year, volume or notes is stored as
+   NULL, no authors or no tags leave the book with none.
+ - Authors are picked again on every save, as when adding: each row is the existing author with that name and
+   surname (ignoring case), or a new one. So a misspelled author is fixed on a book by typing the right name
+   (or picking it from the suggestions). An author that no book uses any more after a save is deleted, so the
+   misspelled name stops being suggested.
+ - The ISBN can be set only while the book has none. Once a book has an ISBN, regular users see it shown, not
+   editable. A new ISBN follows the rules for adding a book: a valid ISBN-10 or ISBN-13, saved as ISBN-13, refused
+   (with a message naming it) if another book in the catalogue has it.
+ - Admins can correct a wrong ISBN: for them the ISBN stays a field, filled in, which they can change (same rules)
+   or empty to remove the ISBN. A wrong but valid ISBN would otherwise stay forever, and also keep the real book
+   with that ISBN out of the catalogue. The log records the old and the new ISBN.
+ - The title is never editable: it is shown, not a field.
+ - Any user may edit any book, as for adding; copies are not part of this form (they belong to "Your
+   collection").
+ - Tags are typed as for adding a book: separated by commas, blank ones skipped, a repeat (ignoring case) kept
+   once. Saving replaces the book's tags with the ones typed.
+ - Saving changes nothing else, so a save with no changes is harmless. The log records who edited which book and
+   which fields changed.
+ - If two users edit the same book at once, the last save wins for every field but a new ISBN, including an ISBN
+   corrected by admins. When a book had no ISBN, a second save setting one is refused if the first one already
+   set it ("This book already has an ISBN").
+
+Technical details:
+
+ - `find_book_details` loads every field (`BookDetails`); `update_book` saves in one read-committed transaction,
+   like `add_book`. The ISBN is set with `UPDATE BOOKS SET ISBN = ? WHERE ID = ? AND ISBN IS NULL`: no row
+   updated means the book already has one (`IsbnAlreadySetError`), so a regular user never changes an ISBN, even
+   from a form opened before someone else set it. An admin's correction passes `replace_isbn=True`, which sets the
+   ISBN, or NULL, without that condition; an ISBN saved unchanged is not written again, so a save of other fields
+   does not undo a correction made meanwhile. The title is in no `UPDATE`, so it cannot change.
+ - `EditBookForm` holds every editable field (authors, ISBN, publisher, year, volume, tags, notes) with their
+   validators and the author-row handling; `BookForm`, for adding a book, adds the title and copies. The author
+   rows are `_author_rows.html`, shared by both forms with an `id_prefix` (`book-`, `edit-book-`), since both
+   dialogs are on the main page.
+ - `update_book` replaces the book's `BOOK_AUTHORS` rows (deleted, then inserted in the new order), then deletes
+   each former author with no book left; a foreign-key violation there means a concurrent transaction is linking
+   that author, and it is kept.
+ - The ISBN field is in the form while the book has none, and always for admins; an ISBN posted by a regular user
+   for a book that has one is ignored.
+ - The title link carries the list it was opened from (`list=collection`, or the catalogue by default) and its
+   search, order and page; the form keeps them in hidden fields, and saving goes back there. Any other `list` value
+   goes back to the catalogue, so the form cannot redirect elsewhere.
+ - Templates: `book.html` (the page without JavaScript), `_book_details.html` (the dialog's content: the fields
+   shown, then the form), `_edit_book_form.html` (the form, swapped alone when it has errors). The dialog is
+   `#book-dialog` in `main.html` and `collection.html`.
+
+Known limitations:
+
+ - Changing only the case of an author's name ("frank herbert" to "Frank Herbert") changes nothing: the existing
+   author is picked, as spelled. Renaming the author (see "Authors") changes it for every book.
+ - An author left without books is kept if a book being added at that same moment already links to it. If
+   instead the save deletes the author between the moment adding a book looks it up and the moment it links it,
+   adding that book fails with the generic error and has to be submitted again. Both need two people working on
+   the same author within milliseconds.
+
 ## Main page
 
 Status: built at `/`, with the add-book button (see Books, "Adding a book").
@@ -346,7 +422,8 @@ Decisions:
  - The list is sorted by title by default; the user can sort it by author or by date added instead.
  - The list is shown in pages of 50 books.
  - On the phone, books are shown as a list of rows, not a grid (books have no covers; see Books).
- - Each row shows the title, the authors ("Name Surname", in their order) and the publication year.
+ - Each row shows the title, the authors ("Name Surname", in their order) and the publication year. Each author
+   links to their books (see "One author's books"); in "Your collection", to their books in the collection.
  - Under that, a book in the user's collection shows a stamp, "In your collection · 2" (the copies), linking to
    their collection; any other book an "Add to collection" button, which adds it with one copy.
  - Sorting by author uses each book's first author (surname, then name), then the title; books without
@@ -358,6 +435,16 @@ Decisions:
    reload only the list, and the address bar keeps the search, order and page so they can be bookmarked.
    Without JavaScript the search is a plain form and the page links are plain links.
  - A page number out of range shows the nearest page.
+ - The search condition lives in one place, the `BOOK_MATCHES` PSQL function (`bookshelf/db/schema.py`, created
+   or replaced by `init_db`), called by every list and count query of the catalogue and the collection.
+ - Each list query also counts the books matching the search (`COUNT(*) OVER ()`), so a page is one scan. The
+   separate count query runs only for a page past the last, to find the last one.
+
+Known limitations:
+
+ - The search looks for the text anywhere in titles, ISBNs and author names (`CONTAINING`), which no index can
+   serve: every page reads every book (in the collection, every book of the user). That is fine for a personal or
+   family library; tens of thousands of books would need another kind of search.
 
 ## Your collection
 
@@ -365,6 +452,7 @@ Status: built at `/collection`, linked from the account menu.
 
 The books the user owns, from the shared catalogue: the same list as the main page (search, order, pages of 50),
 showing only their books. Each row has the number of copies, editable, with "Save", and a "Remove" button.
+It can be limited to one author's books (`/collection?author=<id>`, see "One author's books").
 
 Decisions:
 
@@ -374,6 +462,10 @@ Decisions:
    says so.
  - Removing a book takes one click, with no confirmation: it only leaves the collection, and can be added again
    from the main page (with one copy).
+ - Changing the copies of, or removing, a book that is not in the collection (e.g. removed in another tab) shows
+   an error saying so.
+ - Adding a book that was deleted from the catalogue after the page was loaded answers 404, as for an unknown
+   book.
  - Copies are between 1 and 999, as when adding a book.
  - With htmx, the rows' buttons (add, save, remove) reload only the list, keeping its search, order and page,
    with a message above it. Without JavaScript they are plain forms, and the server redirects back to the list
@@ -384,3 +476,71 @@ Decisions:
 Known limitations:
 
  - Saving copies or removing a book reloads the list, so the focus goes back to the top of the page.
+
+## Authors
+
+Status: built at `/authors`, linked from the account menu.
+
+Every author in the catalogue, by surname then name ("Herbert, Frank"; "Homer" alone), with how many books are
+theirs, a search box (name or surname, ignoring case) and pages of 50. An author's name opens their books; each
+row's "Rename" opens a dialog to change the author's name and surname, for every book at once.
+
+Decisions:
+
+ - Any user may rename an author, as any user may edit any book. The rename is logged with who did it.
+ - Same rules as an author row: the surname is required, the name optional (empty for authors known by one
+   name), both trimmed, at most 127 characters.
+ - Changing only the case ("frank herbert" to "Frank Herbert") renames the author in place, which editing a book
+   cannot do.
+ - Renaming to a name another author already has (ignoring case) merges the two, since a name and surname pair
+   is unique: every book of the renamed author gets the other one, as that one is spelled, and the renamed author
+   is deleted. A book that had both keeps one, in the other author's place. The confirmation says "merged into"
+   instead of "renamed to". There is no separate merge action, and no confirmation step: the dialog says that a
+   name already in use joins the two.
+ - After renaming, the list reloads with a confirmation, keeping its search and page. Without JavaScript the
+   Rename link opens a page (`/authors/<id>`) with the same form.
+
+Technical details:
+
+ - `bookshelf/models/authors.py`: `list_authors`, `find_author` and `rename_author`, which runs in its own
+   read-committed transaction (as `add_book`), so an author with the new name committed by someone else meanwhile
+   is seen: the rename then becomes a merge into that author.
+ - A merge first deletes the renamed author's links to books that already have the other author, then points the
+   remaining links at the other author, then deletes the renamed author. If a book being added at that moment
+   links the renamed author, it is kept with that book. After a merge a book's author order can skip a number
+   (1, 3), which only the order matters for.
+
+Known limitations:
+
+ - A merge cannot be undone: the renamed author's spelling is gone, and splitting the books apart again means
+   editing them one by one.
+
+### One author's books
+
+Status: built at `/?author=<id>` (the catalogue) and `/collection?author=<id>` (the user's own books by that
+author). The first is linked from each name on the authors page and from the authors under each book in the
+catalogue; the second from the authors under each book in the collection.
+
+The catalogue limited to one author's books, headed "Books by Frank Herbert", with links to all books and to the
+authors page. In the collection, "Your books by Frank Herbert", with links to all your books and to all books by
+that author.
+
+Decisions:
+
+ - It is the main page's (or the collection's) list, not a page of its own: search, order, pages, the row buttons
+   ("Add to collection"; copies and "Remove") and the edit dialog all work as in the whole list, and keep to the
+   author. The list's links and forms carry the author
+   along with its search, order and page, and saving a book in the dialog goes back to it.
+ - The search searches only the author's books (title, any of their authors, ISBN).
+ - An unknown or malformed author ID is a 404, as is an author merged away since the link was made.
+ - An author under a book links to their books in the list it is shown in, so browsing the collection stays in
+   the collection.
+
+Technical details:
+
+ - The filter is the `AUTHOR_FILTER` argument of `BOOK_MATCHES` (NULL for every book), so the list and count
+   queries are unchanged; `list_books` and `list_collection` take `author_id`, and `author_filter()` in
+   `routes/main.py` reads it from a list's query string or form.
+ - The book list queries also read each author's ID, for the links: `Author` has an optional `id`, which plays
+   no part in comparing authors (still by name and surname).
+
