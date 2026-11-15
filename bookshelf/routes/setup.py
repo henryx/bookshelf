@@ -41,9 +41,10 @@ def setup_done() -> bool:
 def require_setup() -> BaseResponse | None:
     """
     Send every request to the first-run wizard until an admin exists, and
-    hide the wizard afterwards. Static files are served either way.
+    hide the wizard afterwards. Static files, the service worker and its
+    offline page are served either way.
     """
-    if request.endpoint == "static":
+    if request.endpoint == "static" or request.blueprint == "pwa":
         return None
     done = setup_done()
     if request.endpoint == "setup.wizard":

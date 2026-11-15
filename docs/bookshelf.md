@@ -23,6 +23,18 @@ Decisions:
    `Referrer-Policy: same-origin`. So no page can be framed by another site (clickjacking), and pages must not
    use inline `<script>`, `<style>` or `style=""`: htmx's own inline indicator styles are turned off
    (`includeIndicatorStyles`), their rules being in `style.css`. HSTS is set by the HTTPS proxy, not the app.
+ - PWA: `static/manifest.webmanifest` (icons in `static/icons/`) makes the app installable; the service worker
+   (`static/sw.js`) is served at `/sw.js`, so its scope is the whole app. Like `/offline`, it needs no login
+   and is served before setup is done. The worker goes to the network first, always: the cache is only a
+   fallback when the server cannot be reached, so a deploy is seen at once.
+   - Offline, the collection (`/`) and the catalogue (`/catalogue`) are shown as they were last seen online,
+     read-only: the worker marks the saved copy (`<body data-offline="<date>">`), and `app.js` shows its date,
+     disables its forms, stops htmx requests and reloads the page when the connection is back. Other pages show
+     `/offline`.
+   - The saved lists belong to one user: they are deleted when `/login`, `/logout` or `/setup` is posted, and
+     when a list loaded online redirects (the session has ended).
+   - Pages that change data are never cached, and nothing can be changed offline (no queued changes): a
+     shared catalogue edited offline would need conflict handling.
 
 ## Authentication
 

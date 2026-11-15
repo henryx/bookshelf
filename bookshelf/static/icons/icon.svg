@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Bookshelf: spines on a shelf over bookcloth (the style.css colours cloth-light,
+       cloth-deep, bone, sage, stamp and cloth-darkest). Everything but
+       the background keeps to the central 80%, the maskable safe zone. -->
+  <defs>
+    <linearGradient id="cloth" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2e6650"/>
+      <stop offset="1" stop-color="#143327"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" fill="url(#cloth)"/>
+  <rect x="148" y="170" width="46" height="186" rx="4" fill="#d8e2d6"/>
+  <rect x="148" y="196" width="46" height="8" fill="#9db8a6"/>
+  <rect x="148" y="318" width="46" height="8" fill="#9db8a6"/>
+  <rect x="202" y="140" width="38" height="216" rx="4" fill="#9db8a6"/>
+  <rect x="248" y="190" width="44" height="166" rx="4" fill="#e0245e"/>
+  <rect x="308" y="186" width="40" height="176" rx="4" fill="#d8e2d6"
+        transform="rotate(-13 348 362)"/>
+  <rect x="132" y="356" width="248" height="16" rx="3" fill="#0b1f16"/>
+</svg>

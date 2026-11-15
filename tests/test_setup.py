@@ -45,6 +45,14 @@ def test_static_files_are_served_during_setup(empty_db_app: Flask):
     assert rv.status_code == 200
 
 
+@pytest.mark.parametrize("path", ["/sw.js", "/offline"])
+def test_pwa_files_are_served_during_setup(empty_db_app: Flask, path: str):
+    """The service worker installs, with its offline page, before setup is done."""
+    rv = empty_db_app.test_client().get(path)
+
+    assert rv.status_code == 200
+
+
 def test_setup_page_shows_form(empty_db_app: Flask):
     rv = empty_db_app.test_client().get("/setup")
     html = rv.get_data(as_text=True)

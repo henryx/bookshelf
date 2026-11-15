@@ -17,6 +17,7 @@ from bookshelf.routes.auth import auth_route, login_manager
 from bookshelf.routes.authors import authors_route
 from bookshelf.routes.collection import collection_route
 from bookshelf.routes.main import main_route
+from bookshelf.routes.pwa import pwa_route
 from bookshelf.routes.setup import setup_route
 
 __all__ = ["config", "configure_logging", "create_app", "routes"]
@@ -73,6 +74,7 @@ def create_app(overrides: Mapping[str, object] | None = None) -> Flask:
     login_manager.init_app(app)
     CSRFProtect(app)
     app.register_blueprint(setup_route)
+    app.register_blueprint(pwa_route)
     app.register_blueprint(auth_route)
     app.register_blueprint(main_route)
     app.register_blueprint(collection_route)

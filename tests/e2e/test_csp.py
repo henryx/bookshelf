@@ -11,7 +11,7 @@ def test_pages_break_no_csp_rule(admin_page: Page, live_server: str):
             violations.append(message.text)
 
     admin_page.on("console", record)
-    for path in ("/", "/catalogue", "/account", "/admin/users"):
+    for path in ("/", "/catalogue", "/account", "/admin/users", "/offline"):
         admin_page.goto(f"{live_server}{path}")
         expect(admin_page.locator("main")).to_be_visible()
     # htmx at work: a search swap, the add-book dialog and its suggestions.

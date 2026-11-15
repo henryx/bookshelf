@@ -1,8 +1,15 @@
 <!doctype html>
-<html lang="en">
+{# data-service-worker: registered by app.js. Its offline copies of a page add data-offline
+   to the plain <body> tag below: keep it as it is. #}
+<html lang="en" data-service-worker="{{ url_for('pwa.service_worker') }}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  {# The installed app: its colour is the hero's bookcloth (--cloth in style.css). #}
+  <meta name="theme-color" content="#1f4b3a">
+  <link rel="manifest" href="{{ url_for('static', filename='manifest.webmanifest') }}">
+  <link rel="icon" href="{{ url_for('static', filename='icons/icon.svg') }}" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/apple-touch-icon.png') }}">
   {# Swap 4xx/5xx responses too, so server errors reach the page (htmx ignores them by default).
      No inline <style> from htmx: the CSP forbids it, and its indicator rules are in style.css. #}
   <meta name="htmx-config" content='{"includeIndicatorStyles": false, "responseHandling": [{"code": "204", "swap": false}, {"code": "[23]..", "swap": true}, {"code": "[45]..", "swap": true, "error": true}, {"code": "...", "swap": false}]}'>

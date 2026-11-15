@@ -9,6 +9,7 @@ __all__ = [
     "htmx_redirect",
     "is_htmx",
     "main",
+    "pwa",
     "setup",
 ]
 
