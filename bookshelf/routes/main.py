@@ -15,6 +15,7 @@ from werkzeug.datastructures import MultiDict
 from werkzeug.wrappers import Response as BaseResponse
 
 from bookshelf.db import get_db
+from bookshelf.models.authors import AuthorEntry, find_author
 from bookshelf.models.books import (
     SEARCH_MAX_LENGTH,
     Author,
@@ -61,11 +62,34 @@ def list_state(values: MultiDict[str, str]) -> ListState:
     return search, _sort(values.get("sort")), page
 
 
+def _author_param(values: MultiDict[str, str]) -> UUID | None:
+    """The author a book list is limited to (`author`), if it is a valid ID."""
+    try:
+        return UUID(values.get("author", ""))
+    except ValueError:
+        return None
+
+
+def _author_filter(values: MultiDict[str, str]) -> AuthorEntry | None:
+    """The author the catalogue is limited to, or None; 404 for an unknown one."""
+    if not values.get("author"):
+        return None
+    author_id = _author_param(values)
+    entry = find_author(get_db(), author_id) if author_id else None
+    if entry is None:
+        abort(404)
+    return entry
+
+
 def list_url(endpoint: str, values: MultiDict[str, str]) -> str:
-    """The URL of a book list (`endpoint`) showing the search, order and page in `values`."""
+    """
+    The URL of a book list (`endpoint`) showing the search, order, page and,
+    for the catalogue, the author in `values`.
+    """
     search, sort, page = list_state(values)
     return url_for(
         endpoint,
+        author=_author_param(values),
         q=search or None,
         sort=None if sort is Sort.TITLE else sort.value,
         page=page if page > 1 else None,
@@ -76,13 +100,24 @@ def render_catalogue(
     values: MultiDict[str, str], *, partial: bool, notice: str | None = None
 ) -> str:
     """
-    The catalogue with the search, order and page in `values`: the list
-    alone when `partial`, else the main page. `notice` is shown above it.
+    The catalogue with the search, order, page and author (one author's
+    books) in `values`: the list alone when `partial`, else the main page.
+    `notice` is shown above it.
     """
     search, sort, page = list_state(values)
+    author = _author_filter(values)
+    books = list_books(
+        get_db(),
+        current_user.id,
+        search,
+        sort,
+        page,
+        author_id=author.id if author else None,
+    )
     return render_template(
         "_book_list.html" if partial else "main.html",
-        books=list_books(get_db(), current_user.id, search, sort, page),
+        books=books,
+        author=author,
         search=search,
         sort=sort,
         sorts=Sort,
@@ -165,6 +200,7 @@ def _render_book(
         form=form,
         book=book,
         list_name="collection" if endpoint == "collection.index" else "",
+        author_id=_author_param(values),
         search=search,
         sort=sort,
         page=page,

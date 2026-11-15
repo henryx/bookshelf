@@ -5,6 +5,8 @@
       hx-trigger="submit, input changed delay:300ms from:#book-search-q, change from:#book-search-sort"
       hx-target="#book-list" hx-push-url="true" hx-sync="this:replace"
       hx-indicator="#book-search-indicator" hx-disabled-elt="find button">
+  {# One author's books: the search and order keep to them. #}
+  {% if author %}<input type="hidden" name="author" value="{{ author.id }}">{% endif %}
   <input id="book-search-q" type="search" name="q" value="{{ search }}"
          maxlength="{{ search_max_length }}" placeholder="Title, author or ISBN"
          aria-label="Search books">

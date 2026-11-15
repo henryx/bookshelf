@@ -203,6 +203,7 @@ def _assert_complete_schema(conn: Connection) -> None:
         "SEARCH_TEXT",
         "ISBN_TEXT",
         "ISBN_13_TEXT",
+        "AUTHOR_FILTER",
     ]
 
 

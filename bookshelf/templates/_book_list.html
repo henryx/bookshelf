@@ -1,10 +1,13 @@
 {# A book list and its page links: the catalogue (list_endpoint main.index) or the
    user's collection (collection.index). Part of main.html and collection.html, and
    the htmx response for searches, pages and the rows' buttons, which swap the whole
-   list so the count and pages stay right. notice / list_error: shown above the list. #}
+   list so the count and pages stay right. notice / list_error: shown above the list.
+   author: the author the catalogue is limited to (one author's books), kept by every link
+   and form here; None for the whole catalogue and for the collection. #}
+{% set author_id = author.id if author else None %}
 {% set in_collection = list_endpoint == "collection.index" %}
 {% macro page_link(number, label) -%}
-  {%- set url = url_for(list_endpoint, q=search or None,
+  {%- set url = url_for(list_endpoint, author=author_id, q=search or None,
                         sort=None if sort == sorts.TITLE else sort.value, page=number) -%}
   <a href="{{ url }}" hx-get="{{ url }}" hx-target="#book-list" hx-push-url="true"
      hx-indicator="#book-pages-indicator">{{ label }}</a>
@@ -16,6 +19,7 @@
         hx-post="{{ url }}" hx-target="#book-list" hx-swap="innerHTML"
         hx-indicator="closest li" hx-disabled-elt="find button">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    {% if author_id %}<input type="hidden" name="author" value="{{ author_id }}">{% endif %}
     <input type="hidden" name="q" value="{{ search }}">
     <input type="hidden" name="sort" value="{{ sort }}">
     <input type="hidden" name="page" value="{{ books.page }}">
@@ -32,7 +36,7 @@
         {# The book's details open in the page's dialog; without JavaScript, on their page. #}
         {% set book_url = url_for("main.book", book_id=book.id,
                                   list="collection" if in_collection else None,
-                                  q=search or None,
+                                  author=author_id, q=search or None,
                                   sort=None if sort == sorts.TITLE else sort.value,
                                   page=books.page if books.page > 1 else None) %}
         <a class="book-title" href="{{ book_url }}" hx-get="{{ book_url }}"

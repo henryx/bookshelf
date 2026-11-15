@@ -6,6 +6,7 @@
   {{ form.hidden_tag() }}
   {# The list to go back to after saving, with its search, order and page. #}
   <input type="hidden" name="list" value="{{ list_name }}">
+  {% if author_id %}<input type="hidden" name="author" value="{{ author_id }}">{% endif %}
   <input type="hidden" name="q" value="{{ search }}">
   <input type="hidden" name="sort" value="{{ sort }}">
   <input type="hidden" name="page" value="{{ page }}">

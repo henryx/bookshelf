@@ -39,3 +39,20 @@ def test_rename_an_author_in_the_dialog(
     expect(reader_page.locator(".book-authors")).to_have_text(
         ["Frank Herbert", "Jane Austen"]
     )
+
+
+def test_an_authors_books_keep_to_the_author(
+    misspelled, reader_page: Page, live_server: str
+):
+    reader_page.goto(f"{live_server}/authors")
+
+    reader_page.get_by_role("link", name="Herbert, Frnak").click()
+
+    expect(
+        reader_page.get_by_role("heading", name="Books by Frnak Herbert")
+    ).to_be_visible()
+    expect(reader_page.locator(".book-title")).to_have_text(["Dune"])
+    reader_page.get_by_label("Search books").fill("e")  # Dune and Emma both match
+    expect(reader_page.locator(".book-count")).to_have_text("1 book")
+    expect(reader_page.locator(".book-title")).to_have_text(["Dune"])
+    assert "author=" in reader_page.url

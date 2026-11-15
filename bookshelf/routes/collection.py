@@ -54,6 +54,7 @@ def _render_collection(
         sorts=Sort,
         search_max_length=SEARCH_MAX_LENGTH,
         list_endpoint="collection.index",
+        author=None,
         notice=notice,
         list_error=error,
     )

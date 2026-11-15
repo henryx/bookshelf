@@ -25,10 +25,12 @@ from bookshelf.models.books import (
     SEARCH_MAX_LENGTH,
     Author,
     NewBook,
+    Sort,
     add_book,
     find_book_details,
+    list_books,
 )
-from bookshelf.models.users import User
+from bookshelf.models.users import User, create_user
 
 HTMX = {"HX-Request": "true"}
 FRNAK = Author("Frnak", "Herbert")
@@ -205,8 +207,8 @@ def test_authors_page(db_app, client, user):
     html = client.get("/authors").get_data(as_text=True)
 
     assert "<html" in html
-    assert re.search(r">Herbert, Frank</span>\s*<span[^>]*>1 book</span>", html)
-    assert ">Homer</span>" in html
+    assert re.search(r">Herbert, Frank</a>\s*<span[^>]*>1 book</span>", html)
+    assert ">Homer</a>" in html
     assert 'aria-label="Rename Frank Herbert">Rename</a>' in html
 
 
@@ -324,3 +326,114 @@ def test_author_merged_away_meanwhile_is_not_found(
     rv = client.post(f"/authors/{gone.id}", data={"name": "A", "surname": "B"})
 
     assert rv.status_code == 404
+
+
+# One author's books: the catalogue filtered by author (/?author=<id>)
+
+
+def _titles(html: str) -> list[str]:
+    return re.findall(r'<a class="book-title"[^>]*>([^<]*)</a>', html)
+
+
+def test_list_books_by_one_author(db_app, user):
+    _book(db_app, user, "Dune", FRANK)
+    _book(db_app, user, "Dune Messiah", FRANK, JANE)
+    _book(db_app, user, "Emma", JANE)
+    frank = _entry(db_app, FRANK)
+
+    with db_app.app_context():
+        conn = get_db()
+        all_his = list_books(conn, user.id, author_id=frank.id)
+        searched = list_books(conn, user.id, "messiah", Sort.ADDED, author_id=frank.id)
+
+    assert [b.title for b in all_his.books] == ["Dune", "Dune Messiah"]
+    assert all_his.total == 2
+    assert [b.title for b in searched.books] == ["Dune Messiah"]
+
+
+def test_author_names_link_to_their_books(db_app, client, user):
+    _book(db_app, user, "Dune", FRANK)
+    frank = _entry(db_app, FRANK)
+
+    html = client.get("/authors").get_data(as_text=True)
+
+    assert (
+        f'<a class="author-name" href="/?author={frank.id}">Herbert, Frank</a>' in html
+    )
+
+
+def test_an_authors_books_page(db_app, client, user):
+    _book(db_app, user, "Dune", FRANK)
+    _book(db_app, user, "Emma", JANE)
+    frank = _entry(db_app, FRANK)
+
+    html = client.get(f"/?author={frank.id}").get_data(as_text=True)
+
+    assert _titles(html) == ["Dune"]
+    assert "Books by Frank Herbert" in html
+    assert '<a href="/">All books</a>' in html
+    # The search keeps to the author.
+    assert f'<input type="hidden" name="author" value="{frank.id}">' in html
+
+
+def test_an_authors_books_with_htmx_search(db_app, client, user):
+    _book(db_app, user, "Dune", FRANK)
+    _book(db_app, user, "Dune Messiah", FRANK)
+    _book(db_app, user, "Dune: The Graphic Novel", JANE)
+    frank = _entry(db_app, FRANK)
+
+    html = client.get(f"/?author={frank.id}&q=messiah", headers=HTMX).get_data(
+        as_text=True
+    )
+
+    assert "<html" not in html
+    assert _titles(html) == ["Dune Messiah"]
+
+
+def test_an_authors_page_links_keep_the_author(db_app, client, user):
+    for n in range(51):
+        _book(db_app, user, f"Book {n:02}", FRANK)
+    frank = _entry(db_app, FRANK)
+
+    html = client.get(f"/?author={frank.id}").get_data(as_text=True)
+
+    assert f'href="/?author={frank.id}&amp;page=2"' in html
+    book_link = re.search(r'<a class="book-title" href="([^"]*)"', html)
+    assert book_link is not None
+    assert f"author={frank.id}" in book_link.group(1)
+
+
+def test_add_to_collection_from_an_authors_books(db_app, client, user, password):
+    with db_app.app_context():
+        other = create_user(get_db(), "other@example.com", password)
+    _book(db_app, other, "Dune", FRANK)
+    _book(db_app, other, "Emma", JANE)
+    dune = _book(db_app, other, "Dune Messiah", FRANK)
+    frank = _entry(db_app, FRANK)
+
+    rv = client.post(
+        f"/collection/books/{dune}/add",
+        data={"copies": "1", "author": str(frank.id), "page": "1"},
+        headers={**HTMX, "HX-Target": "book-list"},
+    )
+
+    assert _titles(rv.get_data(as_text=True)) == ["Dune", "Dune Messiah"]
+
+
+def test_saving_a_book_returns_to_its_authors_books(db_app, client, user):
+    dune = _book(db_app, user, "Dune", FRANK)
+    frank = _entry(db_app, FRANK)
+    data = {
+        "authors-0-name": "Frank",
+        "authors-0-surname": "Herbert",
+        "author": str(frank.id),
+    }
+
+    rv = client.post(f"/books/{dune}", data=data, headers=HTMX)
+
+    assert rv.headers["HX-Redirect"] == f"/?author={frank.id}"
+
+
+@pytest.mark.parametrize("author", [str(uuid4()), "not-an-id"])
+def test_unknown_authors_books_are_not_found(client, author):
+    assert client.get(f"/?author={author}").status_code == 404

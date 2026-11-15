@@ -184,7 +184,7 @@ class BookPage:
 # the matches themselves: this one is only for a page past the last.
 _COUNT_QUERY = """
     SELECT COUNT(*) FROM BOOKS b
-    WHERE BOOK_MATCHES(b.ID, b.TITLE, b.ISBN, ?, ?, ?)
+    WHERE BOOK_MATCHES(b.ID, b.TITLE, b.ISBN, ?, ?, ?, ?)
 """
 
 # One page of books, then a row per author (one with NULL for a book without
@@ -198,7 +198,7 @@ _LIST_QUERIES: dict[Sort, str] = {
         FROM (
             SELECT b.ID, b.TITLE, b.PUBLICATION_YEAR, COUNT(*) OVER () AS TOTAL
             FROM BOOKS b
-            WHERE BOOK_MATCHES(b.ID, b.TITLE, b.ISBN, ?, ?, ?)
+            WHERE BOOK_MATCHES(b.ID, b.TITLE, b.ISBN, ?, ?, ?, ?)
             ORDER BY b.TITLE, b.ID
             OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
         ) p
@@ -219,7 +219,7 @@ _LIST_QUERIES: dict[Sort, str] = {
                     FROM BOOK_AUTHORS fba JOIN AUTHORS fa ON fa.ID = fba.AUTHOR_ID
                     WHERE fba.BOOK_ID = b.ID ORDER BY fba.SORT_ORDER) AS FIRST_NAME
             FROM BOOKS b
-            WHERE BOOK_MATCHES(b.ID, b.TITLE, b.ISBN, ?, ?, ?)
+            WHERE BOOK_MATCHES(b.ID, b.TITLE, b.ISBN, ?, ?, ?, ?)
             ORDER BY FIRST_SURNAME NULLS LAST, FIRST_NAME, b.TITLE, b.ID
             OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
         ) p
@@ -235,7 +235,7 @@ _LIST_QUERIES: dict[Sort, str] = {
             SELECT b.ID, b.TITLE, b.PUBLICATION_YEAR, b.CREATED_AT,
                    COUNT(*) OVER () AS TOTAL
             FROM BOOKS b
-            WHERE BOOK_MATCHES(b.ID, b.TITLE, b.ISBN, ?, ?, ?)
+            WHERE BOOK_MATCHES(b.ID, b.TITLE, b.ISBN, ?, ?, ?, ?)
             ORDER BY b.CREATED_AT DESC, b.ID
             OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
         ) p
@@ -252,7 +252,7 @@ _COLLECTION_COUNT_QUERY = """
     SELECT COUNT(*) FROM BOOKS b
     JOIN COLLECTION_BOOKS cb ON cb.BOOK_ID = b.ID
     WHERE cb.USER_ID = ?
-      AND BOOK_MATCHES(b.ID, b.TITLE, b.ISBN, ?, ?, ?)
+      AND BOOK_MATCHES(b.ID, b.TITLE, b.ISBN, ?, ?, ?, ?)
 """
 
 # As _LIST_QUERIES, in one user's collection. "Date added" is the date the
@@ -266,7 +266,7 @@ _COLLECTION_QUERIES: dict[Sort, str] = {
             FROM BOOKS b
             JOIN COLLECTION_BOOKS cb ON cb.BOOK_ID = b.ID
             WHERE cb.USER_ID = ?
-              AND BOOK_MATCHES(b.ID, b.TITLE, b.ISBN, ?, ?, ?)
+              AND BOOK_MATCHES(b.ID, b.TITLE, b.ISBN, ?, ?, ?, ?)
             ORDER BY b.TITLE, b.ID
             OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
         ) p
@@ -288,7 +288,7 @@ _COLLECTION_QUERIES: dict[Sort, str] = {
             FROM BOOKS b
             JOIN COLLECTION_BOOKS cb ON cb.BOOK_ID = b.ID
             WHERE cb.USER_ID = ?
-              AND BOOK_MATCHES(b.ID, b.TITLE, b.ISBN, ?, ?, ?)
+              AND BOOK_MATCHES(b.ID, b.TITLE, b.ISBN, ?, ?, ?, ?)
             ORDER BY FIRST_SURNAME NULLS LAST, FIRST_NAME, b.TITLE, b.ID
             OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
         ) p
@@ -304,7 +304,7 @@ _COLLECTION_QUERIES: dict[Sort, str] = {
             FROM BOOKS b
             JOIN COLLECTION_BOOKS cb ON cb.BOOK_ID = b.ID
             WHERE cb.USER_ID = ?
-              AND BOOK_MATCHES(b.ID, b.TITLE, b.ISBN, ?, ?, ?)
+              AND BOOK_MATCHES(b.ID, b.TITLE, b.ISBN, ?, ?, ?, ?)
             ORDER BY b.CREATED_AT DESC, b.ID
             OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
         ) p
@@ -382,9 +382,11 @@ def _isbn_searches(text: str) -> tuple[str, str]:
     return typed, typed
 
 
-def _search_params(search: str) -> tuple[str, str, str]:
-    """BOOK_MATCHES's search parameters: the text, then the ISBN texts."""
-    return search, *_isbn_searches(search)
+def _search_params(
+    search: str, author_id: UUID | None
+) -> tuple[str, str, str, bytes | None]:
+    """BOOK_MATCHES's search parameters: the text, the ISBN texts, the author."""
+    return search, *_isbn_searches(search), author_id.bytes if author_id else None
 
 
 # ID, TITLE, PUBLICATION_YEAR, the user's COPIES, then one author's NAME, SURNAME.
@@ -437,17 +439,19 @@ def list_books(
     sort: Sort = Sort.TITLE,
     page: int = 1,
     *,
+    author_id: UUID | None = None,
     page_size: int = PAGE_SIZE,
 ) -> BookPage:
     """
     One page of the catalogue, filtered by `search` (title, author or ISBN,
-    ignoring case), with the copies `user_id` owns of each book. A page out
-    of range gives the nearest existing page.
+    ignoring case) and, when given, to the books of the author `author_id`,
+    with the copies `user_id` owns of each book. A page out of range gives
+    the nearest existing page.
     """
     search = search.strip()
     if len(search) > SEARCH_MAX_LENGTH:
         return BookPage([], 0, 1, page_size)
-    params = _search_params(search)
+    params = _search_params(search, author_id)
     with conn.cursor() as cur:
         return _book_page(
             cur,
@@ -474,7 +478,7 @@ def list_collection(
     search = search.strip()
     if len(search) > SEARCH_MAX_LENGTH:
         return BookPage([], 0, 1, page_size)
-    params = (user_id.bytes, *_search_params(search))
+    params = (user_id.bytes, *_search_params(search, None))
     with conn.cursor() as cur:
         return _book_page(
             cur,

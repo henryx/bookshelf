@@ -707,13 +707,16 @@ a.button.secondary,
 }
 
 /* The title opens the book: a title, not a blue link, until pointed at. */
-a.book-title {
+a.book-title,
+a.author-name {
   color: inherit;
   text-decoration: none;
 }
 
 a.book-title:hover,
-a.book-title:focus-visible {
+a.book-title:focus-visible,
+a.author-name:hover,
+a.author-name:focus-visible {
   text-decoration: underline;
   text-decoration-color: var(--stamp);
 }
@@ -829,8 +832,8 @@ a.book-title:focus-visible {
   padding-bottom: 6rem;
 }
 
-/* Authors list: surname first, in the display face, the book count in mono,
-   the Rename button at the end of the row. */
+/* Authors list: surname first, in the display face (a link to their books),
+   the book count in mono, the Rename button at the end of the row. */
 .authors {
   list-style: none;
   margin: 0;

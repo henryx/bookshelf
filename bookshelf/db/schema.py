@@ -227,7 +227,8 @@ FUNCTIONS: dict[str, str] = {
     # "name surname" contains the text, ignoring case (CONTAINING always does).
     # ISBNs are searched for two texts: see _isbn_searches in models/books.py.
     # CONTAINING '' is true, so an empty search matches every book. NULL
-    # (no ISBN, no author) counts as no match.
+    # (no ISBN, no author) counts as no match. With AUTHOR_FILTER, only that
+    # author's books match.
     "BOOK_MATCHES": """
         CREATE OR ALTER FUNCTION BOOK_MATCHES (
             BOOK_ID TYPE OF COLUMN BOOKS.ID,
@@ -235,11 +236,18 @@ FUNCTIONS: dict[str, str] = {
             BOOK_ISBN TYPE OF COLUMN BOOKS.ISBN,
             SEARCH_TEXT VARCHAR(255),
             ISBN_TEXT VARCHAR(255),
-            ISBN_13_TEXT VARCHAR(255)
+            ISBN_13_TEXT VARCHAR(255),
+            AUTHOR_FILTER TYPE OF COLUMN AUTHORS.ID
         ) RETURNS BOOLEAN
         AS
         BEGIN
-            RETURN COALESCE(
+            RETURN (
+                AUTHOR_FILTER IS NULL
+                OR EXISTS (
+                    SELECT 1 FROM BOOK_AUTHORS fa
+                    WHERE fa.BOOK_ID = :BOOK_ID AND fa.AUTHOR_ID = :AUTHOR_FILTER
+                )
+            ) AND COALESCE(
                 BOOK_TITLE CONTAINING SEARCH_TEXT
                 OR BOOK_ISBN CONTAINING ISBN_TEXT
                 OR BOOK_ISBN CONTAINING ISBN_13_TEXT
