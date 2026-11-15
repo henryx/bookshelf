@@ -190,18 +190,12 @@ that already exist, except functions: each is `CREATE OR ALTER`ed on every run, 
   `CREATE TABLE`; a test fails if one is. Constraints run in order, so a foreign key comes after the key it
   references.
 
-- Until the first release is tagged, the schema is not final: change a table by editing its `CREATE TABLE`
-  in `TABLES` directly, and recreate your development database (drop it, then run `init-db` or the setup
-  wizard). Tests always start from an empty database. With the Docker container from "Development setup",
-  delete the container and its volume, then start it again with the same `docker run` command:
-
-  ```sh
-  docker rm -f bookshelf-firebird
-  docker volume rm bookshelf-firebird-data
-  ```
-- Once a release is tagged, released tables must not be edited in place: changes to them will need upgrade
-  steps that `init-db` applies to existing databases. That mechanism will be added with the first change that
-  needs it.
+- The schema is frozen since 1.0.0: databases created by a release must keep working after an upgrade, so
+  the domains, tables, constraints and indexes it created must not be edited in place in `schema.py`.
+  - Adding a new domain, table or index needs no upgrade step: `init-db` creates whatever is missing.
+  - Changing a released one (a column added, dropped, renamed or retyped, a constraint added to a released
+    table or changed) needs an upgrade step that `init-db` applies to existing databases. That mechanism will
+    be added with the first change that needs it.
 
 ## CI and releases
 

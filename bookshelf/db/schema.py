@@ -2,9 +2,8 @@ from firebird.driver import Connection
 
 __all__ = ["init_db", "table_exists"]
 
-# Until the first release is tagged the schema is not final: change these
-# definitions in place (and recreate development databases). After it, changes
-# to released tables will need their own upgrade steps.
+# Frozen since 1.0.0: never edit a released definition in place. New ones are
+# created by init_db; changes to released ones need their own upgrade steps.
 
 # Created before TABLES, which use them.
 DOMAINS: dict[str, str] = {

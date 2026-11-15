@@ -14,9 +14,9 @@ Decisions:
  - The schema is created by `init-db`, which creates missing domains, tables, constraints and indexes, creates or
    replaces the PSQL functions (`BOOK_MATCHES`, the book lists' search), and is safe to rerun. Tables are created with their columns only; every constraint is added separately with a name of our
    own (`PK_USERS`, `UQ_USERS_EMAIL`, …) instead of one Firebird generates.
-   Until the first release is tagged the schema is not final: tables are changed by editing their `CREATE TABLE`
-   in place, with no migration steps, and development databases are recreated. Once a release is tagged, changes to
-   released tables will need upgrade steps for existing databases (see README, "Schema changes").
+   The schema is frozen since 1.0.0: released domains, tables, constraints and indexes are never edited in place.
+   New ones are created by `init-db`; changes to released ones need upgrade steps for existing databases (see
+   README, "Schema changes").
  - Every response carries security headers: a Content-Security-Policy allowing only the app's own scripts,
    styles, fonts and images (no inline code, no plugins, forms posting only to the app) and forbidding frames,
    `X-Frame-Options: DENY` for older browsers, `X-Content-Type-Options: nosniff` and

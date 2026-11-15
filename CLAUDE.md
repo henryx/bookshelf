@@ -71,9 +71,9 @@ Bookshelf library webapp is a webapp to manage a book library built with Flask u
 - Docker:
   - Limit layers in Dockerfile
 - SQL:
-  - The schema (`DOMAINS`, `TABLES`, `CONSTRAINTS`, `INDEXES` in `bookshelf/db/schema.py`) is not final until the first release is tagged:
-    edit `CREATE TABLE` statements in place, with no migration steps.
-    Once a release is tagged, released tables must not be edited in place; changes then need upgrade steps.
+  - The schema (`DOMAINS`, `TABLES`, `CONSTRAINTS`, `INDEXES` in `bookshelf/db/schema.py`) is frozen since 1.0.0:
+    never edit a released definition in place. New domains, tables and indexes are fine (`init_db` creates missing objects);
+    changing a released one needs an upgrade step applied by `init_db` (no mechanism yet: it comes with the first change that needs it, see README "Schema changes").
   - `FUNCTIONS` (PSQL functions such as `BOOK_MATCHES`, the book lists' search condition) are `CREATE OR ALTER`ed on every `init_db`: edit them in place at any time.
   - Write each query as a complete literal string.
   - Never use f-strings or other interpolation for column names, table names or clauses.
