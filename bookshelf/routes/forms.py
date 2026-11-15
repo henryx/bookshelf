@@ -170,49 +170,22 @@ class CopiesForm(FlaskForm):
 
 class EditBookForm(FlaskForm):
     """
-    A book's editable fields: ISBN (only while it has none), volume, notes
-    and tags separated by commas. BookForm adds the rest of a new book.
+    A book's editable fields: authors as rows of name and surname, ISBN
+    (while it has none, or for admins), publisher, year, volume, notes and
+    tags separated by commas. BookForm adds a new book's title and copies.
     """
 
+    authors = FieldList(FormField(AuthorForm), "Authors", min_entries=1)
     isbn = StringField("ISBN", filters=[_strip_or_none])
+    publisher = _optional_text("Publisher", _NAME_MAX_LENGTH)
+    publication_year = IntegerField(
+        "Year", validators=[Optional(), NumberRange(min=1, max=9999)]
+    )
     volume = _optional_text("Volume", 32)
     tags = StringField("Tags")
     notes = TextAreaField(
         "Notes", filters=[_strip_or_none], validators=[Optional(), Length(max=4000)]
     )
-
-    def tag_names(self) -> tuple[str, ...]:
-        return tuple((self.tags.data or "").split(","))
-
-    def validate_tags(self, _field: StringField) -> None:
-        if any(len(tag.strip()) > _TAG_MAX_LENGTH for tag in self.tag_names()):
-            raise ValidationError(
-                f"Tags cannot be longer than {_TAG_MAX_LENGTH} characters."
-            )
-
-    def validate_isbn(self, field: StringField) -> None:
-        if not field.data:
-            return
-        try:
-            normalise_isbn(field.data)
-        except InvalidIsbnError as e:
-            raise ValidationError("Not a valid ISBN.") from e
-
-
-class BookForm(EditBookForm):
-    """A new book: authors as rows of name and surname, tags separated by commas."""
-
-    title = StringField(
-        "Title",
-        filters=[_strip],
-        validators=[DataRequired(), Length(max=_NAME_MAX_LENGTH)],
-    )
-    authors = FieldList(FormField(AuthorForm), "Authors", min_entries=1)
-    publisher = _optional_text("Publisher", _NAME_MAX_LENGTH)
-    publication_year = IntegerField(
-        "Year", validators=[Optional(), NumberRange(min=1, max=9999)]
-    )
-    copies = _copies_field("Copies you own")
 
     def add_author_row(self) -> None:
         """One more empty author row (the + button without JavaScript)."""
@@ -244,10 +217,42 @@ class BookForm(EditBookForm):
         if repeated:
             raise ValidationError("Each author can be listed only once.")
 
+    def author_list(self) -> tuple[Author, ...]:
+        """The author rows as typed, empty ones included (see unique_authors)."""
+        return tuple(entry.form.to_author() for entry in self.authors)
+
+    def tag_names(self) -> tuple[str, ...]:
+        return tuple((self.tags.data or "").split(","))
+
+    def validate_tags(self, _field: StringField) -> None:
+        if any(len(tag.strip()) > _TAG_MAX_LENGTH for tag in self.tag_names()):
+            raise ValidationError(
+                f"Tags cannot be longer than {_TAG_MAX_LENGTH} characters."
+            )
+
+    def validate_isbn(self, field: StringField) -> None:
+        if not field.data:
+            return
+        try:
+            normalise_isbn(field.data)
+        except InvalidIsbnError as e:
+            raise ValidationError("Not a valid ISBN.") from e
+
+
+class BookForm(EditBookForm):
+    """A new book: the editable fields, and its title and the copies the user owns."""
+
+    title = StringField(
+        "Title",
+        filters=[_strip],
+        validators=[DataRequired(), Length(max=_NAME_MAX_LENGTH)],
+    )
+    copies = _copies_field("Copies you own")
+
     def to_book(self) -> NewBook:
         return NewBook(
             title=self.title.data or "",
-            authors=tuple(entry.form.to_author() for entry in self.authors),
+            authors=self.author_list(),
             isbn=self.isbn.data,
             publisher=self.publisher.data,
             publication_year=self.publication_year.data,

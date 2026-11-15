@@ -180,7 +180,8 @@ input[type="checkbox"] {
 #book-isbn,
 #book-publication_year,
 #book-copies,
-#edit-book-isbn {
+#edit-book-isbn,
+#edit-book-publication_year {
   font-family: var(--font-mono);
 }
 

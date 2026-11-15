@@ -40,6 +40,7 @@ __all__ = [
     "set_copies",
     "suggest_authors",
     "suggest_publishers",
+    "unique_authors",
     "unique_tags",
     "update_book",
 ]
@@ -589,7 +590,7 @@ def remove_from_collection(conn: Connection, user_id: UUID, book_id: UUID) -> bo
     return removed
 
 
-def _unique_authors(authors: tuple[Author, ...]) -> list[Author]:
+def unique_authors(authors: tuple[Author, ...]) -> list[Author]:
     """
     Trimmed authors with a surname, the first of each kept (ignoring case).
     Rows left entirely empty are skipped.
@@ -647,6 +648,41 @@ def _author_id(cur: Cursor, author: Author) -> bytes:
     return author_id
 
 
+def _insert_authors(cur: Cursor, book_id: UUID, authors: tuple[Author, ...]) -> None:
+    """Link a book (with no authors yet) to these authors, in order: see unique_authors."""
+    for order, author in enumerate(unique_authors(authors), start=1):
+        cur.execute(
+            "INSERT INTO BOOK_AUTHORS (BOOK_ID, AUTHOR_ID, SORT_ORDER) "
+            "VALUES (?, ?, ?)",
+            (book_id.bytes, _author_id(cur, author), order),
+        )
+
+
+def _replace_authors(cur: Cursor, book_id: UUID, authors: tuple[Author, ...]) -> None:
+    """
+    Make these the book's authors, in order. A former author that no book
+    uses any more is deleted, so a misspelled name stops being suggested.
+    """
+    cur.execute(
+        "SELECT AUTHOR_ID FROM BOOK_AUTHORS WHERE BOOK_ID = ?", (book_id.bytes,)
+    )
+    former = [author_id for (author_id,) in cur.fetchall()]
+    # All at once: the rows are checked one by one, so they cannot be reordered in place.
+    cur.execute("DELETE FROM BOOK_AUTHORS WHERE BOOK_ID = ?", (book_id.bytes,))
+    _insert_authors(cur, book_id, authors)
+    for author_id in former:
+        try:
+            cur.execute(
+                "DELETE FROM AUTHORS a WHERE a.ID = ? AND NOT EXISTS ("
+                "SELECT 1 FROM BOOK_AUTHORS ba WHERE ba.AUTHOR_ID = a.ID)",
+                (author_id,),
+            )
+        except DatabaseError as e:
+            # A book being added at this moment uses it: keep it.
+            if _FOREIGN_KEY_VIOLATION not in e.gds_codes:
+                raise
+
+
 def _insert_book(
     cur: Cursor,
     user_id: UUID,
@@ -674,12 +710,7 @@ def _insert_book(
         if isbn is not None and _UNIQUE_KEY_VIOLATION in e.gds_codes:
             raise BookExistsError(isbn) from e
         raise
-    for order, author in enumerate(_unique_authors(book.authors), start=1):
-        cur.execute(
-            "INSERT INTO BOOK_AUTHORS (BOOK_ID, AUTHOR_ID, SORT_ORDER) "
-            "VALUES (?, ?, ?)",
-            (book_id.bytes, _author_id(cur, author), order),
-        )
+    _insert_authors(cur, book_id, book.authors)
     for tag in unique_tags(book.tags):
         cur.execute(
             "INSERT INTO BOOK_TAGS (BOOK_ID, TAG) VALUES (?, ?)",
@@ -751,6 +782,9 @@ def update_book(
     conn: Connection,
     book_id: UUID,
     *,
+    authors: tuple[Author, ...],
+    publisher: str | None,
+    publication_year: int | None,
     volume: str | None,
     notes: str | None,
     tags: tuple[str, ...],
@@ -758,9 +792,10 @@ def update_book(
     replace_isbn: bool = False,
 ) -> None:
     """
-    Save a book's volume and notes (None empties them) and replace its tags
-    (as when adding a book), in one transaction; the title and the other
-    fields never change. With `isbn`, also give the book that ISBN, stored
+    Save a book's publisher, year, volume and notes (None empties them) and
+    replace its authors and tags (picked or created as when adding a book),
+    in one transaction; the title never changes, and an author no book uses
+    any more is deleted. With `isbn`, also give the book that ISBN, stored
     as ISBN-13, if it has none. With `replace_isbn` (admins correcting a
     wrong one), the ISBN becomes `isbn` whatever it was, and None removes it.
     Nothing is saved when it raises: UnknownBookError for an unknown book,
@@ -778,11 +813,13 @@ def update_book(
         transaction.cursor() as cur,
     ):
         cur.execute(
-            "UPDATE BOOKS SET VOLUME = ?, NOTES = ? WHERE ID = ?",
-            (volume, notes, book_id.bytes),
+            "UPDATE BOOKS SET PUBLISHER = ?, PUBLICATION_YEAR = ?, VOLUME = ?, "
+            "NOTES = ? WHERE ID = ?",
+            (publisher, publication_year, volume, notes, book_id.bytes),
         )
         if cur.affected_rows == 0:
             raise UnknownBookError(book_id)
+        _replace_authors(cur, book_id, authors)
         cur.execute("DELETE FROM BOOK_TAGS WHERE BOOK_ID = ?", (book_id.bytes,))
         for tag in unique_tags(tags):
             cur.execute(

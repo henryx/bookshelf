@@ -7,7 +7,7 @@ from flask import Flask
 from playwright.sync_api import Page, expect
 
 from bookshelf.db import get_db
-from bookshelf.models.books import NewBook, add_book
+from bookshelf.models.books import Author, NewBook, add_book
 from bookshelf.models.users import User
 
 
@@ -52,3 +52,23 @@ def test_title_opens_the_dialog_from_the_collection(
     reader_page.get_by_role("link", name="Dune").click()
 
     expect(reader_page.locator("#book-dialog")).to_be_visible()
+
+
+def test_fix_a_misspelled_author(db_app: Flask, user: User, reader_page: Page):
+    with db_app.app_context():
+        add_book(
+            get_db(), user.id, NewBook("Emma", authors=(Author("Jnae", "Austen"),))
+        )
+    reader_page.reload()
+
+    reader_page.get_by_role("link", name="Emma").click()
+    dialog = reader_page.locator("#book-dialog")
+    dialog.locator("#edit-book-authors-0-name").fill("Jane")
+    dialog.get_by_role("button", name="Add another author").click()
+    expect(dialog.locator("[data-row]")).to_have_count(2)
+    dialog.get_by_label("Year").fill("1815")
+    dialog.get_by_role("button", name="Save").click()
+
+    expect(reader_page.locator(".flash")).to_have_text("Book “Emma” saved.")
+    expect(reader_page.locator(".book-authors")).to_have_text("Jane Austen")
+    expect(reader_page.locator(".book-year")).to_have_text("1815")

@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from uuid import UUID
 
 from flask import (
@@ -16,6 +17,7 @@ from werkzeug.wrappers import Response as BaseResponse
 from bookshelf.db import get_db
 from bookshelf.models.books import (
     SEARCH_MAX_LENGTH,
+    Author,
     AuthorField,
     Book,
     BookDetails,
@@ -30,6 +32,7 @@ from bookshelf.models.books import (
     normalise_isbn,
     suggest_authors,
     suggest_publishers,
+    unique_authors,
     unique_tags,
     update_book,
 )
@@ -185,6 +188,11 @@ def _isbn_change(book: BookDetails, form: EditBookForm) -> tuple[str | None, boo
     return isbn, True
 
 
+def _author_keys(authors: Sequence[Author]) -> list[tuple[str, str]]:
+    """Authors as compared when picked: ignoring case."""
+    return [(a.name.casefold(), a.surname.casefold()) for a in authors]
+
+
 def _edited_fields(
     book: BookDetails, form: EditBookForm, isbn: str | None, replace_isbn: bool
 ) -> str:
@@ -192,6 +200,13 @@ def _edited_fields(
     fields = [
         name
         for name, old, new in (
+            (
+                "authors",
+                _author_keys(book.authors),
+                _author_keys(unique_authors(form.author_list())),
+            ),
+            ("publisher", book.publisher, form.publisher.data),
+            ("year", book.publication_year, form.publication_year.data),
             ("volume", book.volume, form.volume.data),
             ("notes", book.notes, form.notes.data),
             ("tags", sorted(book.tags), sorted(unique_tags(form.tag_names()))),
@@ -209,7 +224,7 @@ def _edited_fields(
 @login_required
 def book(book_id: UUID) -> BaseResponse | str:
     """
-    A book's details, and saving its volume, notes and tags, and its ISBN
+    A book's details, and saving every field but the title, and its ISBN
     while it has none. Any user may edit any book; admins may also correct
     or remove an ISBN already set. Saving goes back to the list the book was
     opened from, as it was.
@@ -219,6 +234,11 @@ def book(book_id: UUID) -> BaseResponse | str:
         abort(404)
     form = EditBookForm(
         data={
+            "authors": [
+                {"name": a.name, "surname": a.surname} for a in details.authors
+            ],
+            "publisher": details.publisher,
+            "publication_year": details.publication_year,
             "volume": details.volume,
             "notes": details.notes,
             "tags": ", ".join(details.tags),
@@ -230,6 +250,14 @@ def book(book_id: UUID) -> BaseResponse | str:
     if details.isbn and not current_user.is_admin:
         del form.isbn
     values = request.form if request.method == "POST" else request.args
+    # Without JavaScript the + and - buttons of the author rows submit the
+    # form: show it again with the row added or removed, without saving.
+    if "add_author" in request.form:
+        form.add_author_row()
+        return _render_book(form, details, values)
+    if remove := request.form.get("remove_author"):
+        form.remove_author_row(remove)
+        return _render_book(form, details, values)
     if not form.validate_on_submit():
         return _render_book(form, details, values)
 
@@ -238,6 +266,9 @@ def book(book_id: UUID) -> BaseResponse | str:
         update_book(
             get_db(),
             book_id,
+            authors=form.author_list(),
+            publisher=form.publisher.data,
+            publication_year=form.publication_year.data,
             volume=form.volume.data,
             notes=form.notes.data,
             tags=form.tag_names(),

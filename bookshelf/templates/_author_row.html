@@ -1,4 +1,4 @@
-{# One author row of the add-book form. Takes index (a number, or "__index__" in the
+{# One author row of a book form (see _author_rows.html). Takes id_prefix, index (a number, or "__index__" in the
    <template> that app.js copies), name, surname, errors and first: the first row
    has the + button, the others a - button. Both submit the form when JavaScript
    is off, so the server adds or removes the row. #}
@@ -6,7 +6,7 @@
    server (app.js sends the text as q); picking one fills both fields. #}
 {% set prefix = "authors-" ~ index %}
 {% macro author_input(field, value, placeholder) %}
-  {% set id = "book-" ~ prefix ~ "-" ~ field %}
+  {% set id = id_prefix ~ prefix ~ "-" ~ field %}
   <input id="{{ id }}" name="{{ prefix }}-{{ field }}" value="{{ value or '' }}"
          maxlength="127" autocomplete="off" placeholder="{{ placeholder }}"
          aria-label="Author {{ field }}" list="{{ id }}-suggestions" data-suggest data-author-field="{{ field }}"

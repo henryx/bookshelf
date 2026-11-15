@@ -25,12 +25,29 @@
     {% for error in f.errors %}<p class="error">{{ error }}</p>{% endfor %}
   {% endmacro %}
 
+  {% with id_prefix = "edit-book-" %}{% include "_author_rows.html" %}{% endwith %}
   {# While the book has none; once saved, only admins get the field, to correct or remove it. #}
   {% if form.isbn and book.isbn %}
     {{ field(form.isbn, "Empty it to remove it. Only admins can change or remove it.", autocomplete="off") }}
   {% elif form.isbn %}
     {{ field(form.isbn, "ISBN-10 or ISBN-13. Once saved, only admins can change it.", autocomplete="off") }}
   {% endif %}
+  {# Publisher and year side by side, as when adding a book. #}
+  <div class="field-row">
+    <div class="field">
+      {{ field(form.publisher, maxlength=255, autocomplete="off", list="edit-book-publisher-suggestions",
+               data_suggest=True, **{
+                 "hx-get": url_for("main.publisher_suggestions"),
+                 "hx-trigger": "input changed delay:200ms",
+                 "hx-target": "#edit-book-publisher-suggestions",
+                 "hx-swap": "innerHTML",
+                 "hx-sync": "this:replace",
+                 "hx-indicator": "closest .field",
+               }) }}
+      <datalist id="edit-book-publisher-suggestions"></datalist>
+    </div>
+    <div class="field">{{ field(form.publication_year, min=1, max=9999) }}</div>
+  </div>
   {{ field(form.volume, "E.g. 2, II or 3/4.", maxlength=32) }}
   {{ field(form.tags, "Separated by commas.", autocomplete="off") }}
   {{ field(form.notes, rows=3, maxlength=4000) }}

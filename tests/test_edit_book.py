@@ -1,11 +1,14 @@
-"""Editing a book: its volume, notes and tags, and its ISBN (while it has none, or by an admin)."""
+"""Editing a book: every field but the title; its ISBN while it has none, or by an admin."""
 
 import logging
 import re
+import threading
+import time
 from dataclasses import replace
 from uuid import UUID, uuid4
 
 import pytest
+from firebird.driver import Connection
 from flask import Flask
 from flask.testing import FlaskClient
 
@@ -52,6 +55,9 @@ def _update(
     db_app: Flask,
     book_id: UUID,
     *,
+    authors: tuple[Author, ...] = (),
+    publisher: str | None = None,
+    publication_year: int | None = None,
     volume: str | None = None,
     notes: str | None = None,
     tags: tuple[str, ...] = (),
@@ -62,6 +68,9 @@ def _update(
         update_book(
             get_db(),
             book_id,
+            authors=authors,
+            publisher=publisher,
+            publication_year=publication_year,
             volume=volume,
             notes=notes,
             tags=tags,
@@ -118,13 +127,7 @@ def test_update_book_saves_volume_notes_and_tags(db_app, user):
         "Signed.",
         ("new", "x"),
     )
-    # Nothing else changes.
-    assert (details.title, details.authors, details.publisher, details.isbn) == (
-        "Dune",
-        DUNE.authors,
-        "Ace",
-        None,
-    )
+    assert (details.title, details.isbn) == ("Dune", None)  # never changed here
 
 
 def test_update_book_empties_fields(db_app, user):
@@ -134,6 +137,90 @@ def test_update_book_empties_fields(db_app, user):
 
     details = _details(db_app, book_id)
     assert (details.volume, details.notes, details.tags) == (None, None, ())
+    assert (details.authors, details.publisher, details.publication_year) == (
+        (),
+        None,
+        None,
+    )
+
+
+def test_update_book_saves_authors_publisher_and_year(db_app, user):
+    book_id = _book(db_app, user, DUNE)
+
+    _update(
+        db_app,
+        book_id,
+        authors=(
+            Author("", "Anonymous"),
+            Author(" Frank ", "Herbert"),
+            Author("FRANK", "HERBERT"),  # a repeat, ignoring case
+            Author("Brian", "Herbert"),
+        ),
+        publisher="Chilton",
+        publication_year=1966,
+    )
+
+    details = _details(db_app, book_id)
+    assert details.authors == (
+        Author("", "Anonymous"),
+        Author("Frank", "Herbert"),
+        Author("Brian", "Herbert"),
+    )
+    assert (details.publisher, details.publication_year) == ("Chilton", 1966)
+
+
+def _author_names(db_app: Flask) -> list[str]:
+    with db_app.app_context(), get_db().cursor() as cur:
+        cur.execute("SELECT NAME || '/' || SURNAME FROM AUTHORS ORDER BY SURNAME, NAME")
+        return [name for (name,) in cur.fetchall()]
+
+
+def test_an_author_no_book_uses_any_more_is_deleted(db_app, user):
+    book_id = _book(
+        db_app, user, NewBook("Dune", authors=(Author("Frnak", "Herbert"),))
+    )
+    _book(db_app, user, NewBook("Emma", authors=(Author("Jane", "Austen"),)))
+    other_id = _book(
+        db_app, user, NewBook("Persuasion", authors=(Author("Jane", "Austen"),))
+    )
+
+    _update(db_app, book_id, authors=(Author("Frank", "Herbert"),))
+    _update(db_app, other_id)  # Jane Austen is still Emma's author
+
+    assert _author_names(db_app) == ["Jane/Austen", "Frank/Herbert"]
+
+
+def test_an_author_being_linked_meanwhile_is_kept(db_app, user, other_conn: Connection):
+    book_id = _book(
+        db_app, user, NewBook("Dune", authors=(Author("Frank", "Herbert"),))
+    )
+    other_id = _book(db_app, user, NewBook("Children of Dune"))
+    errors: list[Exception] = []
+
+    def remove_author() -> None:
+        try:
+            _update(db_app, book_id)
+        except Exception as e:  # noqa: BLE001 - reported by the assertion below
+            errors.append(e)
+
+    # Another request gives the author a second book, not yet committed...
+    with other_conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO BOOK_AUTHORS (BOOK_ID, AUTHOR_ID, SORT_ORDER) "
+            "SELECT ?, ID, 1 FROM AUTHORS",
+            (other_id.bytes,),
+        )
+    # ...while this one removes the author from Dune.
+    thread = threading.Thread(target=remove_author)
+    thread.start()
+    time.sleep(0.5)
+    other_conn.commit()
+    thread.join(timeout=30)
+
+    assert not thread.is_alive()
+    assert errors == []
+    assert _details(db_app, book_id).authors == ()
+    assert _details(db_app, other_id).authors == (Author("Frank", "Herbert"),)
 
 
 def test_update_book_sets_an_isbn_once(db_app, user):
@@ -195,6 +282,22 @@ def _url(book_id: UUID) -> str:
     return f"/books/{book_id}"
 
 
+def _form(**fields: str) -> dict[str, str]:
+    """DUNE as its edit form posts it, with `fields` changed."""
+    return {
+        "authors-0-name": "Frank",
+        "authors-0-surname": "Herbert",
+        "authors-1-name": "",
+        "authors-1-surname": "Anonymous",
+        "publisher": "Ace",
+        "publication_year": "1965",
+        "volume": "1",
+        "notes": "First of six.",
+        "tags": "Classic, sf",
+        **fields,
+    }
+
+
 def test_book_details_for_the_dialog(db_app, client, user):
     book_id = _book(db_app, user, DUNE)
 
@@ -202,8 +305,13 @@ def test_book_details_for_the_dialog(db_app, client, user):
 
     assert "<html" not in html
     assert "Dune" in html
-    assert "Frank Herbert, Anonymous" in html
     assert 'name="title"' not in html  # shown, not editable
+    assert re.search(r'<input id="edit-book-authors-0-name" [^>]*value="Frank"', html)
+    assert re.search(
+        r'<input id="edit-book-authors-1-surname" [^>]*value="Anonymous"', html
+    )
+    assert re.search(r'<input [^>]*name="publisher"[^>]*value="Ace"', html)
+    assert re.search(r'<input [^>]*name="publication_year"[^>]*value="1965"', html)
     assert re.search(r'<input [^>]*name="volume"[^>]*value="1"', html)
     assert re.search(r'<input [^>]*name="tags"[^>]*value="Classic, sf"', html)
     assert "First of six." in html
@@ -342,12 +450,66 @@ def test_save_is_logged_with_the_changed_fields(db_app, client, user, caplog):
     book_id = _book(db_app, user, DUNE)
 
     with caplog.at_level(logging.INFO):
-        client.post(
-            _url(book_id),
-            data={"volume": "1", "notes": "First of six.", "tags": "sf, new"},
-        )
+        client.post(_url(book_id), data=_form(tags="sf, new", publication_year="1966"))
 
-    assert f"Book 'Dune' edited by {user.email}: tags" in caplog.text
+    assert f"Book 'Dune' edited by {user.email}: year, tags" in caplog.text
+
+
+def test_unchanged_save_is_logged_as_such(db_app, client, user, caplog):
+    book_id = _book(db_app, user, DUNE)
+
+    with caplog.at_level(logging.INFO):
+        client.post(_url(book_id), data=_form())
+
+    assert f"Book 'Dune' edited by {user.email}: no changes" in caplog.text
+
+
+def test_save_authors_publisher_and_year(db_app, client, user):
+    book_id = _book(db_app, user, DUNE)
+    data = _form(publisher="Chilton", publication_year="1966")
+    data.update({"authors-0-name": "Brian", "authors-1-name": "Frank"})
+    data["authors-1-surname"] = "Herbert"
+
+    rv = client.post(_url(book_id), data=data)
+
+    assert rv.status_code == 302
+    details = _details(db_app, book_id)
+    assert details.authors == (Author("Brian", "Herbert"), Author("Frank", "Herbert"))
+    assert (details.publisher, details.publication_year) == ("Chilton", 1966)
+
+
+@pytest.mark.parametrize(
+    ("authors", "error"),
+    [
+        ({"authors-1-surname": ""}, "Surname is required."),
+        ({"authors-1-name": "Frank", "authors-1-surname": "Herbert"}, "already listed"),
+    ],
+)
+def test_save_with_author_errors_shows_the_form_again(
+    db_app, client, user, authors, error
+):
+    book_id = _book(db_app, user, DUNE)
+    data = {**_form(volume="changed"), **authors}
+    data["authors-1-name"] = data.get("authors-1-name") or "Someone"
+
+    rv = client.post(_url(book_id), data=data, headers=HTMX)
+
+    assert error in rv.get_data(as_text=True)
+    assert _details(db_app, book_id).volume == "1"
+
+
+@pytest.mark.parametrize(
+    ("button", "rows"),
+    [({"add_author": "1"}, ["0", "1", "2"]), ({"remove_author": "1"}, ["0"])],
+)
+def test_author_rows_without_javascript(db_app, client, user, button, rows):
+    book_id = _book(db_app, user, DUNE)
+
+    rv = client.post(_url(book_id), data={**_form(volume="changed"), **button})
+    html = rv.get_data(as_text=True)
+
+    assert re.findall(r'name="authors-(\d+)-surname"', html) == rows
+    assert _details(db_app, book_id).volume == "1"  # not saved
 
 
 @pytest.mark.parametrize(
