@@ -207,9 +207,10 @@ that already exist, except functions: each is `CREATE OR ALTER`ed on every run, 
 
 GitHub Actions (`tests.yml`) run lint, format check, type check, audit, tests and browser tests on
 every push to `main`, on version tags and on pull requests. Only once all of them pass is the image
-built (`docker.yml`, called by `tests.yml`): pushes to `main` publish `ghcr.io/<owner>/<repo>:latest`,
+built (`docker.yml`, called by `tests.yml`): pushes to `main` publish `quay.io/enricobianchi/bookshelf:latest`,
 version tags their version tags, and pull requests just build it. A commit or tag whose checks fail
-publishes no image.
+publishes no image. Pushing to quay.io needs the repository secrets `QUAY_USERNAME` and `QUAY_PASSWORD`
+(a quay.io robot account with write access to the repository works).
 
 To release a version:
 

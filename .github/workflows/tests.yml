@@ -53,11 +53,14 @@ jobs:
           PLAYWRIGHT_INSTALL_ARGS: ${{ matrix.playwright_install_args || 'chromium' }}
 
   # The Docker image, built only once every check above has passed; pushed to
-  # ghcr.io for main and version tags (pull requests just build it).
+  # quay.io/enricobianchi/bookshelf for main and version tags (pull requests
+  # just build it).
   image:
     name: image
     needs: tox
     permissions:
       contents: read
-      packages: write
     uses: ./.github/workflows/docker.yml
+    secrets:
+      QUAY_USERNAME: ${{ secrets.QUAY_USERNAME }}
+      QUAY_PASSWORD: ${{ secrets.QUAY_PASSWORD }}
