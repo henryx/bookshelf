@@ -36,7 +36,7 @@ Bookshelf library webapp is a webapp to manage a book library built with Flask u
 - `bookshelf/models/`: data access and domain logic (`users.py`: users with optional name and surname, login limits; `books.py`: book list, add and edit book, ISBN checks, author and publisher suggestions, the user's collection; `authors.py`: authors list, renaming and merging)
 - `bookshelf/routes/`: blueprints (`auth`, `main`, `collection`, `authors`, `account`, `setup`, `admin`); `__init__.py` has the `is_htmx()` and `htmx_redirect()` helpers; `forms.py` holds the Flask-WTF forms
 - `bookshelf/routes/main.py`: book list (`/`), add book (`/books/new`), edit book (`/books/<id>`), delete book (`/books/<id>/delete`, admins only), suggestions (`/authors/suggestions`, `/publishers/suggestions`); `list_state()` / `list_url()` read a list's search, order and page, `render_catalogue()` renders the catalogue; both book lists take `?author=<id>` for one author's books (`author_filter()`)
-- `bookshelf/routes/collection.py`: the current user's collection (`/collection`), and adding a book to it, changing its copies and removing it (`/collection/books/<id>/add|copies|remove`)
+- `bookshelf/routes/collection.py`: the current user's collection (`/collection`), and adding a book to it, changing its copies, marking it read and removing it (`/collection/books/<id>/add|copies|read|remove`)
 - `bookshelf/routes/authors.py`: the authors list (`/authors`) and renaming an author for every book (`/authors/<id>`)
 - `bookshelf/routes/account.py`: the current user's account page (`/account`): name, surname, password (needs the current one)
 - `bookshelf/routes/admin.py`: admin area (`/admin/users`), admins only; users list, create, details/edit, delete

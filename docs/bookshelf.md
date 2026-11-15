@@ -259,7 +259,8 @@ Decisions:
    owns each book and how many copies.
  - Every user, regular or admin, may add a book to the catalogue and edit any book in it, not only the books
    they added; which fields can be edited is in "Editing a book". Only admins may delete a book.
- - A book has a title (required) and optionally authors, ISBN, publisher, publication year, volume and notes.
+ - A book has a title (required) and optionally authors, ISBN, publisher, publication year, series, volume and
+   plot (a summary of the story).
    A book can have several authors, in the order given; each author is a name and a surname.
  - Authors are their own records, shared between books: when a book is added or edited, each author is picked
    from the existing ones by name and surname, or created if new. All books by one author can be listed. A
@@ -271,14 +272,18 @@ Decisions:
    uniqueness still holds. An author used by a book cannot be deleted. An author no book uses any more after a book
    is edited is deleted, and so is an author merged into another by a rename; there is no other way to delete
    one.
- - Books are classified by free tags only: a book can have any number of tags, typed freely. There are no
-   genres, series or shelf locations. Tags are stored as text on each book, with no list of tags of their own.
- - The volume is free text ("2", "II", "3/4"), since volumes are numbered in many ways. Books have no language.
+ - Books are classified by free tags and a series: a book can have any number of tags, typed freely, and belong
+   to one series. There are no genres or shelf locations. Tags are stored as text on each book, with no list of
+   tags of their own.
+ - The series is free text on each book ("Discworld"), ignoring case like the publisher, with no list of series
+   of its own. The volume is the book's place in it, free text too ("2", "II", "3/4"), since volumes are numbered
+   in many ways. Books have no language.
  - A book is a title: one record in the catalogue however many copies exist. The number of copies belongs to a
    user's collection: each user records how many copies of the book they own (at least one), so two users
    owning the same book is still one catalogue record.
  - Loans (who borrowed a book and when it is due back) are not tracked in the first version.
- - Reading status (to read, reading, read) and ratings are not tracked in the first version.
+ - Each user can mark a book in their collection as read (see "Your collection"); a book is not read until they
+   do. Other reading statuses (to read, reading) and ratings are not tracked in the first version.
  - Books are entered by hand in the first version. Filling in a book's details from an online service by ISBN
    (e.g. Open Library), and scanning the barcode with the phone camera, may come later.
  - Books have no cover images in the first version.
@@ -291,10 +296,10 @@ Decisions:
    the same book typed either way is caught as a duplicate.
  - Titles, publishers, author names and surnames, and tags ignore case when compared and sorted ("Sci-fi" and
    "sci-fi" are one tag), but not accents ("Citta" and "Città" differ). All are trimmed; titles, surnames and
-   tags cannot be blank. Empty optional fields (publisher, volume, notes, …) are stored as NULL.
+   tags cannot be blank. Empty optional fields (publisher, series, volume, plot, …) are stored as NULL.
  - Deleting a user removes their collection, which may leave books in no collection (and so deletable).
  - Sizes: title and publisher up to 255 characters, author name and surname up to 127 each, volume up to 32,
-   tag up to 64, notes up to 4000. Name and surname are limited to 127 because the unique index on both must
+   series up to 255, tag up to 64, plot up to 4000. Name and surname are limited to 127 because the unique index on both must
    fit Firebird's index key limit (8 KB pages). Who added a book is not recorded.
 
 ### Adding a book
@@ -328,7 +333,7 @@ Decisions:
  - Suggestions use the browser's own suggestion list (`<datalist>`): it needs little JavaScript and works with
    the keyboard and screen readers, but its look is the browser's. Without JavaScript the fields are plain
    inputs, with no suggestions.
- - Publisher and year share a row; the year field is narrow.
+ - Publisher and year share a row, and so do series and volume; the year and volume fields are narrow.
  - Tags are separated by commas. Blank tags are skipped, and a tag repeated (ignoring case) is kept once.
  - The ISBN must be a valid ISBN-10 or ISBN-13, check digit included, so a mistyped ISBN is caught; it is saved
    as ISBN-13. An ISBN already in the catalogue is refused with a message naming it. Under the message the
@@ -355,9 +360,9 @@ reloads the list with a confirmation. Without JavaScript the title is a link to 
 
 Decisions:
 
- - Editable: authors, publisher, publication year, volume, notes and tags, with the same fields, rules and
-   suggestions as when adding a book. Each may be emptied: an empty publisher, year, volume or notes is stored as
-   NULL, no authors or no tags leave the book with none.
+ - Editable: authors, publisher, publication year, series, volume, plot and tags, with the same fields, rules and
+   suggestions as when adding a book. Each may be emptied: an empty publisher, year, series, volume or plot is
+   stored as NULL, no authors or no tags leave the book with none.
  - Authors are picked again on every save, as when adding: each row is the existing author with that name and
    surname (ignoring case), or a new one. So a misspelled author is fixed on a book by typing the right name
    (or picking it from the suggestions). An author that no book uses any more after a save is deleted, so the
@@ -387,7 +392,7 @@ Technical details:
    from a form opened before someone else set it. An admin's correction passes `replace_isbn=True`, which sets the
    ISBN, or NULL, without that condition; an ISBN saved unchanged is not written again, so a save of other fields
    does not undo a correction made meanwhile. The title is in no `UPDATE`, so it cannot change.
- - `EditBookForm` holds every editable field (authors, ISBN, publisher, year, volume, tags, notes) with their
+ - `EditBookForm` holds every editable field (authors, ISBN, publisher, year, series, volume, tags, plot) with their
    validators and the author-row handling; `BookForm`, for adding a book, adds the title and copies. The author
    rows are `_author_rows.html`, shared by both forms with an `id_prefix` (`book-`, `edit-book-`), since both
    dialogs are on the main page.
@@ -483,7 +488,8 @@ Known limitations:
 Status: built at `/collection`, linked from the account menu.
 
 The books the user owns, from the shared catalogue: the same list as the main page (search, order, pages of 50),
-showing only their books. Each row has the number of copies, editable, with "Save", and a "Remove" button.
+showing only their books. Each row has the number of copies, editable, with "Save", a "Read" checkbox and a
+"Remove" button.
 It can be limited to one author's books (`/collection?author=<id>`, see "One author's books").
 
 Decisions:
@@ -499,7 +505,11 @@ Decisions:
  - Adding a book that was deleted from the catalogue after the page was loaded answers 404, as for an unknown
    book.
  - Copies are between 1 and 999, as when adding a book.
- - With htmx, the rows' buttons (add, save, remove) reload only the list, keeping its search, order and page,
+ - "Read" is the user's own: each user marks their copy (`COLLECTION_BOOKS.IS_READ`), and a book starts as not
+   read, also when it is added to a collection. With htmx, ticking or unticking the checkbox saves it at once and
+   the list reloads with "“Dune” marked as read." (or "not read"). Without JavaScript the row has a Save button
+   for it, inside `<noscript>` so it is never shown otherwise. The catalogue shows no read status.
+ - With htmx, the rows' buttons (add, save, remove) and the read checkbox reload only the list, keeping its search, order and page,
    with a message above it. Without JavaScript they are plain forms, and the server redirects back to the list
    with the same search, order and page and the message shown on it.
  - "Date added" orders the collection by when each book entered the catalogue: the collection does not record
