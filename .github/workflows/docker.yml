@@ -1,18 +1,14 @@
 name: Docker image
 
+# Called by the Tests workflow (tests.yml) once all its checks have passed, so
+# no image is published from a commit that fails them. It runs in the caller's
+# context: github.event_name and github.ref are those of the push, tag or pull
+# request that started Tests, and Tests' concurrency group cancels it too.
 on:
-  push:
-    branches: [main]
-    tags: ["v*.*.*"]
-  pull_request:
-  workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
-
-concurrency:
-  group: docker-${{ github.ref }}
-  cancel-in-progress: true
 
 jobs:
   build:

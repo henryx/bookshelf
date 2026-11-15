@@ -3,6 +3,8 @@ name: Tests
 on:
   push:
     branches: [main]
+    # Version tags too: their image (docker.yml) is published only once these pass.
+    tags: ["v*.*.*"]
   pull_request:
   workflow_dispatch:
 
@@ -49,3 +51,13 @@ jobs:
         run: uv run tox -e ${{ matrix.env }} ${{ matrix.args }}
         env:
           PLAYWRIGHT_INSTALL_ARGS: ${{ matrix.playwright_install_args || 'chromium' }}
+
+  # The Docker image, built only once every check above has passed; pushed to
+  # ghcr.io for main and version tags (pull requests just build it).
+  image:
+    name: image
+    needs: tox
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/docker.yml
