@@ -392,6 +392,17 @@ def test_set_copies_of_a_book_not_in_the_collection_says_so(
     assert _copies(db_app, user, emma) is None
 
 
+def test_remove_a_book_not_in_the_collection_shows_an_error(
+    db_app, client, user, other
+):
+    emma = _book(db_app, other, "Emma")
+
+    rv = client.post(f"/collection/books/{emma}/remove", headers=FROM_LIST)
+    html = rv.get_data(as_text=True)
+
+    assert re.search(r'class="error"[^>]*>“Emma” is not in your collection.', html)
+
+
 def test_set_copies_without_htmx_redirects_to_the_collection(db_app, client, user):
     dune = _book(db_app, user, "Dune")
 

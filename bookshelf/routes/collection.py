@@ -139,7 +139,9 @@ def remove(book_id: UUID) -> BaseResponse | str:
     """Remove a book from the user's collection; it stays in the catalogue."""
     book = _book_or_404(book_id)
     if not remove_from_collection(get_db(), current_user.id, book.id):
-        return _collection_response(f"“{book.title}” is not in your collection.")
+        return _collection_response(
+            f"“{book.title}” is not in your collection.", error=True
+        )
     current_app.logger.info(
         "Book %r removed from the collection of %s", book.title, current_user.email
     )
