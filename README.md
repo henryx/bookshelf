@@ -87,8 +87,9 @@ you type, and picking an author fills both name and surname. The book is added t
 your own collection.
 
 Clicking a book's title opens it in a dialog to edit every field but the title; the ISBN can be set while the
-book has none, and only admins can change or remove one already set. "Your collection" (in the account menu)
-lists your own books, with their copies.
+book has none, and only admins can change or remove one already set. Admins can also delete a book from that
+dialog, once it is in nobody's collection. "Your collection" (in the account menu) lists your own books, with
+their copies.
 
 "Authors" (in the account menu) lists every author with their number of books. Renaming an author changes them
 on every book; renaming to a name another author already has merges the two. An author's name, on that page or

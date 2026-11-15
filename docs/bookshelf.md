@@ -245,7 +245,8 @@ Decisions:
 
 Status: tables created by `init-db` (`BOOKS`, `AUTHORS`, `BOOK_AUTHORS`, `BOOK_TAGS`, `COLLECTION_BOOKS`). Books
 can be listed (see Main page, and "One author's books"), added (see "Adding a book"), edited (every field but
-the title, see "Editing a book") and kept in a collection (see "Your collection"); not yet deleted. Authors are
+the title, see "Editing a book"), kept in a collection (see "Your collection") and deleted by admins (see
+"Deleting a book"). Authors are
 listed and renamed on their own page (see "Authors").
 
 Decisions:
@@ -284,7 +285,7 @@ Decisions:
  - A book whose ISBN is already in the catalogue is refused. Any number of books may have no ISBN, and books
    with the same title and authors are allowed.
  - A book can be deleted only while it is in no user's collection; otherwise deletion is refused. Deleting a
-   book removes it for good (it cannot be restored) and asks for confirmation first.
+   book removes it for good (it cannot be restored) and asks for confirmation first (see "Deleting a book").
  - The library can be exported as a CSV file. There is no import in the first version.
  - ISBNs are stored as 13 digits: hyphens and spaces are removed and an ISBN-10 is converted to its ISBN-13, so
    the same book typed either way is caught as a duplicate.
@@ -410,6 +411,37 @@ Known limitations:
    instead the save deletes the author between the moment adding a book looks it up and the moment it links it,
    adding that book fails with the generic error and has to be submitted again. Both need two people working on
    the same author within milliseconds.
+
+### Deleting a book
+
+Status: built (`POST /books/<id>/delete`), from the "Delete book" button in the book dialog, for admins.
+
+Decisions:
+
+ - Only admins delete books. Regular users have no button, and a request from one is refused (403).
+ - Only a book in nobody's collection can be deleted. For such a book the dialog says so, with how many
+   collections hold it ("now 2"), instead of showing the button; the book's owners remove it from their
+   collections first. A book added to a collection after the dialog was opened is refused when deleting, with
+   that message in the error banner: the database's foreign key (`FK_COLLECTION_BOOKS_BOOK`) decides, so no
+   book in a collection is ever lost.
+ - Deleting asks for confirmation ("Delete “Dune”? This cannot be undone.") and removes the book for good, with
+   its author links and tags. An author left without books is deleted too, as when editing a book.
+ - Afterwards the list the book was deleted from comes back as it was, with a confirmation and the deletion
+   logged with the admin who made it. When the list was one author's books and that author went with the book,
+   it comes back as the whole list instead of an author page that no longer exists.
+
+Technical details:
+
+ - `delete_book` runs in its own read-committed transaction, as `update_book`, and returns the title and the
+   authors it deleted (`DeletedBook`): the request's own snapshot transaction, started before the delete, would
+   still see them.
+ - The list's hidden fields (which list, author, search, order, page) are `_book_list_state.html`, shared by the
+   edit and delete forms.
+
+Known limitations:
+
+ - As for deleting a user, the confirmation comes from htmx, so without JavaScript a book is deleted without
+   asking. htmx is vendored with the app, so in practice it is always loaded.
 
 ## Main page
 
