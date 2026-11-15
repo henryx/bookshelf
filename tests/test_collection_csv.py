@@ -310,13 +310,20 @@ def test_import_strips_the_formula_guard(db_app, user):
     [
         ("", "The file is empty."),
         ("authors\nHerbert\n", "The file has no title column."),
-        ("title,colour\nDune,red\n", "Unknown column: colour."),
         ("title,title\nDune,Dune\n", "Column title is repeated."),
     ],
 )
 def test_import_refuses_a_file_it_cannot_read(db_app, user, text, message):
     with pytest.raises(CsvFileError, match=message):
         _import(db_app, user, text)
+
+
+def test_import_ignores_unknown_columns(db_app, user):
+    report = _import(db_app, user, "Title,Colour,copies,,colour\nDune,red,2,x,blue\n")
+
+    assert (report.created, report.errors) == (1, [])
+    assert report.ignored_columns == ["Colour", "colour"]
+    assert _collection(db_app, user) == [("Dune", 2, False)]
 
 
 def test_import_refuses_too_many_rows(db_app, user, monkeypatch):
@@ -384,6 +391,15 @@ def test_import_route_without_javascript_shows_the_account_page(client, db_app, 
     assert "1 book added to your collection (1 new to the catalogue)." in html
 
 
+def test_import_route_names_the_ignored_columns(client):
+    rv = _upload(client, "title,colour,shelf\nDune,red,3\n", headers=HTMX)
+
+    assert (
+        "1 book added to your collection (1 new to the catalogue). "
+        "Ignored 2 columns: colour, shelf." in rv.get_data(as_text=True)
+    )
+
+
 def test_import_route_reports_skipped_books(client, db_app, user):
     with db_app.app_context():
         add_book(get_db(), user.id, NewBook("Dune"))
@@ -398,7 +414,7 @@ def test_import_route_reports_skipped_books(client, db_app, user):
 @pytest.mark.parametrize(
     ("data", "name", "message"),
     [
-        (b"title,colour\nDune,red\n", "books.csv", "Unknown column: colour."),
+        (b"authors\nHerbert\n", "books.csv", "The file has no title column."),
         (b"title\n\xff\xfe\n", "books.csv", "The file is not UTF-8 text."),
         (b"title\nDune\n", "books.txt", "Choose a .csv file."),
     ],

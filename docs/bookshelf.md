@@ -259,8 +259,9 @@ Decisions:
    four-digit number); a year that cannot be told ("12/05/91", "1991-2001") is a bad row. The export is UTF-8
    with a byte order mark (so spreadsheets read it as UTF-8), ordered by title.
  - An import needs a header with `title`; the other columns are optional and in any order (missing ones are
-   empty, copies 1 and not read). An unknown or repeated column, an empty file, a file that is not UTF-8 or not
-   CSV, or one with more than 1000 books refuses the whole file. Blank rows are skipped.
+   empty, copies 1 and not read). Other columns are ignored, and named in the import's summary ("Ignored 2
+   columns: colour, shelf.") so that a misspelt one is noticed. A repeated column, an empty file, a file that is
+   not UTF-8 or not CSV, or one with more than 1000 books refuses the whole file. Blank rows are skipped.
  - Each row matches a catalogue book: by ISBN when it has one (ISBN-10 converted); without one, by title and
    authors, ignoring case and the authors' order (the oldest such book). Authors are compared by full name
    ("Name Surname"), so an exported "Ursula K. Le Guin" still matches the book whose author has the surname

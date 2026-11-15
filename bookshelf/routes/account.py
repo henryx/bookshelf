@@ -104,6 +104,11 @@ def _import_notice(report: ImportReport) -> str:
         notice = "No books added"
     if report.skipped:
         notice += f"; {report.skipped} already in your collection, skipped"
+    if report.ignored_columns:
+        columns = ", ".join(report.ignored_columns)
+        notice += (
+            f". Ignored {_plural(len(report.ignored_columns), 'column')}: {columns}"
+        )
     return f"{notice}."
 
 

@@ -3,7 +3,6 @@
 import csv
 import io
 import re
-from collections.abc import Iterator
 from dataclasses import dataclass, field
 from uuid import UUID
 
@@ -89,13 +88,15 @@ class ImportReport:
     What an import did. added: books that went into the collection, created
     of them new to the catalogue; skipped: books already in the collection;
     errors: one message per row not imported, with its row number as in a
-    spreadsheet (the header is row 1).
+    spreadsheet (the header is row 1); ignored_columns: the file's columns
+    that are not in COLUMNS, as named in the file.
     """
 
     added: int = 0
     created: int = 0
     skipped: int = 0
     errors: list[str] = field(default_factory=list)
+    ignored_columns: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -295,24 +296,28 @@ def _parse_row(row: dict[str, str]) -> _Row:
     return _Row(book, copies, read in _YES)
 
 
-def _read_rows(text: str) -> Iterator[tuple[int, dict[str, str]]]:
+type _Rows = list[tuple[int, dict[str, str]]]
+
+
+def _read_rows(text: str) -> tuple[_Rows, list[str]]:
     """
-    The rows of a CSV text, numbered as in a spreadsheet, after checking its
-    header and size; CsvFileError for a file that cannot be imported.
+    The rows of a CSV text, numbered as in a spreadsheet, with only the
+    COLUMNS, and the other columns, ignored (blank ones not even named),
+    after checking its header and size; CsvFileError for a file that cannot
+    be imported.
     """
     text = text.removeprefix("﻿")
     if not text.strip():
         raise CsvFileError("The file is empty.")
     reader = csv.reader(io.StringIO(text, newline=""))
     try:
-        header = [column.strip().casefold() for column in next(reader)]
+        named = [column.strip() for column in next(reader)]
         rows = list(reader)
     except csv.Error as e:
         raise CsvFileError(f"The file is not valid CSV: {e}.") from e
-    unknown = [c for c in header if c not in COLUMNS]
-    if unknown:
-        raise CsvFileError(f"Unknown column: {', '.join(unknown)}.")
-    repeated = sorted({c for c in header if header.count(c) > 1})
+    header = [column.casefold() for column in named]
+    ignored = [n for n, c in zip(named, header, strict=True) if n and c not in COLUMNS]
+    repeated = sorted({c for c in header if c in COLUMNS and header.count(c) > 1})
     if repeated:
         raise CsvFileError(f"Column {', '.join(repeated)} is repeated.")
     if "title" not in header:
@@ -322,8 +327,11 @@ def _read_rows(text: str) -> Iterator[tuple[int, dict[str, str]]]:
         raise CsvFileError(
             f"The file has more than {MAX_ROWS} books: split it into smaller files."
         )
-    for number, values in books:
-        yield number, dict(zip(header, values, strict=False))
+    known = [
+        (number, {c: v for c, v in zip(header, values, strict=False) if c in COLUMNS})
+        for number, values in books
+    ]
+    return known, ignored
 
 
 def _same_authors(book: Book, authors: tuple[Author, ...]) -> bool:
@@ -382,10 +390,11 @@ def import_collection(conn: Connection, user_id: UUID, text: str) -> ImportRepor
     row on its own: a bad row is reported and the rest still imported. A
     book already in the collection is skipped, unchanged. CsvFileError, with
     nothing imported, for a file without a usable header or with more than
-    MAX_ROWS books.
+    MAX_ROWS books. Columns not in COLUMNS are ignored (and reported).
     """
-    report = ImportReport()
-    for number, values in list(_read_rows(text)):
+    rows, ignored = _read_rows(text)
+    report = ImportReport(ignored_columns=ignored)
+    for number, values in rows:
         try:
             _import_row(conn, user_id, _parse_row(values), report)
         except (_RowError, BookExistsError, UnknownBookError) as e:
