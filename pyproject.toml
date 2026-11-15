@@ -49,3 +49,9 @@ build-backend = "uv_build"
 [tool.uv.build-backend]
 module-name = "bookshelf"
 module-root = ""
+
+[tool.pytest.ini_options]
+filterwarnings = [
+    # flask-login 0.6.3 (the latest) calls datetime.utcnow(), deprecated since Python 3.12
+    "ignore:datetime.datetime.utcnow:DeprecationWarning:flask_login",
+]

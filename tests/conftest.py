@@ -6,7 +6,7 @@ import pytest
 from firebird.driver import Connection, connect, create_database
 from flask import Flask
 from flask.testing import FlaskClient
-from testcontainers.core.container import DockerContainer
+from testcontainers.core.container import DockerContainer, Reaper
 from testcontainers.core.wait_strategies import LogMessageWaitStrategy
 
 from bookshelf import create_app
@@ -49,6 +49,10 @@ def firebird() -> Iterator[None]:
         ) as conn:
             init_db(conn)
         yield
+    # testcontainers stops its reaper container at exit, when pytest has
+    # closed the stream our log handler writes to ("--- Logging error ---"):
+    # stop it now instead.
+    Reaper.delete_instance()
 
 
 @pytest.fixture(autouse=True)
