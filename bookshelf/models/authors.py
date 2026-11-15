@@ -1,3 +1,4 @@
+import logging
 from dataclasses import dataclass
 from uuid import UUID
 
@@ -26,6 +27,8 @@ __all__ = [
 # "violation of FOREIGN KEY constraint".
 _UNIQUE_KEY_VIOLATION = 335544665
 _FOREIGN_KEY_VIOLATION = 335544466
+
+logger = logging.getLogger(__name__)
 
 
 class UnknownAuthorError(Exception):
@@ -147,6 +150,11 @@ def _rename(cur: Cursor, author_id: UUID, author: Author) -> bool:
     except DatabaseError as e:
         if _UNIQUE_KEY_VIOLATION not in e.gds_codes:
             raise
+        logger.info(
+            "Author %s: %r was created meanwhile, merging into it",
+            author_id,
+            str(author),
+        )
         return False
     if cur.affected_rows == 0:
         raise UnknownAuthorError(author_id)
@@ -173,6 +181,10 @@ def _merge(cur: Cursor, author_id: UUID, into: bytes) -> None:
         # A book being added at this moment uses it: keep it, with that book.
         if _FOREIGN_KEY_VIOLATION not in e.gds_codes:
             raise
+        logger.info(
+            "Author %s kept after merging: a book being saved at this moment uses it",
+            author_id,
+        )
         return
     if cur.affected_rows == 0:
         raise UnknownAuthorError(author_id)

@@ -163,7 +163,7 @@ def test_very_long_search_lists_no_author(db_app, user):
 
 
 def test_rename_to_a_name_created_meanwhile_merges(
-    db_app, user, other_conn: Connection
+    db_app, user, other_conn: Connection, caplog
 ):
     dune = _book(db_app, user, "Dune", FRNAK)
     entry = _entry(db_app, FRNAK)
@@ -183,12 +183,17 @@ def test_rename_to_a_name_created_meanwhile_merges(
         )
     # ...while this one renames Frnak to him.
     thread = threading.Thread(target=rename)
-    thread.start()
-    time.sleep(0.5)
-    other_conn.commit()
-    thread.join(timeout=30)
+    with caplog.at_level(logging.INFO):
+        thread.start()
+        time.sleep(0.5)
+        other_conn.commit()
+        thread.join(timeout=30)
 
     assert results == [Renamed(FRANK, merged=True)]
+    assert (
+        f"Author {entry.id}: 'Frank Herbert' was created meanwhile, merging into it"
+        in caplog.text
+    )
     assert _authors_of(db_app, dune) == (FRANK,)
     assert _all(db_app) == [(FRANK, 1)]
 
@@ -318,15 +323,20 @@ def test_unknown_author_is_not_found(client, method):
 
 
 def test_author_merged_away_meanwhile_is_not_found(
-    db_app, client, user, monkeypatch: pytest.MonkeyPatch
+    db_app, client, user, monkeypatch: pytest.MonkeyPatch, caplog
 ):
     """The form was opened, then the author was merged into another one."""
     gone = AuthorEntry(uuid4(), FRNAK, 1)
     monkeypatch.setattr("bookshelf.routes.authors.find_author", lambda *_args: gone)
 
-    rv = client.post(f"/authors/{gone.id}", data={"name": "A", "surname": "B"})
+    with caplog.at_level(logging.INFO):
+        rv = client.post(f"/authors/{gone.id}", data={"name": "A", "surname": "B"})
 
     assert rv.status_code == 404
+    assert (
+        f"Author {gone.id} ('Frnak Herbert') gone before {user.email} renamed it"
+        in caplog.text
+    )
 
 
 # One author's books: the catalogue filtered by author (/?author=<id>)

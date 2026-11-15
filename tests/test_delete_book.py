@@ -185,17 +185,27 @@ def test_delete_keeps_the_filter_of_an_author_still_there(db_app, admin_client, 
 
 
 def test_delete_refused_for_a_book_added_to_a_collection_meanwhile(
-    db_app, admin_client, user
+    db_app, admin_client, user, admin, caplog
 ):
     dune = _book(db_app, user, NewBook("Dune"), keep=True)
 
-    rv = admin_client.post(f"/books/{dune}/delete", headers=HTMX)
+    with caplog.at_level(logging.INFO):
+        rv = admin_client.post(f"/books/{dune}/delete", headers=HTMX)
 
     assert rv.status_code == 409
     assert rv.headers["HX-Retarget"] == "#error-banner"
     assert re.search(r"“Dune” is in someone’s collection", rv.get_data(as_text=True))
     assert _exists(db_app, dune)
+    assert f"Delete of book {dune} by {admin.email} refused: it is in a collection" in (
+        caplog.text
+    )
 
 
-def test_delete_an_unknown_book_is_not_found(admin_client):
-    assert admin_client.post(f"/books/{uuid4()}/delete").status_code == 404
+def test_delete_an_unknown_book_is_not_found(admin_client, admin, caplog):
+    book_id = uuid4()
+
+    with caplog.at_level(logging.INFO):
+        rv = admin_client.post(f"/books/{book_id}/delete")
+
+    assert rv.status_code == 404
+    assert f"Delete of unknown book {book_id} by {admin.email}" in caplog.text

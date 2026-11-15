@@ -1,3 +1,4 @@
+import logging
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
@@ -47,6 +48,8 @@ __all__ = [
     "unique_tags",
     "update_book",
 ]
+
+logger = logging.getLogger(__name__)
 
 # Firebird GDS code for "violation of PRIMARY or UNIQUE KEY constraint".
 _UNIQUE_KEY_VIOLATION = 335544665
@@ -732,6 +735,10 @@ def _delete_unused_authors(cur: Cursor, author_ids: list[bytes]) -> list[UUID]:
             # A book being added at this moment uses it: keep it.
             if _FOREIGN_KEY_VIOLATION not in e.gds_codes:
                 raise
+            logger.info(
+                "Author %s kept: a book being saved at this moment uses it",
+                UUID(bytes=author_id),
+            )
             continue
         if cur.affected_rows > 0:
             deleted.append(UUID(bytes=author_id))

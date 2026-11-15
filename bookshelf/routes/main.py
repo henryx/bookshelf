@@ -316,6 +316,9 @@ def book(book_id: UUID) -> BaseResponse | str:
         )
     except UnknownBookError:
         # Deleted since it was looked up.
+        current_app.logger.info(
+            "Book %s deleted before %s saved it", book_id, current_user.email
+        )
         abort(404)
     except (BookExistsError, IsbnAlreadySetError) as e:
         form.form_errors.append(str(e))
@@ -355,9 +358,17 @@ def delete(book_id: UUID) -> BaseResponse:
     try:
         deleted = delete_book(get_db(), book_id)
     except UnknownBookError:
+        current_app.logger.info(
+            "Delete of unknown book %s by %s", book_id, current_user.email
+        )
         abort(404)
     except BookInCollectionError as e:
         # Added to a collection since the dialog was opened.
+        current_app.logger.info(
+            "Delete of book %s by %s refused: it is in a collection",
+            book_id,
+            current_user.email,
+        )
         abort(409, description=str(e))
     current_app.logger.info("Book %r deleted by %s", deleted.title, current_user.email)
     flash(f"Book “{deleted.title}” deleted.")

@@ -191,7 +191,9 @@ def test_an_author_no_book_uses_any_more_is_deleted(db_app, user):
     assert _author_names(db_app) == ["Jane/Austen", "Frank/Herbert"]
 
 
-def test_an_author_being_linked_meanwhile_is_kept(db_app, user, other_conn: Connection):
+def test_an_author_being_linked_meanwhile_is_kept(
+    db_app, user, other_conn: Connection, caplog
+):
     book_id = _book(
         db_app, user, NewBook("Dune", authors=(Author("Frank", "Herbert"),))
     )
@@ -213,15 +215,17 @@ def test_an_author_being_linked_meanwhile_is_kept(db_app, user, other_conn: Conn
         )
     # ...while this one removes the author from Dune.
     thread = threading.Thread(target=remove_author)
-    thread.start()
-    time.sleep(0.5)
-    other_conn.commit()
-    thread.join(timeout=30)
+    with caplog.at_level(logging.INFO):
+        thread.start()
+        time.sleep(0.5)
+        other_conn.commit()
+        thread.join(timeout=30)
 
     assert not thread.is_alive()
     assert errors == []
     assert _details(db_app, book_id).authors == ()
     assert _details(db_app, other_id).authors == (Author("Frank", "Herbert"),)
+    assert "kept: a book being saved at this moment uses it" in caplog.text
 
 
 def test_update_book_sets_an_isbn_once(db_app, user):
@@ -431,6 +435,20 @@ def test_save_refuses_an_isbn_set_meanwhile(
 
     assert "This book already has an ISBN." in rv.get_data(as_text=True)
     assert _details(db_app, book_id).isbn == DUNE_ISBN
+
+
+def test_save_of_a_book_deleted_meanwhile_is_not_found(
+    db_app, client, user, monkeypatch: pytest.MonkeyPatch, caplog
+):
+    """The dialog was opened, then an admin deleted the book."""
+    gone = BookDetails(id=uuid4(), title="Gone")
+    monkeypatch.setattr("bookshelf.routes.main.find_book_details", lambda *_args: gone)
+
+    with caplog.at_level(logging.INFO):
+        rv = client.post(_url(gone.id), data={"volume": "2"})
+
+    assert rv.status_code == 404
+    assert f"Book {gone.id} deleted before {user.email} saved it" in caplog.text
 
 
 @pytest.mark.parametrize("method", ["get", "post"])

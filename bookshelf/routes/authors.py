@@ -94,6 +94,12 @@ def rename(author_id: UUID) -> BaseResponse | str:
         renamed = rename_author(get_db(), author_id, form.to_author())
     except UnknownAuthorError:
         # Merged into another author, or renamed into one, since it was looked up.
+        current_app.logger.info(
+            "Author %s (%r) gone before %s renamed it",
+            author_id,
+            str(entry.author),
+            current_user.email,
+        )
         abort(404)
     verb = "merged into" if renamed.merged else "renamed to"
     current_app.logger.info(
