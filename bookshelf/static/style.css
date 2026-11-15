@@ -74,6 +74,9 @@
   --on-cloth: #eef3ee;
   --on-cloth-muted: #b5c9bb;
   --lamp: rgb(255 236 200 / 0.2);
+  /* Pure light and dark, only mixed with transparency: sheen and shade on the cloth. */
+  --sheen: #ffffff;
+  --dusk: #000000;
   --shade: rgb(11 31 22 / 0.35);
   --error: #a3201a;
   --error-wash: #f8e3e1;
@@ -106,8 +109,8 @@ body {
   color: var(--ink);
   /* Laid paper: faint horizontal lines, and the hero's green spilling down. */
   background:
-    radial-gradient(120% 40rem at 50% 0%, rgb(31 75 58 / 0.1), transparent 70%),
-    repeating-linear-gradient(0deg, rgb(31 75 58 / 0.035) 0 1px, transparent 1px 7px),
+    radial-gradient(120% 40rem at 50% 0%, color-mix(in srgb, var(--cloth) 10%, transparent), transparent 70%),
+    repeating-linear-gradient(0deg, color-mix(in srgb, var(--cloth) 3.5%, transparent) 0 1px, transparent 1px 7px),
     var(--paper);
   background-attachment: fixed;
 }
@@ -305,8 +308,8 @@ a.button.secondary,
   color: var(--on-cloth);
   background:
     radial-gradient(60rem 26rem at 85% -6rem, var(--lamp), transparent 70%),
-    repeating-linear-gradient(0deg, rgb(255 255 255 / 0.012) 0 1px, transparent 1px 2px),
-    repeating-linear-gradient(90deg, rgb(0 0 0 / 0.03) 0 1px, transparent 1px 2px),
+    repeating-linear-gradient(0deg, color-mix(in srgb, var(--sheen) 1.2%, transparent) 0 1px, transparent 1px 2px),
+    repeating-linear-gradient(90deg, color-mix(in srgb, var(--dusk) 3%, transparent) 0 1px, transparent 1px 2px),
     linear-gradient(180deg, var(--cloth) 0%, var(--cloth-deep) 100%);
 }
 
@@ -348,7 +351,7 @@ a.button.secondary,
 .hero a.button {
   padding: 0.5rem 1rem;
   background: transparent;
-  border-color: rgb(238 243 238 / 0.35);
+  border-color: color-mix(in srgb, var(--on-cloth) 35%, transparent);
   color: var(--on-cloth);
 }
 
@@ -420,7 +423,7 @@ a.button.secondary,
   content: "";
   position: absolute;
   inset: 0;
-  background: linear-gradient(90deg, rgb(0 0 0 / 0.4), transparent 30% 75%, rgb(0 0 0 / 0.2));
+  background: linear-gradient(90deg, color-mix(in srgb, var(--dusk) 40%, transparent), transparent 30% 75%, color-mix(in srgb, var(--dusk) 20%, transparent));
   pointer-events: none;
 }
 
@@ -430,7 +433,7 @@ a.button.secondary,
   position: absolute;
   inset: auto 0 0;
   height: var(--board);
-  background: linear-gradient(180deg, rgb(255 255 255 / 0.18) 0 2px, var(--cloth-darkest) 2px);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--sheen) 18%, transparent) 0 2px, var(--cloth-darkest) 2px);
   z-index: 1;
 }
 
@@ -475,7 +478,7 @@ a.button.secondary,
   align-items: center;
   gap: 0.625rem;
   padding: 0.25rem 0.25rem 0.25rem 1rem;
-  border: 2px solid rgb(238 243 238 / 0.35);
+  border: 2px solid color-mix(in srgb, var(--on-cloth) 35%, transparent);
   border-radius: 999px;
   list-style: none;
   cursor: pointer;
@@ -486,7 +489,7 @@ a.button.secondary,
 }
 
 .avatar[open] summary {
-  background: rgb(238 243 238 / 0.1);
+  background: color-mix(in srgb, var(--on-cloth) 10%, transparent);
 }
 
 .avatar-label {
@@ -830,7 +833,7 @@ a.author-name:focus-visible {
   font-weight: 200;
   line-height: 1;
   text-decoration: none;
-  box-shadow: 0 0.75rem 1.5rem -0.5rem rgb(224 36 94 / 0.6), 0 0 0 0.25rem rgb(224 36 94 / 0.15);
+  box-shadow: 0 0.75rem 1.5rem -0.5rem color-mix(in srgb, var(--stamp) 60%, transparent), 0 0 0 0.25rem color-mix(in srgb, var(--stamp) 15%, transparent);
   transition: transform 0.15s;
 }
 
@@ -921,7 +924,7 @@ dialog {
 }
 
 dialog::backdrop {
-  background: rgb(11 31 22 / 0.55);
+  background: color-mix(in srgb, var(--cloth-darkest) 55%, transparent);
   backdrop-filter: blur(2px);
 }
 
