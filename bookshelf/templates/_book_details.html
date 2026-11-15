@@ -1,7 +1,25 @@
-{# A book's title (and ISBN, when not editable), shown, and its edit form: the book dialog's content, and the body of the book page. #}
+{# A book's title (and ISBN, when not editable), shown, its edit form and, for admins, its
+   delete button: the book dialog's content, and the body of the book page. #}
 <dl class="book-details">
   <dt>Title</dt>
   <dd class="book-details-title">{{ book.title }}</dd>
   {% if book.isbn and not form.isbn %}<dt>ISBN</dt><dd class="mono">{{ book.isbn }}</dd>{% endif %}
 </dl>
 {% include "_edit_book_form.html" %}
+
+{% if current_user.is_admin %}
+  {% if book.collections %}
+    <p class="hint">This book can be deleted only when it is in nobody’s collection (now {{ book.collections }}).</p>
+  {% else %}
+    {% set delete_url = url_for("main.delete", book_id=book.id) %}
+    <form class="danger" method="post" action="{{ delete_url }}" hx-post="{{ delete_url }}"
+          hx-confirm="Delete “{{ book.title }}”? This cannot be undone."
+          hx-indicator="#delete-book-indicator" hx-disabled-elt="find button">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      {# The list to go back to after deleting, as it was. #}
+      {% include "_book_list_state.html" %}
+      <button type="submit">Delete book</button>
+      <span id="delete-book-indicator" class="htmx-indicator">Deleting…</span>
+    </form>
+  {% endif %}
+{% endif %}

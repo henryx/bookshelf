@@ -22,7 +22,9 @@ __all__ = [
     "Book",
     "BookDetails",
     "BookExistsError",
+    "BookInCollectionError",
     "BookPage",
+    "DeletedBook",
     "InvalidIsbnError",
     "IsbnAlreadySetError",
     "NewBook",
@@ -30,6 +32,7 @@ __all__ = [
     "UnknownBookError",
     "add_book",
     "add_to_collection",
+    "delete_book",
     "find_book",
     "find_book_by_isbn",
     "find_book_details",
@@ -75,6 +78,17 @@ class BookExistsError(Exception):
     def __init__(self, isbn: str) -> None:
         super().__init__(f"A book with ISBN {isbn} is already in the catalogue.")
         self.isbn = isbn
+
+
+class BookInCollectionError(Exception):
+    """A book in a user's collection cannot be deleted."""
+
+    def __init__(self, title: str) -> None:
+        super().__init__(
+            f"“{title}” is in someone’s collection: it can be deleted only when it is "
+            "in nobody’s collection."
+        )
+        self.title = title
 
 
 class IsbnAlreadySetError(Exception):
@@ -157,7 +171,10 @@ class NewBook:
 
 @dataclass(frozen=True, kw_only=True)
 class BookDetails:
-    """A catalogue book with every field; tags in alphabetical order."""
+    """
+    A catalogue book with every field; tags in alphabetical order.
+    collections: how many users have it in their collection.
+    """
 
     id: UUID
     title: str
@@ -168,6 +185,15 @@ class BookDetails:
     volume: str | None = None
     notes: str | None = None
     tags: tuple[str, ...] = ()
+    collections: int = 0
+
+
+@dataclass(frozen=True)
+class DeletedBook:
+    """A book delete_book deleted, and the authors that went with it (no other book)."""
+
+    title: str
+    authors_deleted: tuple[UUID, ...]
 
 
 @dataclass(frozen=True)
@@ -510,14 +536,15 @@ def find_book_details(conn: Connection, book_id: UUID) -> BookDetails | None:
     """Every field of the catalogue book `book_id`; None if unknown."""
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT TITLE, ISBN, PUBLISHER, PUBLICATION_YEAR, VOLUME, NOTES "
-            "FROM BOOKS WHERE ID = ?",
+            "SELECT b.TITLE, b.ISBN, b.PUBLISHER, b.PUBLICATION_YEAR, b.VOLUME, "
+            "b.NOTES, (SELECT COUNT(*) FROM COLLECTION_BOOKS cb WHERE cb.BOOK_ID = b.ID) "
+            "FROM BOOKS b WHERE b.ID = ?",
             (book_id.bytes,),
         )
         row = cur.fetchone()
         if row is None:
             return None
-        title, isbn, publisher, year, volume, notes = row
+        title, isbn, publisher, year, volume, notes, collections = row
         cur.execute(
             "SELECT a.NAME, a.SURNAME FROM BOOK_AUTHORS ba "
             "JOIN AUTHORS a ON a.ID = ba.AUTHOR_ID "
@@ -540,6 +567,7 @@ def find_book_details(conn: Connection, book_id: UUID) -> BookDetails | None:
         volume=volume,
         notes=notes,
         tags=tags,
+        collections=collections,
     )
 
 
@@ -676,14 +704,24 @@ def _replace_authors(cur: Cursor, book_id: UUID, authors: tuple[Author, ...]) ->
     Make these the book's authors, in order. A former author that no book
     uses any more is deleted, so a misspelled name stops being suggested.
     """
-    cur.execute(
-        "SELECT AUTHOR_ID FROM BOOK_AUTHORS WHERE BOOK_ID = ?", (book_id.bytes,)
-    )
-    former = [author_id for (author_id,) in cur.fetchall()]
+    former = _author_ids(cur, book_id)
     # All at once: the rows are checked one by one, so they cannot be reordered in place.
     cur.execute("DELETE FROM BOOK_AUTHORS WHERE BOOK_ID = ?", (book_id.bytes,))
     _insert_authors(cur, book_id, authors)
-    for author_id in former:
+    _delete_unused_authors(cur, former)
+
+
+def _author_ids(cur: Cursor, book_id: UUID) -> list[bytes]:
+    cur.execute(
+        "SELECT AUTHOR_ID FROM BOOK_AUTHORS WHERE BOOK_ID = ?", (book_id.bytes,)
+    )
+    return [author_id for (author_id,) in cur.fetchall()]
+
+
+def _delete_unused_authors(cur: Cursor, author_ids: list[bytes]) -> list[UUID]:
+    """Delete each of these authors that no book uses any more; the ones deleted."""
+    deleted = []
+    for author_id in author_ids:
         try:
             cur.execute(
                 "DELETE FROM AUTHORS a WHERE a.ID = ? AND NOT EXISTS ("
@@ -694,6 +732,10 @@ def _replace_authors(cur: Cursor, book_id: UUID, authors: tuple[Author, ...]) ->
             # A book being added at this moment uses it: keep it.
             if _FOREIGN_KEY_VIOLATION not in e.gds_codes:
                 raise
+            continue
+        if cur.affected_rows > 0:
+            deleted.append(UUID(bytes=author_id))
+    return deleted
 
 
 def _insert_book(
@@ -844,6 +886,44 @@ def update_book(
         elif new_isbn is not None:
             _set_isbn(cur, book_id, new_isbn)
         transaction.commit()
+
+
+def delete_book(conn: Connection, book_id: UUID) -> DeletedBook:
+    """
+    Delete a book for good, with its author links and tags. An author it
+    leaves without books is deleted too, as when editing.
+    Raises UnknownBookError for an unknown book and BookInCollectionError if
+    it is in any user's collection (even one added at this moment); nothing
+    changes then.
+
+    The transaction is its own and read committed, as in update_book.
+    """
+    with (
+        conn.transaction_manager(
+            tpb(Isolation.READ_COMMITTED_RECORD_VERSION),
+            default_action=DefaultAction.ROLLBACK,
+        ) as transaction,
+        transaction.cursor() as cur,
+    ):
+        cur.execute("SELECT TITLE FROM BOOKS WHERE ID = ?", (book_id.bytes,))
+        row = cur.fetchone()
+        if row is None:
+            raise UnknownBookError(book_id)
+        (title,) = row
+        authors = _author_ids(cur, book_id)
+        try:
+            # Its BOOK_AUTHORS and BOOK_TAGS rows go with it (ON DELETE CASCADE).
+            cur.execute("DELETE FROM BOOKS WHERE ID = ?", (book_id.bytes,))
+        except DatabaseError as e:
+            # FK_COLLECTION_BOOKS_BOOK: someone owns it.
+            if _FOREIGN_KEY_VIOLATION in e.gds_codes:
+                raise BookInCollectionError(title) from e
+            raise
+        if cur.affected_rows == 0:
+            raise UnknownBookError(book_id)
+        deleted = _delete_unused_authors(cur, authors)
+        transaction.commit()
+    return DeletedBook(title, tuple(deleted))
 
 
 def suggest_authors(conn: Connection, text: str, field: AuthorField) -> list[Author]:

@@ -4,10 +4,10 @@ from uuid import UUID
 
 import pytest
 from flask import Flask
-from playwright.sync_api import Page, expect
+from playwright.sync_api import Dialog, Page, expect
 
 from bookshelf.db import get_db
-from bookshelf.models.books import Author, NewBook, add_book
+from bookshelf.models.books import Author, NewBook, add_book, remove_from_collection
 from bookshelf.models.users import User
 
 
@@ -72,3 +72,26 @@ def test_fix_a_misspelled_author(db_app: Flask, user: User, reader_page: Page):
     expect(reader_page.locator(".flash")).to_have_text("Book “Emma” saved.")
     expect(reader_page.locator(".book-authors")).to_have_text("Jane Austen")
     expect(reader_page.locator(".book-year")).to_have_text("1815")
+
+
+def test_admin_deletes_a_book_after_confirming(
+    db_app: Flask, user: User, admin_page: Page
+):
+    with db_app.app_context():
+        conn = get_db()
+        emma = add_book(conn, user.id, NewBook("Emma"))
+        remove_from_collection(conn, user.id, emma)  # in nobody's collection
+    admin_page.reload()
+    messages: list[str] = []
+
+    def accept(dialog: Dialog) -> None:
+        messages.append(dialog.message)
+        dialog.accept()
+
+    admin_page.on("dialog", accept)
+    admin_page.get_by_role("link", name="Emma").click()
+    admin_page.locator("#book-dialog").get_by_role("button", name="Delete book").click()
+
+    expect(admin_page.locator(".flash")).to_have_text("Book “Emma” deleted.")
+    expect(admin_page.locator(".book-title")).to_have_count(0)
+    assert messages == ["Delete “Emma”? This cannot be undone."]

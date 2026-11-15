@@ -23,10 +23,13 @@ from bookshelf.models.books import (
     Book,
     BookDetails,
     BookExistsError,
+    BookInCollectionError,
+    DeletedBook,
     IsbnAlreadySetError,
     Sort,
     UnknownBookError,
     add_book,
+    delete_book,
     find_book_by_isbn,
     find_book_details,
     list_books,
@@ -326,6 +329,39 @@ def book(book_id: UUID) -> BaseResponse | str:
     )
     flash(f"Book “{details.title}” saved.")
     return htmx_redirect(list_url(_book_list_endpoint(values), values))
+
+
+def _list_after_delete(values: MultiDict[str, str], deleted: DeletedBook) -> str:
+    """
+    The list a book was deleted from, as it was; without its author filter
+    when that author went with the book (they had no other book).
+    """
+    if _author_param(values) not in deleted.authors_deleted:
+        return list_url(_book_list_endpoint(values), values)
+    others = values.copy()
+    others.pop("author")
+    return list_url(_book_list_endpoint(others), others)
+
+
+@main_route.post("/books/<uuid:book_id>/delete")
+@login_required
+def delete(book_id: UUID) -> BaseResponse:
+    """
+    Delete a book for good: admins only, and only while it is in nobody's
+    collection. Goes back to the list it was deleted from, as it was.
+    """
+    if not current_user.is_admin:
+        abort(403)
+    try:
+        deleted = delete_book(get_db(), book_id)
+    except UnknownBookError:
+        abort(404)
+    except BookInCollectionError as e:
+        # Added to a collection since the dialog was opened.
+        abort(409, description=str(e))
+    current_app.logger.info("Book %r deleted by %s", deleted.title, current_user.email)
+    flash(f"Book “{deleted.title}” deleted.")
+    return htmx_redirect(_list_after_delete(request.form, deleted))
 
 
 @main_route.route("/authors/suggestions", methods=("GET",))

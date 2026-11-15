@@ -106,6 +106,7 @@ def test_find_book_details_has_every_field(db_app, user):
         volume="1",
         notes="First of six.",
         tags=("Classic", "sf"),
+        collections=1,
     )
 
 
