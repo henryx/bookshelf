@@ -199,9 +199,11 @@ that already exist, except functions: each is `CREATE OR ALTER`ed on every run, 
 
 ## CI and releases
 
-GitHub Actions run lint, format check, type check, audit, tests and browser tests on every push to
-`main` and on pull requests, and build the image. Pushes to `main` publish
-`ghcr.io/<owner>/<repo>:latest`.
+GitHub Actions (`tests.yml`) run lint, format check, type check, audit, tests and browser tests on
+every push to `main`, on version tags and on pull requests. Only once all of them pass is the image
+built (`docker.yml`, called by `tests.yml`): pushes to `main` publish `ghcr.io/<owner>/<repo>:latest`,
+version tags their version tags, and pull requests just build it. A commit or tag whose checks fail
+publishes no image.
 
 To release a version:
 
@@ -212,4 +214,4 @@ git tag v1.2.3
 git push origin main v1.2.3
 ```
 
-This publishes the image tags `1.2.3`, `1.2` and `1`.
+Once the checks pass on the tag, this publishes the image tags `1.2.3`, `1.2` and `1`.
