@@ -116,6 +116,25 @@ def test_list_collection_searches_sorts_and_pages(db_app, user):
     assert [b.title for b in by_author.books] == ["Emma", "Persuasion", "Dune"]
     assert by_author.books[2].authors == (Author("Frank", "Herbert"),)
     assert ([b.title for b in second.books], second.page) == (["Persuasion"], 2)
+    assert second.total == 3
+
+
+def test_list_collection_out_of_range_gives_the_last_page(db_app, user, other):
+    for title in ("Dune", "Emma", "Persuasion"):
+        _book(db_app, user, title)
+    _book(db_app, other, "Ulysses")
+
+    with db_app.app_context():
+        conn = get_db()
+        last = list_collection(conn, user.id, page=9, page_size=2)
+        empty = list_collection(conn, user.id, "nothing like this", page=3)
+
+    assert ([b.title for b in last.books], last.page, last.total) == (
+        ["Persuasion"],
+        2,
+        3,
+    )
+    assert (empty.books, empty.page, empty.total) == ([], 1, 0)
 
 
 def test_add_to_collection(db_app, user, other):

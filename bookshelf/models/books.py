@@ -1,4 +1,5 @@
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from enum import StrEnum
 from uuid import UUID, uuid4
@@ -139,7 +140,8 @@ class BookPage:
 
 # Search: title, any author's "name surname" or ISBN contains the text,
 # ignoring case; the BOOK_MATCHES function (db/schema.py) holds the
-# condition, with the parameters from _search_params.
+# condition, with the parameters from _search_params. The list queries count
+# the matches themselves: this one is only for a page past the last.
 _COUNT_QUERY = """
     SELECT COUNT(*) FROM BOOKS b
     WHERE BOOK_MATCHES(b.ID, b.TITLE, b.ISBN, ?, ?, ?)
@@ -147,12 +149,15 @@ _COUNT_QUERY = """
 
 # One page of books, then a row per author (one with NULL for a book without
 # authors), in the page's order and each book's author order, with the
-# current user's copies (NULL when the book is not in their collection).
+# current user's copies (NULL when the book is not in their collection) and,
+# last, the number of books matching the search on every page (TOTAL), so
+# the one scan the search needs also counts them.
 _LIST_QUERIES: dict[Sort, str] = {
     Sort.TITLE: """
-        SELECT p.ID, p.TITLE, p.PUBLICATION_YEAR, cb.COPIES, a.NAME, a.SURNAME
+        SELECT p.ID, p.TITLE, p.PUBLICATION_YEAR, cb.COPIES, a.NAME, a.SURNAME, p.TOTAL
         FROM (
-            SELECT b.ID, b.TITLE, b.PUBLICATION_YEAR FROM BOOKS b
+            SELECT b.ID, b.TITLE, b.PUBLICATION_YEAR, COUNT(*) OVER () AS TOTAL
+            FROM BOOKS b
             WHERE BOOK_MATCHES(b.ID, b.TITLE, b.ISBN, ?, ?, ?)
             ORDER BY b.TITLE, b.ID
             OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
@@ -164,9 +169,9 @@ _LIST_QUERIES: dict[Sort, str] = {
     """,
     # By first author's surname, then name; books without authors last.
     Sort.AUTHOR: """
-        SELECT p.ID, p.TITLE, p.PUBLICATION_YEAR, cb.COPIES, a.NAME, a.SURNAME
+        SELECT p.ID, p.TITLE, p.PUBLICATION_YEAR, cb.COPIES, a.NAME, a.SURNAME, p.TOTAL
         FROM (
-            SELECT b.ID, b.TITLE, b.PUBLICATION_YEAR,
+            SELECT b.ID, b.TITLE, b.PUBLICATION_YEAR, COUNT(*) OVER () AS TOTAL,
                    (SELECT FIRST 1 fa.SURNAME
                     FROM BOOK_AUTHORS fba JOIN AUTHORS fa ON fa.ID = fba.AUTHOR_ID
                     WHERE fba.BOOK_ID = b.ID ORDER BY fba.SORT_ORDER) AS FIRST_SURNAME,
@@ -185,9 +190,11 @@ _LIST_QUERIES: dict[Sort, str] = {
     """,
     # Newest first.
     Sort.ADDED: """
-        SELECT p.ID, p.TITLE, p.PUBLICATION_YEAR, cb.COPIES, a.NAME, a.SURNAME
+        SELECT p.ID, p.TITLE, p.PUBLICATION_YEAR, cb.COPIES, a.NAME, a.SURNAME, p.TOTAL
         FROM (
-            SELECT b.ID, b.TITLE, b.PUBLICATION_YEAR, b.CREATED_AT FROM BOOKS b
+            SELECT b.ID, b.TITLE, b.PUBLICATION_YEAR, b.CREATED_AT,
+                   COUNT(*) OVER () AS TOTAL
+            FROM BOOKS b
             WHERE BOOK_MATCHES(b.ID, b.TITLE, b.ISBN, ?, ?, ?)
             ORDER BY b.CREATED_AT DESC, b.ID
             OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
@@ -199,7 +206,8 @@ _LIST_QUERIES: dict[Sort, str] = {
     """,
 }
 
-# The same search as _COUNT_QUERY, in one user's collection.
+# The same search as _COUNT_QUERY, in one user's collection; also only for a
+# page past the last.
 _COLLECTION_COUNT_QUERY = """
     SELECT COUNT(*) FROM BOOKS b
     JOIN COLLECTION_BOOKS cb ON cb.BOOK_ID = b.ID
@@ -211,9 +219,11 @@ _COLLECTION_COUNT_QUERY = """
 # book entered the catalogue: collections do not record when a book joined.
 _COLLECTION_QUERIES: dict[Sort, str] = {
     Sort.TITLE: """
-        SELECT p.ID, p.TITLE, p.PUBLICATION_YEAR, p.COPIES, a.NAME, a.SURNAME
+        SELECT p.ID, p.TITLE, p.PUBLICATION_YEAR, p.COPIES, a.NAME, a.SURNAME, p.TOTAL
         FROM (
-            SELECT b.ID, b.TITLE, b.PUBLICATION_YEAR, cb.COPIES FROM BOOKS b
+            SELECT b.ID, b.TITLE, b.PUBLICATION_YEAR, cb.COPIES,
+                   COUNT(*) OVER () AS TOTAL
+            FROM BOOKS b
             JOIN COLLECTION_BOOKS cb ON cb.BOOK_ID = b.ID
             WHERE cb.USER_ID = ?
               AND BOOK_MATCHES(b.ID, b.TITLE, b.ISBN, ?, ?, ?)
@@ -225,9 +235,10 @@ _COLLECTION_QUERIES: dict[Sort, str] = {
         ORDER BY p.TITLE, p.ID, ba.SORT_ORDER
     """,
     Sort.AUTHOR: """
-        SELECT p.ID, p.TITLE, p.PUBLICATION_YEAR, p.COPIES, a.NAME, a.SURNAME
+        SELECT p.ID, p.TITLE, p.PUBLICATION_YEAR, p.COPIES, a.NAME, a.SURNAME, p.TOTAL
         FROM (
             SELECT b.ID, b.TITLE, b.PUBLICATION_YEAR, cb.COPIES,
+                   COUNT(*) OVER () AS TOTAL,
                    (SELECT FIRST 1 fa.SURNAME
                     FROM BOOK_AUTHORS fba JOIN AUTHORS fa ON fa.ID = fba.AUTHOR_ID
                     WHERE fba.BOOK_ID = b.ID ORDER BY fba.SORT_ORDER) AS FIRST_SURNAME,
@@ -246,9 +257,10 @@ _COLLECTION_QUERIES: dict[Sort, str] = {
         ORDER BY p.FIRST_SURNAME NULLS LAST, p.FIRST_NAME, p.TITLE, p.ID, ba.SORT_ORDER
     """,
     Sort.ADDED: """
-        SELECT p.ID, p.TITLE, p.PUBLICATION_YEAR, p.COPIES, a.NAME, a.SURNAME
+        SELECT p.ID, p.TITLE, p.PUBLICATION_YEAR, p.COPIES, a.NAME, a.SURNAME, p.TOTAL
         FROM (
-            SELECT b.ID, b.TITLE, b.PUBLICATION_YEAR, b.CREATED_AT, cb.COPIES
+            SELECT b.ID, b.TITLE, b.PUBLICATION_YEAR, b.CREATED_AT, cb.COPIES,
+                   COUNT(*) OVER () AS TOTAL
             FROM BOOKS b
             JOIN COLLECTION_BOOKS cb ON cb.BOOK_ID = b.ID
             WHERE cb.USER_ID = ?
@@ -350,9 +362,32 @@ def _books(rows: list[_BookRow]) -> list[Book]:
     return list(books.values())
 
 
-def _nearest_page(total: int, page: int, page_size: int) -> int:
-    """`page`, or the nearest existing page when it is out of range."""
-    return min(max(page, 1), BookPage([], total, 1, page_size).pages)
+type _Query = tuple[str, tuple[object, ...]]
+
+
+def _book_page(
+    cur: Cursor,
+    list_query: Callable[[int], _Query],
+    count_query: _Query,
+    page: int,
+    page_size: int,
+) -> BookPage:
+    """
+    One page of books from `list_query` (the query and its parameters for an
+    offset), whose rows end with the total. A page out of range gives the
+    nearest existing page; only then is `count_query` run, to find it.
+    """
+    page = max(page, 1)
+    cur.execute(*list_query((page - 1) * page_size))
+    rows = cur.fetchall()
+    if not rows and page > 1:
+        cur.execute(*count_query)
+        (total,) = cur.fetchone()
+        page = BookPage([], total, 1, page_size).pages
+        cur.execute(*list_query((page - 1) * page_size))
+        rows = cur.fetchall()
+    total = rows[0][-1] if rows else 0
+    return BookPage(_books([row[:-1] for row in rows]), total, page, page_size)
 
 
 def list_books(
@@ -374,12 +409,16 @@ def list_books(
         return BookPage([], 0, 1, page_size)
     params = _search_params(search)
     with conn.cursor() as cur:
-        cur.execute(_COUNT_QUERY, params)
-        (total,) = cur.fetchone()
-        page = _nearest_page(total, page, page_size)
-        offset = (page - 1) * page_size
-        cur.execute(_LIST_QUERIES[sort], (*params, offset, page_size, user_id.bytes))
-        return BookPage(_books(cur.fetchall()), total, page, page_size)
+        return _book_page(
+            cur,
+            lambda offset: (
+                _LIST_QUERIES[sort],
+                (*params, offset, page_size, user_id.bytes),
+            ),
+            (_COUNT_QUERY, params),
+            page,
+            page_size,
+        )
 
 
 def list_collection(
@@ -397,12 +436,13 @@ def list_collection(
         return BookPage([], 0, 1, page_size)
     params = (user_id.bytes, *_search_params(search))
     with conn.cursor() as cur:
-        cur.execute(_COLLECTION_COUNT_QUERY, params)
-        (total,) = cur.fetchone()
-        page = _nearest_page(total, page, page_size)
-        offset = (page - 1) * page_size
-        cur.execute(_COLLECTION_QUERIES[sort], (*params, offset, page_size))
-        return BookPage(_books(cur.fetchall()), total, page, page_size)
+        return _book_page(
+            cur,
+            lambda offset: (_COLLECTION_QUERIES[sort], (*params, offset, page_size)),
+            (_COLLECTION_COUNT_QUERY, params),
+            page,
+            page_size,
+        )
 
 
 def find_book(conn: Connection, user_id: UUID, book_id: UUID) -> Book | None:

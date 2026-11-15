@@ -242,3 +242,13 @@ def test_list_books_returns_total_and_pages(db_app, user):
     assert page.total == 3
     assert page.page == 2
     assert page.pages == 2
+
+
+def test_list_books_out_of_range_gives_the_last_page_with_its_total(db_app, user):
+    for n in range(3):
+        _add_book(db_app, f"Book {n}")
+
+    with db_app.app_context():
+        page = list_books(get_db(), user.id, "book", Sort.ADDED, 7, page_size=2)
+
+    assert (len(page.books), page.total, page.page) == (1, 3, 2)
