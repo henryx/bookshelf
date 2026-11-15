@@ -3,7 +3,7 @@
 # venv and release must share the same base: the release venv is built
 # from the packages cached by the venv stage for this interpreter.
 ARG PYTHON_IMAGE=python:3.14-slim
-ARG UV_IMAGE=ghcr.io/astral-sh/uv:0.12.24
+ARG UV_IMAGE=ghcr.io/astral-sh/uv:0.13.6
 
 FROM ${UV_IMAGE} AS uv
 
