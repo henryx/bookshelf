@@ -8,7 +8,14 @@
   {% endcall %}
 {% endblock %}
 {% block content %}
-  <h2>Your collection</h2>
+  {% if author %}
+    {# One author's books in the collection (/collection?author=<id>). #}
+    <h2>Your books by {{ author.author }}</h2>
+    <p><a href="{{ url_for('collection.index') }}">All your books</a> ·
+      <a href="{{ url_for('main.index', author=author.id) }}">All books by {{ author.author }}</a></p>
+  {% else %}
+    <h2>Your collection</h2>
+  {% endif %}
   <div id="book-list">
     {% include "_book_list.html" %}
   </div>

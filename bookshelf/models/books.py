@@ -480,13 +480,14 @@ def list_collection(
     sort: Sort = Sort.TITLE,
     page: int = 1,
     *,
+    author_id: UUID | None = None,
     page_size: int = PAGE_SIZE,
 ) -> BookPage:
     """One page of the books in `user_id`'s collection, as list_books."""
     search = search.strip()
     if len(search) > SEARCH_MAX_LENGTH:
         return BookPage([], 0, 1, page_size)
-    params = (user_id.bytes, *_search_params(search, None))
+    params = (user_id.bytes, *_search_params(search, author_id))
     with conn.cursor() as cur:
         return _book_page(
             cur,

@@ -40,7 +40,7 @@ from bookshelf.models.books import (
 from bookshelf.routes import htmx_redirect, is_htmx
 from bookshelf.routes.forms import BookForm, EditBookForm
 
-__all__ = ["list_state", "list_url", "main_route", "render_catalogue"]
+__all__ = ["author_filter", "list_state", "list_url", "main_route", "render_catalogue"]
 
 main_route = Blueprint("main", __name__)
 
@@ -70,8 +70,8 @@ def _author_param(values: MultiDict[str, str]) -> UUID | None:
         return None
 
 
-def _author_filter(values: MultiDict[str, str]) -> AuthorEntry | None:
-    """The author the catalogue is limited to, or None; 404 for an unknown one."""
+def author_filter(values: MultiDict[str, str]) -> AuthorEntry | None:
+    """The author a book list is limited to, or None; 404 for an unknown one."""
     if not values.get("author"):
         return None
     author_id = _author_param(values)
@@ -83,8 +83,8 @@ def _author_filter(values: MultiDict[str, str]) -> AuthorEntry | None:
 
 def list_url(endpoint: str, values: MultiDict[str, str]) -> str:
     """
-    The URL of a book list (`endpoint`) showing the search, order, page and,
-    for the catalogue, the author in `values`.
+    The URL of a book list (`endpoint`) showing the search, order, page and
+    author in `values`.
     """
     search, sort, page = list_state(values)
     return url_for(
@@ -105,7 +105,7 @@ def render_catalogue(
     `notice` is shown above it.
     """
     search, sort, page = list_state(values)
-    author = _author_filter(values)
+    author = author_filter(values)
     books = list_books(
         get_db(),
         current_user.id,

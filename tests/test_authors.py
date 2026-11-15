@@ -29,6 +29,7 @@ from bookshelf.models.books import (
     add_book,
     find_book_details,
     list_books,
+    list_collection,
 )
 from bookshelf.models.users import User, create_user
 
@@ -460,7 +461,70 @@ def test_authors_under_a_book_link_to_their_books(db_app, client, user, url):
 
     html = client.get(url).get_data(as_text=True)
 
+    # Each list links to the author's books in that same list.
     assert (
-        f'<span class="book-authors"><a href="/?author={frank.id}">Frank Herbert</a>, '
-        f'<a href="/?author={homer.id}">Homer</a></span>'
+        f'<span class="book-authors"><a href="{url}?author={frank.id}">Frank Herbert</a>, '
+        f'<a href="{url}?author={homer.id}">Homer</a></span>'
     ) in html
+
+
+# One author's books in the user's collection (/collection?author=<id>)
+
+
+def test_list_collection_by_one_author(db_app, user, password):
+    with db_app.app_context():
+        other = create_user(get_db(), "other@example.com", password)
+    _book(db_app, user, "Dune", FRANK)
+    _book(db_app, user, "Emma", JANE)
+    _book(db_app, other, "Dune Messiah", FRANK)  # not in the user's collection
+    frank = _entry(db_app, FRANK)
+
+    with db_app.app_context():
+        page = list_collection(get_db(), user.id, author_id=frank.id)
+
+    assert ([b.title for b in page.books], page.total) == (["Dune"], 1)
+
+
+def test_an_authors_books_in_the_collection(db_app, client, user, password):
+    with db_app.app_context():
+        other = create_user(get_db(), "other@example.com", password)
+    _book(db_app, user, "Dune", FRANK)
+    _book(db_app, user, "Emma", JANE)
+    _book(db_app, other, "Dune Messiah", FRANK)
+    frank = _entry(db_app, FRANK)
+
+    html = client.get(f"/collection/?author={frank.id}").get_data(as_text=True)
+
+    assert _titles(html) == ["Dune"]
+    assert "Your books by Frank Herbert" in html
+    assert f'<a href="/?author={frank.id}">All books by Frank Herbert</a>' in html
+    assert '<a href="/collection/">All your books</a>' in html
+    assert f'<input type="hidden" name="author" value="{frank.id}">' in html
+
+
+def test_changing_copies_keeps_to_the_author(db_app, client, user):
+    dune = _book(db_app, user, "Dune", FRANK)
+    _book(db_app, user, "Emma", JANE)
+    frank = _entry(db_app, FRANK)
+
+    rv = client.post(
+        f"/collection/books/{dune}/copies",
+        data={"copies": "2", "author": str(frank.id), "page": "1"},
+        headers={**HTMX, "HX-Target": "book-list"},
+    )
+
+    assert _titles(rv.get_data(as_text=True)) == ["Dune"]
+
+
+def test_removing_without_javascript_returns_to_the_authors_books(db_app, client, user):
+    dune = _book(db_app, user, "Dune", FRANK)
+    frank = _entry(db_app, FRANK)
+
+    rv = client.post(f"/collection/books/{dune}/remove", data={"author": str(frank.id)})
+
+    assert rv.headers["Location"] == f"/collection/?author={frank.id}"
+
+
+@pytest.mark.parametrize("author", [str(uuid4()), "not-an-id"])
+def test_unknown_authors_books_in_the_collection_are_not_found(client, author):
+    assert client.get(f"/collection/?author={author}").status_code == 404

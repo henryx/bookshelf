@@ -65,3 +65,17 @@ def test_an_author_under_a_book_opens_their_books(misspelled, reader_page: Page)
         reader_page.get_by_role("heading", name="Books by Jane Austen")
     ).to_be_visible()
     expect(reader_page.locator(".book-title")).to_have_text(["Emma"])
+
+
+def test_an_author_in_the_collection_opens_their_books_there(
+    misspelled, reader_page: Page, live_server: str
+):
+    reader_page.goto(f"{live_server}/collection")
+
+    reader_page.locator(".book-authors").get_by_role("link", name="Jane Austen").click()
+
+    expect(
+        reader_page.get_by_role("heading", name="Your books by Jane Austen")
+    ).to_be_visible()
+    expect(reader_page.locator(".book-title")).to_have_text(["Emma"])
+    assert "/collection/?author=" in reader_page.url

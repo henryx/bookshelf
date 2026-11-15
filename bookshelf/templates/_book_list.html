@@ -2,8 +2,8 @@
    user's collection (collection.index). Part of main.html and collection.html, and
    the htmx response for searches, pages and the rows' buttons, which swap the whole
    list so the count and pages stay right. notice / list_error: shown above the list.
-   author: the author the catalogue is limited to (one author's books), kept by every link
-   and form here; None for the whole catalogue and for the collection. #}
+   author: the author the list is limited to (one author's books), kept by every link
+   and form here; None for the whole list. #}
 {% set author_id = author.id if author else None %}
 {% set in_collection = list_endpoint == "collection.index" %}
 {% macro page_link(number, label) -%}
@@ -41,10 +41,10 @@
                                   page=books.page if books.page > 1 else None) %}
         <a class="book-title" href="{{ book_url }}" hx-get="{{ book_url }}"
            hx-target="#book-dialog-body" hx-indicator="closest li">{{ book.title }}</a>
-        {# Each author links to their books (the catalogue limited to them). #}
+        {# Each author links to their books in this same list. #}
         {% if book.authors %}<span class="book-authors">
           {%- for a in book.authors -%}
-            <a href="{{ url_for('main.index', author=a.id) }}">{{ a }}</a>{% if not loop.last %}, {% endif %}
+            <a href="{{ url_for(list_endpoint, author=a.id) }}">{{ a }}</a>{% if not loop.last %}, {% endif %}
           {%- endfor -%}
         </span>{% endif %}
         {% if book.publication_year %}<span class="book-year">{{ book.publication_year }}</span>{% endif %}

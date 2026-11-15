@@ -26,7 +26,12 @@ from bookshelf.models.books import (
 )
 from bookshelf.routes import htmx_redirect, is_htmx
 from bookshelf.routes.forms import CopiesForm
-from bookshelf.routes.main import list_state, list_url, render_catalogue
+from bookshelf.routes.main import (
+    author_filter,
+    list_state,
+    list_url,
+    render_catalogue,
+)
 
 __all__ = ["collection_route"]
 
@@ -41,20 +46,29 @@ def _render_collection(
     error: str | None = None,
 ) -> str:
     """
-    The user's collection with the search, order and page in `values`: the
-    list alone when `partial`, else the page. `notice` or `error` is shown
+    The user's collection with the search, order, page and author (one
+    author's books) in `values`: the list alone when `partial`, else the page. `notice` or `error` is shown
     above it.
     """
     search, sort, page = list_state(values)
+    author = author_filter(values)
+    books = list_collection(
+        get_db(),
+        current_user.id,
+        search,
+        sort,
+        page,
+        author_id=author.id if author else None,
+    )
     return render_template(
         "_book_list.html" if partial else "collection.html",
-        books=list_collection(get_db(), current_user.id, search, sort, page),
+        books=books,
         search=search,
         sort=sort,
         sorts=Sort,
         search_max_length=SEARCH_MAX_LENGTH,
         list_endpoint="collection.index",
-        author=None,
+        author=author,
         notice=notice,
         list_error=error,
     )
