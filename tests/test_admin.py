@@ -8,6 +8,7 @@ from flask.testing import FlaskClient
 
 from bookshelf.db import get_db
 from bookshelf.models.users import (
+    LastAdminError,
     Role,
     User,
     authenticate,
@@ -517,3 +518,40 @@ def test_unknown_user_is_not_found(admin_client: FlaskClient, method: str, suffi
     rv = getattr(admin_client, method)(f"/admin/users/{uuid4()}{suffix}")
 
     assert rv.status_code == 404
+
+
+def _last_admin(_conn: object, user: User, *_args: object, **_kwargs: object) -> None:
+    """Stands in for a removal that would leave no admin (another admin's
+    concurrent removal: the acting admin is never the target)."""
+    raise LastAdminError(user.email)
+
+
+def test_delete_refused_when_no_other_admin_would_remain(
+    admin_client: FlaskClient,
+    db_app: Flask,
+    user: User,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr("bookshelf.routes.admin.delete_user", _last_admin)
+
+    rv = admin_client.post(f"{_detail(user)}/delete", headers=HTMX)
+
+    assert rv.status_code == 409
+    assert rv.headers["HX-Retarget"] == "#error-banner"
+    assert "only admin left" in rv.get_data(as_text=True)
+
+
+def test_demotion_refused_when_no_other_admin_would_remain(
+    admin_client: FlaskClient,
+    db_app: Flask,
+    password: str,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    with db_app.app_context():
+        other = create_user(get_db(), "second@example.com", password, role=Role.ADMIN)
+    monkeypatch.setattr("bookshelf.routes.admin.update_user", _last_admin)
+
+    rv = admin_client.post(_detail(other), data={"role": "REGULAR"}, headers=HTMX)
+
+    assert rv.status_code == 200
+    assert "only admin left" in rv.get_data(as_text=True)

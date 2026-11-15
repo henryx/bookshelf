@@ -8,12 +8,13 @@ from uuid import UUID, uuid4
 
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
-from firebird.driver import Connection, DatabaseError
+from firebird.driver import Connection, Cursor, DatabaseError
 
 from bookshelf.config import MIN_PASSWORD_LENGTH
 
 __all__ = [
     "MIN_PASSWORD_LENGTH",
+    "LastAdminError",
     "PasswordTooShortError",
     "Role",
     "User",
@@ -76,6 +77,14 @@ def validate_new_password(
     """
     if len(password) < min_length:
         raise PasswordTooShortError(min_length)
+
+
+class LastAdminError(Exception):
+    """Removing or demoting this admin would leave no admin."""
+
+    def __init__(self, email: str) -> None:
+        super().__init__(f"{email} is the only admin left")
+        self.email = email
 
 
 class UserExistsError(Exception):
@@ -267,14 +276,37 @@ def set_password(
     conn.commit()
 
 
+def _keep_another_admin(conn: Connection, cur: Cursor, user: User) -> None:
+    """
+    Before `user` stops being an admin: raise LastAdminError (rolling back)
+    unless another admin exists. The other admins' rows are updated, unchanged,
+    so this transaction holds them: two admins removing each other at once
+    then conflict, and one of them fails instead of both succeeding.
+    Without an admin, the setup wizard would open to anyone.
+    """
+    cur.execute(
+        "UPDATE USERS SET ROLE = ROLE WHERE ROLE = ? AND ID <> ?",
+        (Role.ADMIN.value, user.id.bytes),
+    )
+    if cur.affected_rows == 0:
+        conn.rollback()
+        raise LastAdminError(user.email)
+
+
 def delete_user(conn: Connection, user: User) -> None:
+    """Raises LastAdminError if `user` is the only admin."""
     with conn.cursor() as cur:
+        if user.is_admin:
+            _keep_another_admin(conn, cur, user)
         cur.execute("DELETE FROM USERS WHERE ID = ?", (user.id.bytes,))
     conn.commit()
 
 
 def set_role(conn: Connection, user: User, role: Role) -> None:
+    """Raises LastAdminError when demoting the only admin."""
     with conn.cursor() as cur:
+        if user.is_admin and role is not Role.ADMIN:
+            _keep_another_admin(conn, cur, user)
         cur.execute(
             "UPDATE USERS SET ROLE = ? WHERE ID = ?", (role.value, user.id.bytes)
         )
@@ -303,25 +335,33 @@ def update_user(
     """
     An admin's changes: set name, surname, role, lock state and, unless
     password is None, a new password, all in one transaction. Raises
-    PasswordTooShortError before changing anything.
+    PasswordTooShortError before changing anything, and LastAdminError when
+    demoting the only admin.
     """
-    if password is None:
-        with conn.cursor() as cur:
+    if password is not None:
+        validate_new_password(password, min_length=min_password_length)
+    with conn.cursor() as cur:
+        if user.is_admin and role is not Role.ADMIN:
+            _keep_another_admin(conn, cur, user)
+        if password is None:
             cur.execute(
                 "UPDATE USERS SET NAME = ?, SURNAME = ?, ROLE = ?, IS_LOCKED = ? "
                 "WHERE ID = ?",
                 (name, surname, role.value, locked, user.id.bytes),
             )
-        conn.commit()
-        return
-
-    validate_new_password(password, min_length=min_password_length)
-    with conn.cursor() as cur:
-        cur.execute(
-            "UPDATE USERS SET NAME = ?, SURNAME = ?, ROLE = ?, IS_LOCKED = ?, "
-            "PASSWORD_HASH = ? WHERE ID = ?",
-            (name, surname, role.value, locked, _hasher.hash(password), user.id.bytes),
-        )
+        else:
+            cur.execute(
+                "UPDATE USERS SET NAME = ?, SURNAME = ?, ROLE = ?, IS_LOCKED = ?, "
+                "PASSWORD_HASH = ? WHERE ID = ?",
+                (
+                    name,
+                    surname,
+                    role.value,
+                    locked,
+                    _hasher.hash(password),
+                    user.id.bytes,
+                ),
+            )
     conn.commit()
 
 

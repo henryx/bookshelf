@@ -1,13 +1,16 @@
+import threading
+import time
 from collections.abc import Callable
 from uuid import UUID
 
 import pytest
-from firebird.driver import DatabaseError
+from firebird.driver import Connection, DatabaseError
 from flask import Flask
 
 from bookshelf.db import get_db
 from bookshelf.models.users import (
     MIN_PASSWORD_LENGTH,
+    LastAdminError,
     PasswordTooShortError,
     Role,
     User,
@@ -224,6 +227,93 @@ def test_delete_user_removes_row(db_app: Flask, user: User):
         delete_user(conn, user)
 
         assert find_by_email(conn, user.email) is None
+
+
+def _admin(db_app: Flask, email: str, password: str) -> User:
+    with db_app.app_context():
+        return create_user(get_db(), email, password, role=Role.ADMIN)
+
+
+def _is_admin(db_app: Flask, email: str) -> bool:
+    with db_app.app_context():
+        found = find_by_email(get_db(), email)
+    return found is not None and found.is_admin
+
+
+def test_last_admin_cannot_be_deleted(db_app: Flask, password: str):
+    admin = _admin(db_app, "boss@example.com", password)
+
+    with db_app.app_context(), pytest.raises(LastAdminError):
+        delete_user(get_db(), admin)
+
+    assert _is_admin(db_app, admin.email)
+
+
+def test_last_admin_cannot_be_demoted(db_app: Flask, password: str):
+    admin = _admin(db_app, "boss@example.com", password)
+
+    with db_app.app_context(), pytest.raises(LastAdminError):
+        set_role(get_db(), admin, Role.REGULAR)
+    with db_app.app_context(), pytest.raises(LastAdminError):
+        update_user(
+            get_db(),
+            admin,
+            name=None,
+            surname=None,
+            role=Role.REGULAR,
+            locked=False,
+            password=None,
+        )
+
+    assert _is_admin(db_app, admin.email)
+
+
+def test_admin_can_be_deleted_or_demoted_while_another_remains(
+    db_app: Flask, password: str
+):
+    _admin(db_app, "boss@example.com", password)
+    second = _admin(db_app, "second@example.com", password)
+    third = _admin(db_app, "third@example.com", password)
+
+    with db_app.app_context():
+        conn = get_db()
+        set_role(conn, second, Role.REGULAR)
+        delete_user(conn, third)
+        assert find_by_email(conn, third.email) is None
+
+    assert not _is_admin(db_app, second.email)
+
+
+def test_admins_removing_each_other_at_once_leave_one(
+    db_app: Flask, other_conn: Connection, password: str
+):
+    first = _admin(db_app, "first@example.com", password)
+    second = _admin(db_app, "second@example.com", password)
+    errors: list[Exception] = []
+
+    def delete_second() -> None:
+        with db_app.app_context():
+            try:
+                delete_user(get_db(), second)
+            except (DatabaseError, LastAdminError) as e:
+                errors.append(e)
+
+    # Another request demotes the first admin, not yet committed...
+    with other_conn.cursor() as cur:
+        cur.execute(
+            "UPDATE USERS SET ROLE = ? WHERE ID = ?",
+            (Role.REGULAR.value, first.id.bytes),
+        )
+    # ...while this one deletes the second.
+    thread = threading.Thread(target=delete_second)
+    thread.start()
+    time.sleep(0.5)
+    other_conn.commit()
+    thread.join(timeout=30)
+
+    assert not thread.is_alive()
+    assert errors
+    assert _is_admin(db_app, second.email)
 
 
 def test_admin_exists(db_app: Flask, user: User, password: str):

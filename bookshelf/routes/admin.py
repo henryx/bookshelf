@@ -14,6 +14,7 @@ from werkzeug.wrappers import Response as BaseResponse
 
 from bookshelf.db import get_db
 from bookshelf.models.users import (
+    LastAdminError,
     Role,
     User,
     UserExistsError,
@@ -154,17 +155,21 @@ def user_details(user_id: UUID) -> BaseResponse | str:
         form.form_errors.append(CANNOT_DEMOTE_OR_LOCK_SELF)
         return _render_user(form, user)
 
-    conn = get_db()
-    update_user(
-        conn,
-        user,
-        name=name,
-        surname=surname,
-        role=role,
-        locked=locked,
-        password=password,
-        min_password_length=_min_password_length(),
-    )
+    try:
+        update_user(
+            get_db(),
+            user,
+            name=name,
+            surname=surname,
+            role=role,
+            locked=locked,
+            password=password,
+            min_password_length=_min_password_length(),
+        )
+    except LastAdminError as e:
+        current_app.logger.warning("Refused to demote %s: %s", user.email, e)
+        form.form_errors.append(f"{e}: it cannot be demoted.")
+        return _render_user(form, user)
     current_app.logger.info(
         "User %s updated by admin %s: %s",
         user.email,
@@ -183,7 +188,11 @@ def delete(user_id: UUID) -> BaseResponse:
     user = _user_or_404(user_id)
     if _is_self(user):
         abort(400, description="You cannot delete your own account.")
-    delete_user(get_db(), user)
+    try:
+        delete_user(get_db(), user)
+    except LastAdminError as e:
+        current_app.logger.warning("Refused to delete %s: %s", user.email, e)
+        abort(409, description=f"{e}: it cannot be deleted.")
     current_app.logger.info(
         "User %s deleted by admin %s", user.email, current_user.email
     )

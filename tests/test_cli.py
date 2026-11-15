@@ -5,6 +5,7 @@ from flask import Flask
 
 from bookshelf.db import get_db
 from bookshelf.models.users import (
+    LastAdminError,
     Role,
     User,
     authenticate,
@@ -650,3 +651,32 @@ def test_new_password_uses_configured_min_length(db_app: Flask, admin: User):
     assert rv.exit_code != 0
     assert "at least 20 characters" in rv.output
     assert not _exists(db_app, "new@example.com")
+
+
+def _last_admin(_conn: object, user: User, *_args: object) -> None:
+    """Stands in for a removal that would leave no admin (a concurrent one)."""
+    raise LastAdminError(user.email)
+
+
+@pytest.mark.parametrize(
+    ("command", "target"), [("demote-user", "set_role"), ("delete-user", "delete_user")]
+)
+def test_removing_the_only_admin_left_is_refused(
+    db_app: Flask,
+    admin: User,
+    password: str,
+    monkeypatch: pytest.MonkeyPatch,
+    command: str,
+    target: str,
+):
+    with db_app.app_context():
+        other = create_user(get_db(), "second@example.com", password, role=Role.ADMIN)
+    monkeypatch.setattr(f"bookshelf.cli.{target}", _last_admin)
+
+    args = [command, other.email, "--admin-email", ADMIN_EMAIL]
+    if command == "delete-user":
+        args.append("--yes")
+    rv = db_app.test_cli_runner().invoke(args=args, input=f"{ADMIN_PASSWORD}\n")
+
+    assert rv.exit_code != 0
+    assert "only admin left" in rv.output

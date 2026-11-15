@@ -8,6 +8,7 @@ from prettytable import PrettyTable
 from bookshelf.db import get_db
 from bookshelf.db.schema import init_db
 from bookshelf.models.users import (
+    LastAdminError,
     PasswordTooShortError,
     Role,
     User,
@@ -194,7 +195,10 @@ def demote_user_command(email: str, admin_email: str) -> None:
         click.echo(f"User {user.email} is not an admin.")
         return
 
-    set_role(conn, user, Role.REGULAR)
+    try:
+        set_role(conn, user, Role.REGULAR)
+    except LastAdminError as e:
+        raise click.ClickException(f"{e}: it cannot be demoted") from e
     current_app.logger.info("User %s demoted by admin %s", user.email, admin.email)
     click.echo(f"User {user.email} is now a regular user.")
 
@@ -246,7 +250,10 @@ def delete_user_command(email: str, admin_email: str, yes: bool) -> None:
     if not yes:
         click.confirm(f"Delete user {user.email}? This cannot be undone", abort=True)
 
-    delete_user(conn, user)
+    try:
+        delete_user(conn, user)
+    except LastAdminError as e:
+        raise click.ClickException(f"{e}: it cannot be deleted") from e
     current_app.logger.info("User %s deleted by admin %s", user.email, admin.email)
     click.echo(f"User {user.email} deleted.")
 
