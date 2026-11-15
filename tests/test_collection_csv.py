@@ -491,7 +491,7 @@ def test_account_page_offers_import_and_export(client):
 
 
 def test_collection_page_has_no_import_or_export(client):
-    html = client.get("/collection").get_data(as_text=True)
+    html = client.get("/").get_data(as_text=True)
 
     assert "/account/export" not in html
     assert "/account/import" not in html

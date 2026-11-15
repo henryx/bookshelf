@@ -230,7 +230,7 @@ def test_authors_search_with_htmx_returns_only_the_list(db_app, client, user):
 
 
 def test_authors_page_is_in_the_account_menu(client):
-    html = client.get("/").get_data(as_text=True)
+    html = client.get("/catalogue").get_data(as_text=True)
 
     assert '<a href="/authors/">Authors</a>' in html
 
@@ -369,7 +369,8 @@ def test_author_names_link_to_their_books(db_app, client, user):
     html = client.get("/authors").get_data(as_text=True)
 
     assert (
-        f'<a class="author-name" href="/?author={frank.id}">Herbert, Frank</a>' in html
+        f'<a class="author-name" href="/catalogue?author={frank.id}">Herbert, Frank</a>'
+        in html
     )
 
 
@@ -378,11 +379,11 @@ def test_an_authors_books_page(db_app, client, user):
     _book(db_app, user, "Emma", JANE)
     frank = _entry(db_app, FRANK)
 
-    html = client.get(f"/?author={frank.id}").get_data(as_text=True)
+    html = client.get(f"/catalogue?author={frank.id}").get_data(as_text=True)
 
     assert _titles(html) == ["Dune"]
     assert "Books by Frank Herbert" in html
-    assert '<a href="/">All books</a>' in html
+    assert '<a href="/catalogue">All books</a>' in html
     # The search keeps to the author.
     assert f'<input type="hidden" name="author" value="{frank.id}">' in html
 
@@ -393,7 +394,7 @@ def test_an_authors_books_with_htmx_search(db_app, client, user):
     _book(db_app, user, "Dune: The Graphic Novel", JANE)
     frank = _entry(db_app, FRANK)
 
-    html = client.get(f"/?author={frank.id}&q=messiah", headers=HTMX).get_data(
+    html = client.get(f"/catalogue?author={frank.id}&q=messiah", headers=HTMX).get_data(
         as_text=True
     )
 
@@ -406,9 +407,9 @@ def test_an_authors_page_links_keep_the_author(db_app, client, user):
         _book(db_app, user, f"Book {n:02}", FRANK)
     frank = _entry(db_app, FRANK)
 
-    html = client.get(f"/?author={frank.id}").get_data(as_text=True)
+    html = client.get(f"/catalogue?author={frank.id}").get_data(as_text=True)
 
-    assert f'href="/?author={frank.id}&amp;page=2"' in html
+    assert f'href="/catalogue?author={frank.id}&amp;page=2"' in html
     book_link = re.search(r'<a class="book-title" href="([^"]*)"', html)
     assert book_link is not None
     assert f"author={frank.id}" in book_link.group(1)
@@ -442,12 +443,12 @@ def test_saving_a_book_returns_to_its_authors_books(db_app, client, user):
 
     rv = client.post(f"/books/{dune}", data=data, headers=HTMX)
 
-    assert rv.headers["HX-Redirect"] == f"/?author={frank.id}"
+    assert rv.headers["HX-Redirect"] == f"/catalogue?author={frank.id}"
 
 
 @pytest.mark.parametrize("author", [str(uuid4()), "not-an-id"])
 def test_unknown_authors_books_are_not_found(client, author):
-    assert client.get(f"/?author={author}").status_code == 404
+    assert client.get(f"/catalogue?author={author}").status_code == 404
 
 
 # The authors under each book link to their books
@@ -464,7 +465,7 @@ def test_book_lists_know_their_authors_ids(db_app, user):
     assert [a.id for a in book.authors] == [frank.id, jane.id]
 
 
-@pytest.mark.parametrize("url", ["/", "/collection/"])
+@pytest.mark.parametrize("url", ["/catalogue", "/"])
 def test_authors_under_a_book_link_to_their_books(db_app, client, user, url):
     _book(db_app, user, "Dune", FRANK, Author("", "Homer"))
     frank, homer = _entry(db_app, FRANK), _entry(db_app, Author("", "Homer"))
@@ -478,7 +479,7 @@ def test_authors_under_a_book_link_to_their_books(db_app, client, user, url):
     ) in html
 
 
-# One author's books in the user's collection (/collection?author=<id>)
+# One author's books in the user's collection (/?author=<id>)
 
 
 def test_list_collection_by_one_author(db_app, user, password):
@@ -503,12 +504,14 @@ def test_an_authors_books_in_the_collection(db_app, client, user, password):
     _book(db_app, other, "Dune Messiah", FRANK)
     frank = _entry(db_app, FRANK)
 
-    html = client.get(f"/collection/?author={frank.id}").get_data(as_text=True)
+    html = client.get(f"/?author={frank.id}").get_data(as_text=True)
 
     assert _titles(html) == ["Dune"]
     assert "Your books by Frank Herbert" in html
-    assert f'<a href="/?author={frank.id}">All books by Frank Herbert</a>' in html
-    assert '<a href="/collection/">All your books</a>' in html
+    assert (
+        f'<a href="/catalogue?author={frank.id}">All books by Frank Herbert</a>' in html
+    )
+    assert '<a href="/">All your books</a>' in html
     assert f'<input type="hidden" name="author" value="{frank.id}">' in html
 
 
@@ -532,9 +535,9 @@ def test_removing_without_javascript_returns_to_the_authors_books(db_app, client
 
     rv = client.post(f"/collection/books/{dune}/remove", data={"author": str(frank.id)})
 
-    assert rv.headers["Location"] == f"/collection/?author={frank.id}"
+    assert rv.headers["Location"] == f"/?author={frank.id}"
 
 
 @pytest.mark.parametrize("author", [str(uuid4()), "not-an-id"])
 def test_unknown_authors_books_in_the_collection_are_not_found(client, author):
-    assert client.get(f"/collection/?author={author}").status_code == 404
+    assert client.get(f"/?author={author}").status_code == 404

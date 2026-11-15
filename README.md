@@ -99,8 +99,8 @@ imported are listed.
 
 "Authors" (in the account menu) lists every author with their number of books. Renaming an author changes them
 on every book; renaming to a name another author already has merges the two. An author's name, on that page or
-under any book, opens their books: in the catalogue (`/?author=<id>`), or in your collection
-(`/collection?author=<id>`) when you are browsing it. Details and decisions are in
+under any book, opens their books: in the catalogue (`/catalogue?author=<id>`), or in your collection
+(`/?author=<id>`) when you are browsing it. Details and decisions are in
 [docs/bookshelf.md](docs/bookshelf.md).
 
 ## User management

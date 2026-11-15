@@ -139,7 +139,7 @@ def render_catalogue(
     )
 
 
-@main_route.route("/", methods=("GET",))
+@main_route.route("/catalogue", methods=("GET",))
 @login_required
 def index() -> str:
     """The book list. htmx searches and page changes get only the list."""

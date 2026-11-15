@@ -35,7 +35,7 @@ def test_rename_an_author_in_the_dialog(
         "“Frnak Herbert” renamed to “Frank Herbert”."
     )
     expect(reader_page.locator(".author-name")).to_have_text(["Herbert, Frank"])
-    reader_page.goto(live_server)
+    reader_page.goto(f"{live_server}/catalogue")
     expect(reader_page.locator(".book-authors")).to_have_text(
         ["Frank Herbert", "Jane Austen"]
     )
@@ -70,7 +70,7 @@ def test_an_author_under_a_book_opens_their_books(misspelled, reader_page: Page)
 def test_an_author_in_the_collection_opens_their_books_there(
     misspelled, reader_page: Page, live_server: str
 ):
-    reader_page.goto(f"{live_server}/collection")
+    reader_page.goto(f"{live_server}/")
 
     reader_page.locator(".book-authors").get_by_role("link", name="Jane Austen").click()
 
@@ -78,4 +78,4 @@ def test_an_author_in_the_collection_opens_their_books_there(
         reader_page.get_by_role("heading", name="Your books by Jane Austen")
     ).to_be_visible()
     expect(reader_page.locator(".book-title")).to_have_text(["Emma"])
-    assert "/collection/?author=" in reader_page.url
+    assert "/?author=" in reader_page.url

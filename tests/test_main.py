@@ -69,7 +69,7 @@ def _titles(html: str) -> list[str]:
 def test_main_page_lists_books_with_authors_and_year(db_app, client):
     _add_book(db_app, "Good Omens", ("Terry Pratchett", "Neil Gaiman"), year=1990)
 
-    html = client.get("/").get_data(as_text=True)
+    html = client.get("/catalogue").get_data(as_text=True)
 
     assert "<html" in html
     assert _titles(html) == ["Good Omens"]
@@ -82,7 +82,7 @@ def test_main_page_lists_books_with_authors_and_year(db_app, client):
 
 
 def test_main_page_without_books_says_so(client):
-    html = client.get("/").get_data(as_text=True)
+    html = client.get("/catalogue").get_data(as_text=True)
 
     assert _titles(html) == []
     assert "No books in the library yet." in html
@@ -92,7 +92,7 @@ def test_books_sorted_by_title_ignoring_case_by_default(db_app, client):
     for title in ("dune", "Emma", "Anathem"):
         _add_book(db_app, title)
 
-    html = client.get("/").get_data(as_text=True)
+    html = client.get("/catalogue").get_data(as_text=True)
 
     assert _titles(html) == ["Anathem", "dune", "Emma"]
 
@@ -105,7 +105,7 @@ def test_books_sorted_by_first_author_without_authors_last(db_app, client):
     _add_book(db_app, "D", ("Banks",))
     _add_book(db_app, "E", ("Adam Smith",))
 
-    html = client.get("/?sort=author").get_data(as_text=True)
+    html = client.get("/catalogue?sort=author").get_data(as_text=True)
 
     assert _titles(html) == ["D", "C", "E", "A", "B"]
 
@@ -115,7 +115,7 @@ def test_books_sorted_by_date_added_newest_first(db_app, client):
     _add_book(db_app, "New", added=date(2024, 1, 1))
     _add_book(db_app, "Middle", added=date(2022, 1, 1))
 
-    html = client.get("/?sort=added").get_data(as_text=True)
+    html = client.get("/catalogue?sort=added").get_data(as_text=True)
 
     assert _titles(html) == ["New", "Middle", "Old"]
 
@@ -124,7 +124,7 @@ def test_unknown_sort_falls_back_to_title(db_app, client):
     _add_book(db_app, "B")
     _add_book(db_app, "A")
 
-    rv = client.get("/?sort=nonsense")
+    rv = client.get("/catalogue?sort=nonsense")
 
     assert rv.status_code == 200
     assert _titles(rv.get_data(as_text=True)) == ["A", "B"]
@@ -149,7 +149,7 @@ def test_search_matches_title_author_or_isbn(db_app, client, search, expected):
     _add_book(db_app, "Dune", ("Frank Herbert",), isbn="9780441172719")
     _add_book(db_app, "Ancillary Justice", ("Someone", "Ann Leckie"))
 
-    html = client.get("/", query_string={"q": search}).get_data(as_text=True)
+    html = client.get("/catalogue", query_string={"q": search}).get_data(as_text=True)
 
     assert _titles(html) == expected
 
@@ -158,7 +158,9 @@ def test_search_by_isbn_13_start_that_is_also_a_valid_isbn_10(db_app, client):
     # 9780441174 is a valid ISBN-10 too: the book is still found as typed.
     _add_book(db_app, "Dune Messiah", isbn="9780441174706")
 
-    html = client.get("/", query_string={"q": "9780441174"}).get_data(as_text=True)
+    html = client.get("/catalogue", query_string={"q": "9780441174"}).get_data(
+        as_text=True
+    )
 
     assert _titles(html) == ["Dune Messiah"]
 
@@ -166,7 +168,7 @@ def test_search_by_isbn_13_start_that_is_also_a_valid_isbn_10(db_app, client):
 def test_search_without_matches_says_so(db_app, client):
     _add_book(db_app, "Dune")
 
-    html = client.get("/?q=zzz").get_data(as_text=True)
+    html = client.get("/catalogue?q=zzz").get_data(as_text=True)
 
     assert "No books match" in html
     assert "zzz" in html
@@ -175,7 +177,7 @@ def test_search_without_matches_says_so(db_app, client):
 def test_very_long_search_is_not_an_error(db_app, client):
     _add_book(db_app, "Dune")
 
-    rv = client.get("/", query_string={"q": "x" * 1000})
+    rv = client.get("/catalogue", query_string={"q": "x" * 1000})
 
     assert rv.status_code == 200
     assert _titles(rv.get_data(as_text=True)) == []
@@ -185,8 +187,8 @@ def test_books_shown_in_pages(db_app, client):
     for n in range(PAGE_SIZE + 2):
         _add_book(db_app, f"Book {n:03}")
 
-    first = client.get("/").get_data(as_text=True)
-    second = client.get("/?page=2").get_data(as_text=True)
+    first = client.get("/catalogue").get_data(as_text=True)
+    second = client.get("/catalogue?page=2").get_data(as_text=True)
 
     assert len(_titles(first)) == PAGE_SIZE
     assert _titles(second) == ["Book 050", "Book 051"]
@@ -199,9 +201,9 @@ def test_page_links_keep_search_and_sort(db_app, client):
     for n in range(PAGE_SIZE + 1):
         _add_book(db_app, f"Book {n:03}")
 
-    html = client.get("/?q=book&sort=added").get_data(as_text=True)
+    html = client.get("/catalogue?q=book&sort=added").get_data(as_text=True)
 
-    links = re.findall(r'href="(/\?[^"]*page=2[^"]*)"', html)
+    links = re.findall(r'href="(/catalogue\?[^"]*page=2[^"]*)"', html)
     assert links
     assert "q=book" in links[0]
     assert "sort=added" in links[0]
@@ -211,7 +213,7 @@ def test_page_links_keep_search_and_sort(db_app, client):
 def test_page_out_of_range_shows_nearest_page(db_app, client, page):
     _add_book(db_app, "Dune")
 
-    rv = client.get(f"/?page={page}")
+    rv = client.get(f"/catalogue?page={page}")
 
     assert rv.status_code == 200
     assert _titles(rv.get_data(as_text=True)) == ["Dune"]
@@ -220,7 +222,7 @@ def test_page_out_of_range_shows_nearest_page(db_app, client, page):
 def test_htmx_request_returns_only_the_list(db_app, client):
     _add_book(db_app, "Dune")
 
-    html = client.get("/?q=dune", headers=HTMX).get_data(as_text=True)
+    html = client.get("/catalogue?q=dune", headers=HTMX).get_data(as_text=True)
 
     assert "<html" not in html
     assert 'id="book-search-q"' not in html  # the search box
@@ -228,7 +230,9 @@ def test_htmx_request_returns_only_the_list(db_app, client):
 
 
 def test_htmx_history_restore_returns_full_page(db_app, client):
-    rv = client.get("/?q=dune", headers={**HTMX, "HX-History-Restore-Request": "true"})
+    rv = client.get(
+        "/catalogue?q=dune", headers={**HTMX, "HX-History-Restore-Request": "true"}
+    )
 
     assert "<html" in rv.get_data(as_text=True)
 

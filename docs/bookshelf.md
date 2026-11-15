@@ -513,7 +513,7 @@ Known limitations:
 
 ## Main page
 
-Status: built at `/`, with the add-book button (see Books, "Adding a book"); linked as "Catalogue" from the account
+Status: built at `/catalogue`, with the add-book button (see Books, "Adding a book"); linked as "Catalogue" from the account
 menu.
 
 Decisions:
@@ -549,20 +549,20 @@ Known limitations:
 
 ## Your collection
 
-Status: built at `/collection`, linked from the account menu; the first page, shown after login and by the
+Status: built at `/`, linked from the account menu; the first page, shown after login and by the
 "Bookshelf" title.
 
 The books the user owns, from the shared catalogue: the same list as the main page (search, order, pages of 50),
 showing only their books. Each row has the number of copies, editable, with "Save", a "Read" checkbox and a
 "Remove" button.
-It can be limited to one author's books (`/collection?author=<id>`, see "One author's books").
+It can be limited to one author's books (`/?author=<id>`, see "One author's books").
 
 Decisions:
 
  - The collection has its own page; the main page stays the whole catalogue.
  - The collection is the first page: logging in, finishing the first-run wizard, the top bar's title and the
-   error page's "Back to Bookshelf" lead to it, since a user mostly works with their own books. The catalogue
-   keeps `/`.
+   error page's "Back to Bookshelf" lead to it, since a user mostly works with their own books. It is at `/`;
+   the catalogue is at `/catalogue`.
  - The collection has the same "+" button as the main page (see "Adding a book"): the form carries
    `list=collection`, so adding a book, or adding the catalogue book whose ISBN was typed, comes back to the
    collection.
@@ -630,7 +630,7 @@ Known limitations:
 
 ### One author's books
 
-Status: built at `/?author=<id>` (the catalogue) and `/collection?author=<id>` (the user's own books by that
+Status: built at `/catalogue?author=<id>` (the catalogue) and `/?author=<id>` (the user's own books by that
 author). The first is linked from each name on the authors page and from the authors under each book in the
 catalogue; the second from the authors under each book in the collection.
 

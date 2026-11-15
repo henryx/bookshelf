@@ -64,7 +64,7 @@ def test_duplicate_isbn_offers_the_existing_book(reader_page: Page, emma):
 def test_change_copies_on_the_collection_page(
     reader_page: Page, live_server: str, dune
 ):
-    reader_page.goto(f"{live_server}/collection")
+    reader_page.goto(f"{live_server}/")
 
     reader_page.get_by_label("Copies of Dune").fill("5")
     reader_page.get_by_role("button", name="Save").click()
@@ -76,7 +76,7 @@ def test_change_copies_on_the_collection_page(
 
 
 def test_remove_on_the_collection_page(reader_page: Page, live_server: str, dune):
-    reader_page.goto(f"{live_server}/collection")
+    reader_page.goto(f"{live_server}/")
 
     reader_page.get_by_role("button", name="Remove Dune from your collection").click()
 
@@ -90,7 +90,7 @@ def test_remove_on_the_collection_page(reader_page: Page, live_server: str, dune
 
 
 def test_tick_read_on_the_collection_page(reader_page: Page, live_server: str, dune):
-    reader_page.goto(f"{live_server}/collection")
+    reader_page.goto(f"{live_server}/")
     checkbox = reader_page.get_by_label("Dune read")
     expect(checkbox).not_to_be_checked()
 
@@ -128,7 +128,7 @@ def test_csv_import_shows_its_report_on_the_account_page(
     )
     expect(csv_section).to_contain_text("Row 4: the title is required.")
     assert reader_page.url == url
-    reader_page.goto(f"{live_server}/collection")
+    reader_page.goto(f"{live_server}/")
     expect(reader_page.locator(".book-title")).to_have_text(["Dune", "Emma"])
 
 

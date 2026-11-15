@@ -158,9 +158,11 @@ def test_delete_returns_to_the_list(db_app, admin_client, user, admin, caplog):
         )
 
     assert rv.status_code == 204
-    assert rv.headers["HX-Redirect"] == "/?q=du&sort=added"
+    assert rv.headers["HX-Redirect"] == "/catalogue?q=du&sort=added"
     assert not _exists(db_app, dune)
-    assert "Book “Dune” deleted." in admin_client.get("/").get_data(as_text=True)
+    assert "Book “Dune” deleted." in admin_client.get("/catalogue").get_data(
+        as_text=True
+    )
     assert f"Book 'Dune' deleted by {admin.email}" in caplog.text
 
 
@@ -172,7 +174,7 @@ def test_delete_drops_the_filter_of_an_author_now_gone(db_app, admin_client, use
 
     rv = admin_client.post(f"/books/{dune}/delete", data={"author": str(frank.id)})
 
-    assert rv.headers["Location"] == "/"
+    assert rv.headers["Location"] == "/catalogue"
 
 
 def test_delete_keeps_the_filter_of_an_author_still_there(db_app, admin_client, user):
@@ -183,7 +185,7 @@ def test_delete_keeps_the_filter_of_an_author_still_there(db_app, admin_client, 
 
     rv = admin_client.post(f"/books/{dune}/delete", data={"author": str(frank.id)})
 
-    assert rv.headers["Location"] == f"/?author={frank.id}"
+    assert rv.headers["Location"] == f"/catalogue?author={frank.id}"
 
 
 def test_delete_refused_for_a_book_added_to_a_collection_meanwhile(

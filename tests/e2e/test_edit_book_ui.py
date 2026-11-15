@@ -47,7 +47,7 @@ def test_errors_keep_the_dialog_open(dune, reader_page: Page):
 def test_title_opens_the_dialog_from_the_collection(
     reader_page: Page, live_server: str, dune
 ):
-    reader_page.goto(f"{live_server}/collection")
+    reader_page.goto(f"{live_server}/")
 
     reader_page.get_by_role("link", name="Dune").click()
 

@@ -367,10 +367,10 @@ def test_save_redirects_to_the_list_it_came_from(db_app, client, user):
     rv = client.post(_url(book_id), data=data, headers=HTMX)
 
     assert rv.status_code == 204
-    assert rv.headers["HX-Redirect"] == "/?q=dune"
+    assert rv.headers["HX-Redirect"] == "/catalogue?q=dune"
     details = _details(db_app, book_id)
     assert (details.volume, details.plot, details.categories) == ("2", None, ("a", "b"))
-    assert "Book “Dune” saved." in client.get("/").get_data(as_text=True)
+    assert "Book “Dune” saved." in client.get("/catalogue").get_data(as_text=True)
 
 
 def test_save_from_the_collection_returns_there(db_app, client, user):
@@ -380,7 +380,7 @@ def test_save_from_the_collection_returns_there(db_app, client, user):
     rv = client.post(_url(book_id), data=data)
 
     assert rv.status_code == 302
-    assert rv.headers["Location"] == "/collection/?sort=author&page=2"
+    assert rv.headers["Location"] == "/?sort=author&page=2"
 
 
 def test_save_goes_back_only_to_a_book_list(db_app, client, user):
@@ -388,7 +388,7 @@ def test_save_goes_back_only_to_a_book_list(db_app, client, user):
 
     rv = client.post(_url(book_id), data={"list": "https://evil.example"})
 
-    assert rv.headers["Location"] == "/"
+    assert rv.headers["Location"] == "/catalogue"
 
 
 def test_save_sets_the_isbn(db_app, client, user):
@@ -563,8 +563,8 @@ def test_author_rows_without_javascript(db_app, client, user, button, rows):
 @pytest.mark.parametrize(
     ("list_url", "book_url"),
     [
-        ("/?q=dun", "?q=dun"),
-        ("/collection/?sort=added", "?list=collection&amp;sort=added"),
+        ("/catalogue?q=dun", "?q=dun"),
+        ("/?sort=added", "?list=collection&amp;sort=added"),
     ],
 )
 def test_list_titles_open_the_book(db_app, client, user, list_url, book_url):

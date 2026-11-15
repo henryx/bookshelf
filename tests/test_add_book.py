@@ -69,7 +69,7 @@ def _rows(app: Flask, sql: str, params: tuple[object, ...] = ()) -> list[tuple]:
 
 
 def test_main_page_has_floating_add_button_opening_closed_dialog(client):
-    html = client.get("/").get_data(as_text=True)
+    html = client.get("/catalogue").get_data(as_text=True)
 
     assert re.search(r'<a [^>]*class="fab"', html)
     assert 'data-dialog-open="add-book-dialog"' in html
@@ -114,7 +114,7 @@ def test_add_book_saves_it_in_the_catalogue_and_collection(db_app, client, user)
     )
 
     assert rv.status_code == 204
-    assert rv.headers["HX-Redirect"] == "/"
+    assert rv.headers["HX-Redirect"] == "/catalogue"
     row = _rows(
         db_app,
         "SELECT ID, TITLE, ISBN, PUBLISHER, PUBLICATION_YEAR, SERIES, VOLUME, PLOT "
@@ -156,7 +156,7 @@ def test_add_book_saves_it_in_the_catalogue_and_collection(db_app, client, user)
 def test_add_book_shows_confirmation_on_the_list(client):
     _post(client, title="Dune")
 
-    html = client.get("/").get_data(as_text=True)
+    html = client.get("/catalogue").get_data(as_text=True)
 
     assert "Book “Dune” added." in html
     assert re.search(r'<a class="book-title"[^>]*>Dune</a>', html)
@@ -185,7 +185,7 @@ def test_add_book_author_with_surname_only(db_app, client):
 
     names = _rows(db_app, "SELECT NAME, SURNAME FROM AUTHORS")
     assert names == [("", "Homer")]
-    html = client.get("/").get_data(as_text=True)
+    html = client.get("/catalogue").get_data(as_text=True)
     assert re.search(
         r'<span class="book-authors"><a href="[^"]*">Homer</a></span>', html
     )
@@ -246,7 +246,7 @@ def test_add_book_without_htmx_redirects(client):
     rv = client.post("/books/new", data=data)
 
     assert rv.status_code == 302
-    assert rv.headers["Location"] == "/"
+    assert rv.headers["Location"] == "/catalogue"
 
 
 # Errors
@@ -690,7 +690,7 @@ def test_series_and_volume_share_a_row_and_plot_is_labelled(client):
 
 
 def test_collection_page_has_the_add_button_and_dialog(client):
-    html = client.get("/collection").get_data(as_text=True)
+    html = client.get("/").get_data(as_text=True)
 
     assert 'href="/books/new?list=collection"' in html
     assert 'data-dialog-open="add-book-dialog"' in html
@@ -699,7 +699,7 @@ def test_collection_page_has_the_add_button_and_dialog(client):
 
 
 def test_catalogue_add_form_has_no_list_field(client):
-    html = client.get("/").get_data(as_text=True)
+    html = client.get("/catalogue").get_data(as_text=True)
 
     assert 'name="list"' not in html
 
@@ -707,13 +707,13 @@ def test_catalogue_add_form_has_no_list_field(client):
 def test_add_book_from_the_collection_goes_back_to_it(client):
     rv = _post(client, title="Dune", list="collection")
 
-    assert rv.headers["HX-Redirect"] == "/collection/"
+    assert rv.headers["HX-Redirect"] == "/"
 
 
 def test_add_book_from_the_catalogue_goes_back_to_it(client):
     rv = _post(client, title="Dune")
 
-    assert rv.headers["HX-Redirect"] == "/"
+    assert rv.headers["HX-Redirect"] == "/catalogue"
 
 
 def test_add_page_from_the_collection_keeps_the_list(client):

@@ -221,7 +221,7 @@ def test_find_book_by_isbn(db_app, user):
 
 
 def test_collection_page_requires_login(db_client):
-    rv = db_client.get("/collection")
+    rv = db_client.get("/")
 
     assert rv.status_code == 302
     assert "/login" in rv.headers["Location"]
@@ -231,7 +231,7 @@ def test_collection_page_lists_own_books_with_copies(db_app, client, user, other
     book_id = _book(db_app, user, "Dune", copies=2)
     _book(db_app, other, "Emma")
 
-    html = client.get("/collection").get_data(as_text=True)
+    html = client.get("/").get_data(as_text=True)
 
     assert "<html" in html
     assert "Your collection" in html
@@ -242,7 +242,7 @@ def test_collection_page_lists_own_books_with_copies(db_app, client, user, other
 
 
 def test_empty_collection_says_so(client):
-    html = client.get("/collection").get_data(as_text=True)
+    html = client.get("/").get_data(as_text=True)
 
     assert "Your collection is empty" in html
 
@@ -251,7 +251,7 @@ def test_collection_search_with_htmx_returns_only_the_list(db_app, client, user)
     _book(db_app, user, "Dune")
     _book(db_app, user, "Emma")
 
-    rv = client.get("/collection?q=emm", headers=HTMX)
+    rv = client.get("/?q=emm", headers=HTMX)
     html = rv.get_data(as_text=True)
 
     assert "<html" not in html
@@ -259,9 +259,9 @@ def test_collection_search_with_htmx_returns_only_the_list(db_app, client, user)
 
 
 def test_account_menu_links_to_the_collection(client):
-    html = client.get("/").get_data(as_text=True)
+    html = client.get("/catalogue").get_data(as_text=True)
 
-    assert 'href="/collection/"' in html
+    assert 'href="/"' in html
 
 
 # The catalogue's rows
@@ -273,7 +273,7 @@ def test_catalogue_rows_show_whether_the_book_is_in_the_collection(
     _book(db_app, user, "Dune", copies=2)
     emma = _book(db_app, other, "Emma")
 
-    html = client.get("/").get_data(as_text=True)
+    html = client.get("/catalogue").get_data(as_text=True)
 
     assert "In your collection · 2" in html
     assert html.count('action="/collection/books/') == 1
@@ -329,7 +329,7 @@ def test_add_without_htmx_redirects_to_the_catalogue(db_app, client, user, other
 
     assert rv.status_code == 302
     location = urlsplit(rv.headers["Location"])
-    assert location.path == "/"
+    assert location.path == "/catalogue"
     assert parse_qs(location.query) == {"q": ["emm"], "sort": ["author"]}
     html = client.get(rv.headers["Location"]).get_data(as_text=True)
     assert "“Emma” added to your collection." in html
@@ -345,7 +345,7 @@ def test_add_from_the_add_book_dialog_redirects(db_app, client, user, other):
     )
 
     assert rv.status_code == 204
-    assert rv.headers["HX-Redirect"] == "/"
+    assert rv.headers["HX-Redirect"] == "/catalogue"
     assert _copies(db_app, user, emma) == 3
 
 
@@ -450,7 +450,7 @@ def test_set_copies_without_htmx_redirects_to_the_collection(db_app, client, use
     )
 
     assert rv.status_code == 302
-    assert urlsplit(rv.headers["Location"]).path == "/collection/"
+    assert urlsplit(rv.headers["Location"]).path == "/"
 
 
 # Removing
@@ -476,7 +476,7 @@ def test_remove_without_htmx_redirects_to_the_collection(db_app, client, user):
 
     assert rv.status_code == 302
     location = urlsplit(rv.headers["Location"])
-    assert (location.path, parse_qs(location.query)) == ("/collection/", {"q": ["du"]})
+    assert (location.path, parse_qs(location.query)) == ("/", {"q": ["du"]})
     html = client.get(rv.headers["Location"]).get_data(as_text=True)
     assert "“Dune” removed from your collection." in html
 
@@ -513,7 +513,7 @@ def test_duplicate_isbn_offer_from_the_collection_keeps_the_list(db_app, client,
     )
 
     assert '<input type="hidden" name="list" value="collection">' in offer
-    assert rv.headers["HX-Redirect"] == "/collection/"
+    assert rv.headers["HX-Redirect"] == "/"
 
 
 def test_duplicate_isbn_of_a_book_in_the_collection_says_so(db_app, client, user):
@@ -571,7 +571,7 @@ def test_set_read_of_a_book_not_in_the_collection(db_app, user, other):
 def test_collection_rows_have_a_read_checkbox(db_app, client, user):
     _book(db_app, user, "Dune")
 
-    html = client.get("/collection").get_data(as_text=True)
+    html = client.get("/").get_data(as_text=True)
 
     checkbox = re.search(r'<input type="checkbox" name="read"[^>]*>', html)
     assert checkbox is not None
@@ -585,7 +585,7 @@ def test_collection_rows_have_a_read_checkbox(db_app, client, user):
 def test_the_catalogue_has_no_read_checkbox(db_app, client, user):
     _book(db_app, user, "Dune")
 
-    assert 'name="read"' not in client.get("/").get_data(as_text=True)
+    assert 'name="read"' not in client.get("/catalogue").get_data(as_text=True)
 
 
 def test_mark_a_book_read_from_the_list(db_app, client, user):
@@ -611,11 +611,9 @@ def test_unmark_a_book_without_javascript(db_app, client, user):
     rv = client.post(f"/collection/books/{dune}/read", data={"q": "du"})
 
     assert rv.status_code == 302
-    assert rv.headers["Location"] == "/collection/?q=du"
+    assert rv.headers["Location"] == "/?q=du"
     assert _read(db_app, user) == {"Dune": False}
-    assert "“Dune” marked as not read." in client.get("/collection").get_data(
-        as_text=True
-    )
+    assert "“Dune” marked as not read." in client.get("/").get_data(as_text=True)
 
 
 def test_mark_read_a_book_not_in_the_collection_says_so(db_app, client, user, other):
@@ -636,7 +634,7 @@ def test_mark_read_an_unknown_book_is_not_found(client):
 
 
 def test_top_bar_leads_to_the_collection_and_the_catalogue(client):
-    html = client.get("/").get_data(as_text=True)
+    html = client.get("/catalogue").get_data(as_text=True)
 
-    assert '<h1><a href="/collection/">Bookshelf</a></h1>' in html
-    assert '<a href="/">Catalogue</a>' in html
+    assert '<h1><a href="/">Bookshelf</a></h1>' in html
+    assert '<a href="/catalogue">Catalogue</a>' in html

@@ -32,8 +32,8 @@ def _log_in(page: Page, base_url: str, user: User, password: str) -> None:
     page.get_by_label("Password").fill(password)
     page.get_by_role("button", name="Log in").click()
     # Logging in lands on the collection; the fixtures start from the catalogue.
-    expect(page).to_have_url(f"{base_url}/collection/")
-    page.goto(f"{base_url}/")
+    expect(page).to_have_url(f"{base_url}/")
+    page.goto(f"{base_url}/catalogue")
     expect(page.locator(".book-search")).to_be_visible()
 
 

@@ -7,7 +7,7 @@ from flask.testing import FlaskClient
 from bookshelf import create_app
 
 # Any GET-only route works; the view is replaced, so login is not involved.
-ROUTE = "/"
+ROUTE = "/catalogue"
 ENDPOINT = "main.index"
 HTMX = {"HX-Request": "true"}
 
