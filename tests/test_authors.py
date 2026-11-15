@@ -437,3 +437,30 @@ def test_saving_a_book_returns_to_its_authors_books(db_app, client, user):
 @pytest.mark.parametrize("author", [str(uuid4()), "not-an-id"])
 def test_unknown_authors_books_are_not_found(client, author):
     assert client.get(f"/?author={author}").status_code == 404
+
+
+# The authors under each book link to their books
+
+
+def test_book_lists_know_their_authors_ids(db_app, user):
+    _book(db_app, user, "Dune", FRANK, JANE)
+    frank, jane = _entry(db_app, FRANK), _entry(db_app, JANE)
+
+    with db_app.app_context():
+        (book,) = list_books(get_db(), user.id).books
+
+    assert book.authors == (FRANK, JANE)  # an ID does not change equality
+    assert [a.id for a in book.authors] == [frank.id, jane.id]
+
+
+@pytest.mark.parametrize("url", ["/", "/collection/"])
+def test_authors_under_a_book_link_to_their_books(db_app, client, user, url):
+    _book(db_app, user, "Dune", FRANK, Author("", "Homer"))
+    frank, homer = _entry(db_app, FRANK), _entry(db_app, Author("", "Homer"))
+
+    html = client.get(url).get_data(as_text=True)
+
+    assert (
+        f'<span class="book-authors"><a href="/?author={frank.id}">Frank Herbert</a>, '
+        f'<a href="/?author={homer.id}">Homer</a></span>'
+    ) in html

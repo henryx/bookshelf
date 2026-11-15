@@ -56,3 +56,12 @@ def test_an_authors_books_keep_to_the_author(
     expect(reader_page.locator(".book-count")).to_have_text("1 book")
     expect(reader_page.locator(".book-title")).to_have_text(["Dune"])
     assert "author=" in reader_page.url
+
+
+def test_an_author_under_a_book_opens_their_books(misspelled, reader_page: Page):
+    reader_page.locator(".book-authors").get_by_role("link", name="Jane Austen").click()
+
+    expect(
+        reader_page.get_by_role("heading", name="Books by Jane Austen")
+    ).to_be_visible()
+    expect(reader_page.locator(".book-title")).to_have_text(["Emma"])

@@ -73,7 +73,9 @@ def test_main_page_lists_books_with_authors_and_year(db_app, client):
 
     assert "<html" in html
     assert _titles(html) == ["Good Omens"]
-    assert "Terry Pratchett, Neil Gaiman" in html
+    authors = re.search(r'<span class="book-authors">(.*?)</span>', html)
+    assert authors is not None
+    assert re.sub(r"<[^>]+>", "", authors.group(1)) == "Terry Pratchett, Neil Gaiman"
     assert "1990" in html
     assert 'name="q"' in html
     assert "hx-indicator" in html

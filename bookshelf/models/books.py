@@ -1,6 +1,6 @@
 import re
 from collections.abc import Callable
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from uuid import UUID, uuid4
 
@@ -110,10 +110,15 @@ class Sort(StrEnum):
 
 @dataclass(frozen=True)
 class Author:
-    """An author's given name ('' when there is none, as for "Homer") and surname."""
+    """
+    An author's given name ('' when there is none, as for "Homer") and
+    surname. `id`: the author's record, when read from one (as in the book
+    lists); it plays no part in comparing authors, which is by name.
+    """
 
     name: str
     surname: str
+    id: UUID | None = field(default=None, compare=False, kw_only=True)
 
     def __str__(self) -> str:
         return f"{self.name} {self.surname}".strip()
@@ -194,7 +199,7 @@ _COUNT_QUERY = """
 # the one scan the search needs also counts them.
 _LIST_QUERIES: dict[Sort, str] = {
     Sort.TITLE: """
-        SELECT p.ID, p.TITLE, p.PUBLICATION_YEAR, cb.COPIES, a.NAME, a.SURNAME, p.TOTAL
+        SELECT p.ID, p.TITLE, p.PUBLICATION_YEAR, cb.COPIES, a.NAME, a.SURNAME, a.ID, p.TOTAL
         FROM (
             SELECT b.ID, b.TITLE, b.PUBLICATION_YEAR, COUNT(*) OVER () AS TOTAL
             FROM BOOKS b
@@ -209,7 +214,7 @@ _LIST_QUERIES: dict[Sort, str] = {
     """,
     # By first author's surname, then name; books without authors last.
     Sort.AUTHOR: """
-        SELECT p.ID, p.TITLE, p.PUBLICATION_YEAR, cb.COPIES, a.NAME, a.SURNAME, p.TOTAL
+        SELECT p.ID, p.TITLE, p.PUBLICATION_YEAR, cb.COPIES, a.NAME, a.SURNAME, a.ID, p.TOTAL
         FROM (
             SELECT b.ID, b.TITLE, b.PUBLICATION_YEAR, COUNT(*) OVER () AS TOTAL,
                    (SELECT FIRST 1 fa.SURNAME
@@ -230,7 +235,7 @@ _LIST_QUERIES: dict[Sort, str] = {
     """,
     # Newest first.
     Sort.ADDED: """
-        SELECT p.ID, p.TITLE, p.PUBLICATION_YEAR, cb.COPIES, a.NAME, a.SURNAME, p.TOTAL
+        SELECT p.ID, p.TITLE, p.PUBLICATION_YEAR, cb.COPIES, a.NAME, a.SURNAME, a.ID, p.TOTAL
         FROM (
             SELECT b.ID, b.TITLE, b.PUBLICATION_YEAR, b.CREATED_AT,
                    COUNT(*) OVER () AS TOTAL
@@ -259,7 +264,7 @@ _COLLECTION_COUNT_QUERY = """
 # book entered the catalogue: collections do not record when a book joined.
 _COLLECTION_QUERIES: dict[Sort, str] = {
     Sort.TITLE: """
-        SELECT p.ID, p.TITLE, p.PUBLICATION_YEAR, p.COPIES, a.NAME, a.SURNAME, p.TOTAL
+        SELECT p.ID, p.TITLE, p.PUBLICATION_YEAR, p.COPIES, a.NAME, a.SURNAME, a.ID, p.TOTAL
         FROM (
             SELECT b.ID, b.TITLE, b.PUBLICATION_YEAR, cb.COPIES,
                    COUNT(*) OVER () AS TOTAL
@@ -275,7 +280,7 @@ _COLLECTION_QUERIES: dict[Sort, str] = {
         ORDER BY p.TITLE, p.ID, ba.SORT_ORDER
     """,
     Sort.AUTHOR: """
-        SELECT p.ID, p.TITLE, p.PUBLICATION_YEAR, p.COPIES, a.NAME, a.SURNAME, p.TOTAL
+        SELECT p.ID, p.TITLE, p.PUBLICATION_YEAR, p.COPIES, a.NAME, a.SURNAME, a.ID, p.TOTAL
         FROM (
             SELECT b.ID, b.TITLE, b.PUBLICATION_YEAR, cb.COPIES,
                    COUNT(*) OVER () AS TOTAL,
@@ -297,7 +302,7 @@ _COLLECTION_QUERIES: dict[Sort, str] = {
         ORDER BY p.FIRST_SURNAME NULLS LAST, p.FIRST_NAME, p.TITLE, p.ID, ba.SORT_ORDER
     """,
     Sort.ADDED: """
-        SELECT p.ID, p.TITLE, p.PUBLICATION_YEAR, p.COPIES, a.NAME, a.SURNAME, p.TOTAL
+        SELECT p.ID, p.TITLE, p.PUBLICATION_YEAR, p.COPIES, a.NAME, a.SURNAME, a.ID, p.TOTAL
         FROM (
             SELECT b.ID, b.TITLE, b.PUBLICATION_YEAR, b.CREATED_AT, cb.COPIES,
                    COUNT(*) OVER () AS TOTAL
@@ -316,7 +321,7 @@ _COLLECTION_QUERIES: dict[Sort, str] = {
 
 # One book, a row per author as in the lists, with the user's copies.
 _FIND_BOOK_QUERY = """
-    SELECT b.ID, b.TITLE, b.PUBLICATION_YEAR, cb.COPIES, a.NAME, a.SURNAME
+    SELECT b.ID, b.TITLE, b.PUBLICATION_YEAR, cb.COPIES, a.NAME, a.SURNAME, a.ID
     FROM BOOKS b
     LEFT JOIN COLLECTION_BOOKS cb ON cb.BOOK_ID = b.ID AND cb.USER_ID = ?
     LEFT JOIN BOOK_AUTHORS ba ON ba.BOOK_ID = b.ID
@@ -326,7 +331,7 @@ _FIND_BOOK_QUERY = """
 """
 
 _FIND_BOOK_BY_ISBN_QUERY = """
-    SELECT b.ID, b.TITLE, b.PUBLICATION_YEAR, cb.COPIES, a.NAME, a.SURNAME
+    SELECT b.ID, b.TITLE, b.PUBLICATION_YEAR, cb.COPIES, a.NAME, a.SURNAME, a.ID
     FROM BOOKS b
     LEFT JOIN COLLECTION_BOOKS cb ON cb.BOOK_ID = b.ID AND cb.USER_ID = ?
     LEFT JOIN BOOK_AUTHORS ba ON ba.BOOK_ID = b.ID
@@ -389,17 +394,20 @@ def _search_params(
     return search, *_isbn_searches(search), author_id.bytes if author_id else None
 
 
-# ID, TITLE, PUBLICATION_YEAR, the user's COPIES, then one author's NAME, SURNAME.
-type _BookRow = tuple[bytes, str, int | None, int | None, str | None, str | None]
+# ID, TITLE, PUBLICATION_YEAR, the user's COPIES, then one author's NAME, SURNAME, ID.
+type _BookRow = tuple[
+    bytes, str, int | None, int | None, str | None, str | None, bytes | None
+]
 
 
 def _books(rows: list[_BookRow]) -> list[Book]:
     """Group the per-author rows into books, keeping their order."""
     books: dict[bytes, Book] = {}
-    for book_id, title, year, copies, name, surname in rows:
+    for book_id, title, year, copies, name, surname, author_id in rows:
         book = books.get(book_id) or Book(UUID(bytes=book_id), title, (), year, copies)
-        if surname is not None:
-            book = replace(book, authors=(*book.authors, Author(name or "", surname)))
+        if surname is not None and author_id is not None:
+            author = Author(name or "", surname, id=UUID(bytes=author_id))
+            book = replace(book, authors=(*book.authors, author))
         books[book_id] = book
     return list(books.values())
 

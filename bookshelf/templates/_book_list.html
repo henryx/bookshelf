@@ -41,7 +41,12 @@
                                   page=books.page if books.page > 1 else None) %}
         <a class="book-title" href="{{ book_url }}" hx-get="{{ book_url }}"
            hx-target="#book-dialog-body" hx-indicator="closest li">{{ book.title }}</a>
-        {% if book.authors %}<span class="book-authors">{{ book.authors | join(", ") }}</span>{% endif %}
+        {# Each author links to their books (the catalogue limited to them). #}
+        {% if book.authors %}<span class="book-authors">
+          {%- for a in book.authors -%}
+            <a href="{{ url_for('main.index', author=a.id) }}">{{ a }}</a>{% if not loop.last %}, {% endif %}
+          {%- endfor -%}
+        </span>{% endif %}
         {% if book.publication_year %}<span class="book-year">{{ book.publication_year }}</span>{% endif %}
         <div class="book-actions">
           {% if in_collection %}

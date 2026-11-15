@@ -726,6 +726,17 @@ a.author-name:focus-visible {
   font-weight: 200;
 }
 
+/* Each author links to their books: underlined faintly, not in link colour. */
+.book-authors a {
+  color: inherit;
+  text-decoration-color: var(--rule);
+}
+
+.book-authors a:hover,
+.book-authors a:focus-visible {
+  text-decoration-color: var(--stamp);
+}
+
 .book-year {
   grid-area: year;
   font-family: var(--font-mono);

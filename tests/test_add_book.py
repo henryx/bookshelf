@@ -175,7 +175,9 @@ def test_add_book_author_with_surname_only(db_app, client):
     names = _rows(db_app, "SELECT NAME, SURNAME FROM AUTHORS")
     assert names == [("", "Homer")]
     html = client.get("/").get_data(as_text=True)
-    assert '<span class="book-authors">Homer</span>' in html
+    assert re.search(
+        r'<span class="book-authors"><a href="[^"]*">Homer</a></span>', html
+    )
 
 
 def test_add_book_keeps_author_rows_in_order_despite_gaps(db_app, client):
