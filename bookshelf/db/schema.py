@@ -220,6 +220,40 @@ INDEXES: dict[str, str] = {
     "IDX_BOOK_TAGS_TAG": "CREATE INDEX IDX_BOOK_TAGS_TAG ON BOOK_TAGS (TAG)",
 }
 
+# PSQL functions, created after INDEXES. Each is created or replaced on every
+# init_db, so its body can change without an upgrade step.
+FUNCTIONS: dict[str, str] = {
+    # The book lists' search: the title, an ISBN text or any author's
+    # "name surname" contains the text, ignoring case (CONTAINING always does).
+    # ISBNs are searched for two texts: see _isbn_searches in models/books.py.
+    # CONTAINING '' is true, so an empty search matches every book. NULL
+    # (no ISBN, no author) counts as no match.
+    "BOOK_MATCHES": """
+        CREATE OR ALTER FUNCTION BOOK_MATCHES (
+            BOOK_ID TYPE OF COLUMN BOOKS.ID,
+            BOOK_TITLE TYPE OF COLUMN BOOKS.TITLE,
+            BOOK_ISBN TYPE OF COLUMN BOOKS.ISBN,
+            SEARCH_TEXT VARCHAR(255),
+            ISBN_TEXT VARCHAR(255),
+            ISBN_13_TEXT VARCHAR(255)
+        ) RETURNS BOOLEAN
+        AS
+        BEGIN
+            RETURN COALESCE(
+                BOOK_TITLE CONTAINING SEARCH_TEXT
+                OR BOOK_ISBN CONTAINING ISBN_TEXT
+                OR BOOK_ISBN CONTAINING ISBN_13_TEXT
+                OR EXISTS (
+                    SELECT 1 FROM BOOK_AUTHORS ba JOIN AUTHORS a ON a.ID = ba.AUTHOR_ID
+                    WHERE ba.BOOK_ID = :BOOK_ID
+                      AND (a.NAME || ' ' || a.SURNAME) CONTAINING :SEARCH_TEXT
+                ),
+                FALSE
+            );
+        END
+    """,
+}
+
 
 def table_exists(conn: Connection, name: str) -> bool:
     with conn.cursor() as cur:
@@ -229,8 +263,8 @@ def table_exists(conn: Connection, name: str) -> bool:
 
 def init_db(conn: Connection) -> None:
     """
-    Create missing domains, tables, constraints and indexes. Safe to run more
-    than once.
+    Create missing domains, tables, constraints and indexes, and create or
+    replace the functions. Safe to run more than once.
     """
     with conn.cursor() as cur:
         for name, ddl in DOMAINS.items():
@@ -251,4 +285,6 @@ def init_db(conn: Connection) -> None:
             cur.execute("SELECT 1 FROM RDB$INDICES WHERE RDB$INDEX_NAME = ?", (name,))
             if cur.fetchone() is None:
                 cur.execute(ddl)
+        for ddl in FUNCTIONS.values():
+            cur.execute(ddl)
     conn.commit()

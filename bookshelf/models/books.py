@@ -138,19 +138,11 @@ class BookPage:
 
 
 # Search: title, any author's "name surname" or ISBN contains the text,
-# ignoring case. ISBNs are searched twice (see _isbn_searches).
-# CONTAINING '' is true, so an empty search lists every book. The CASTs keep
-# the parameters from taking the column types (CHAR(13) for ISBN).
+# ignoring case; the BOOK_MATCHES function (db/schema.py) holds the
+# condition, with the parameters from _search_params.
 _COUNT_QUERY = """
     SELECT COUNT(*) FROM BOOKS b
-    WHERE b.TITLE CONTAINING CAST(? AS VARCHAR(255))
-       OR b.ISBN CONTAINING CAST(? AS VARCHAR(255))
-       OR b.ISBN CONTAINING CAST(? AS VARCHAR(255))
-       OR EXISTS (
-           SELECT 1 FROM BOOK_AUTHORS ba JOIN AUTHORS a ON a.ID = ba.AUTHOR_ID
-           WHERE ba.BOOK_ID = b.ID
-                     AND (a.NAME || ' ' || a.SURNAME) CONTAINING CAST(? AS VARCHAR(255))
-       )
+    WHERE BOOK_MATCHES(b.ID, b.TITLE, b.ISBN, ?, ?, ?)
 """
 
 # One page of books, then a row per author (one with NULL for a book without
@@ -161,14 +153,7 @@ _LIST_QUERIES: dict[Sort, str] = {
         SELECT p.ID, p.TITLE, p.PUBLICATION_YEAR, cb.COPIES, a.NAME, a.SURNAME
         FROM (
             SELECT b.ID, b.TITLE, b.PUBLICATION_YEAR FROM BOOKS b
-            WHERE b.TITLE CONTAINING CAST(? AS VARCHAR(255))
-               OR b.ISBN CONTAINING CAST(? AS VARCHAR(255))
-               OR b.ISBN CONTAINING CAST(? AS VARCHAR(255))
-               OR EXISTS (
-                   SELECT 1 FROM BOOK_AUTHORS ba JOIN AUTHORS a ON a.ID = ba.AUTHOR_ID
-                   WHERE ba.BOOK_ID = b.ID
-                     AND (a.NAME || ' ' || a.SURNAME) CONTAINING CAST(? AS VARCHAR(255))
-               )
+            WHERE BOOK_MATCHES(b.ID, b.TITLE, b.ISBN, ?, ?, ?)
             ORDER BY b.TITLE, b.ID
             OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
         ) p
@@ -189,14 +174,7 @@ _LIST_QUERIES: dict[Sort, str] = {
                     FROM BOOK_AUTHORS fba JOIN AUTHORS fa ON fa.ID = fba.AUTHOR_ID
                     WHERE fba.BOOK_ID = b.ID ORDER BY fba.SORT_ORDER) AS FIRST_NAME
             FROM BOOKS b
-            WHERE b.TITLE CONTAINING CAST(? AS VARCHAR(255))
-               OR b.ISBN CONTAINING CAST(? AS VARCHAR(255))
-               OR b.ISBN CONTAINING CAST(? AS VARCHAR(255))
-               OR EXISTS (
-                   SELECT 1 FROM BOOK_AUTHORS ba JOIN AUTHORS a ON a.ID = ba.AUTHOR_ID
-                   WHERE ba.BOOK_ID = b.ID
-                     AND (a.NAME || ' ' || a.SURNAME) CONTAINING CAST(? AS VARCHAR(255))
-               )
+            WHERE BOOK_MATCHES(b.ID, b.TITLE, b.ISBN, ?, ?, ?)
             ORDER BY FIRST_SURNAME NULLS LAST, FIRST_NAME, b.TITLE, b.ID
             OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
         ) p
@@ -210,14 +188,7 @@ _LIST_QUERIES: dict[Sort, str] = {
         SELECT p.ID, p.TITLE, p.PUBLICATION_YEAR, cb.COPIES, a.NAME, a.SURNAME
         FROM (
             SELECT b.ID, b.TITLE, b.PUBLICATION_YEAR, b.CREATED_AT FROM BOOKS b
-            WHERE b.TITLE CONTAINING CAST(? AS VARCHAR(255))
-               OR b.ISBN CONTAINING CAST(? AS VARCHAR(255))
-               OR b.ISBN CONTAINING CAST(? AS VARCHAR(255))
-               OR EXISTS (
-                   SELECT 1 FROM BOOK_AUTHORS ba JOIN AUTHORS a ON a.ID = ba.AUTHOR_ID
-                   WHERE ba.BOOK_ID = b.ID
-                     AND (a.NAME || ' ' || a.SURNAME) CONTAINING CAST(? AS VARCHAR(255))
-               )
+            WHERE BOOK_MATCHES(b.ID, b.TITLE, b.ISBN, ?, ?, ?)
             ORDER BY b.CREATED_AT DESC, b.ID
             OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
         ) p
@@ -233,14 +204,7 @@ _COLLECTION_COUNT_QUERY = """
     SELECT COUNT(*) FROM BOOKS b
     JOIN COLLECTION_BOOKS cb ON cb.BOOK_ID = b.ID
     WHERE cb.USER_ID = ?
-      AND (b.TITLE CONTAINING CAST(? AS VARCHAR(255))
-       OR b.ISBN CONTAINING CAST(? AS VARCHAR(255))
-       OR b.ISBN CONTAINING CAST(? AS VARCHAR(255))
-       OR EXISTS (
-           SELECT 1 FROM BOOK_AUTHORS ba JOIN AUTHORS a ON a.ID = ba.AUTHOR_ID
-           WHERE ba.BOOK_ID = b.ID
-             AND (a.NAME || ' ' || a.SURNAME) CONTAINING CAST(? AS VARCHAR(255))
-       ))
+      AND BOOK_MATCHES(b.ID, b.TITLE, b.ISBN, ?, ?, ?)
 """
 
 # As _LIST_QUERIES, in one user's collection. "Date added" is the date the
@@ -252,14 +216,7 @@ _COLLECTION_QUERIES: dict[Sort, str] = {
             SELECT b.ID, b.TITLE, b.PUBLICATION_YEAR, cb.COPIES FROM BOOKS b
             JOIN COLLECTION_BOOKS cb ON cb.BOOK_ID = b.ID
             WHERE cb.USER_ID = ?
-              AND (b.TITLE CONTAINING CAST(? AS VARCHAR(255))
-               OR b.ISBN CONTAINING CAST(? AS VARCHAR(255))
-               OR b.ISBN CONTAINING CAST(? AS VARCHAR(255))
-               OR EXISTS (
-                   SELECT 1 FROM BOOK_AUTHORS ba JOIN AUTHORS a ON a.ID = ba.AUTHOR_ID
-                   WHERE ba.BOOK_ID = b.ID
-                     AND (a.NAME || ' ' || a.SURNAME) CONTAINING CAST(? AS VARCHAR(255))
-               ))
+              AND BOOK_MATCHES(b.ID, b.TITLE, b.ISBN, ?, ?, ?)
             ORDER BY b.TITLE, b.ID
             OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
         ) p
@@ -280,14 +237,7 @@ _COLLECTION_QUERIES: dict[Sort, str] = {
             FROM BOOKS b
             JOIN COLLECTION_BOOKS cb ON cb.BOOK_ID = b.ID
             WHERE cb.USER_ID = ?
-              AND (b.TITLE CONTAINING CAST(? AS VARCHAR(255))
-               OR b.ISBN CONTAINING CAST(? AS VARCHAR(255))
-               OR b.ISBN CONTAINING CAST(? AS VARCHAR(255))
-               OR EXISTS (
-                   SELECT 1 FROM BOOK_AUTHORS ba JOIN AUTHORS a ON a.ID = ba.AUTHOR_ID
-                   WHERE ba.BOOK_ID = b.ID
-                     AND (a.NAME || ' ' || a.SURNAME) CONTAINING CAST(? AS VARCHAR(255))
-               ))
+              AND BOOK_MATCHES(b.ID, b.TITLE, b.ISBN, ?, ?, ?)
             ORDER BY FIRST_SURNAME NULLS LAST, FIRST_NAME, b.TITLE, b.ID
             OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
         ) p
@@ -302,14 +252,7 @@ _COLLECTION_QUERIES: dict[Sort, str] = {
             FROM BOOKS b
             JOIN COLLECTION_BOOKS cb ON cb.BOOK_ID = b.ID
             WHERE cb.USER_ID = ?
-              AND (b.TITLE CONTAINING CAST(? AS VARCHAR(255))
-               OR b.ISBN CONTAINING CAST(? AS VARCHAR(255))
-               OR b.ISBN CONTAINING CAST(? AS VARCHAR(255))
-               OR EXISTS (
-                   SELECT 1 FROM BOOK_AUTHORS ba JOIN AUTHORS a ON a.ID = ba.AUTHOR_ID
-                   WHERE ba.BOOK_ID = b.ID
-                     AND (a.NAME || ' ' || a.SURNAME) CONTAINING CAST(? AS VARCHAR(255))
-               ))
+              AND BOOK_MATCHES(b.ID, b.TITLE, b.ISBN, ?, ?, ?)
             ORDER BY b.CREATED_AT DESC, b.ID
             OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
         ) p
@@ -387,8 +330,9 @@ def _isbn_searches(text: str) -> tuple[str, str]:
     return typed, typed
 
 
-def _search_params(search: str) -> tuple[str, str, str, str]:
-    return search, *_isbn_searches(search), search
+def _search_params(search: str) -> tuple[str, str, str]:
+    """BOOK_MATCHES's search parameters: the text, then the ISBN texts."""
+    return search, *_isbn_searches(search)
 
 
 # ID, TITLE, PUBLICATION_YEAR, the user's COPIES, then one author's NAME, SURNAME.

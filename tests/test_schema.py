@@ -196,6 +196,27 @@ def _assert_complete_schema(conn: Connection) -> None:
         "RESTRICT",
     )
 
+    assert _function_arguments(conn, "BOOK_MATCHES") == [
+        "BOOK_ID",
+        "BOOK_TITLE",
+        "BOOK_ISBN",
+        "SEARCH_TEXT",
+        "ISBN_TEXT",
+        "ISBN_13_TEXT",
+    ]
+
+
+def _function_arguments(conn: Connection, function: str) -> list[str]:
+    """A PSQL function's arguments in order, its return value (position 0) left out."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT TRIM(RDB$ARGUMENT_NAME) FROM RDB$FUNCTION_ARGUMENTS "
+            "WHERE RDB$FUNCTION_NAME = ? AND RDB$ARGUMENT_POSITION > 0 "
+            "ORDER BY RDB$ARGUMENT_POSITION",
+            (function,),
+        )
+        return [name for (name,) in cur.fetchall()]
+
 
 def test_session_database_has_complete_schema(db_app: Flask):
     with db_app.app_context():
