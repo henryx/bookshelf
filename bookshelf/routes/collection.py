@@ -17,6 +17,7 @@ from bookshelf.models.books import (
     SEARCH_MAX_LENGTH,
     Book,
     Sort,
+    UnknownBookError,
     add_to_collection,
     find_book,
     list_collection,
@@ -90,7 +91,15 @@ def add(book_id: UUID) -> BaseResponse | str:
     form = CopiesForm()
     if not form.validate_on_submit():
         abort(400, description=" ".join(form.copies.errors))
-    if add_to_collection(get_db(), current_user.id, book.id, form.copies.data or 1):
+    try:
+        added = add_to_collection(
+            get_db(), current_user.id, book.id, form.copies.data or 1
+        )
+    except UnknownBookError:
+        # Deleted since it was looked up.
+        current_app.logger.info("Book %r left the catalogue before adding", book.title)
+        abort(404)
+    if added:
         current_app.logger.info(
             "Book %r added to the collection of %s", book.title, current_user.email
         )

@@ -25,6 +25,7 @@ __all__ = [
     "InvalidIsbnError",
     "NewBook",
     "Sort",
+    "UnknownBookError",
     "add_book",
     "add_to_collection",
     "find_book",
@@ -40,6 +41,8 @@ __all__ = [
 
 # Firebird GDS code for "violation of PRIMARY or UNIQUE KEY constraint".
 _UNIQUE_KEY_VIOLATION = 335544665
+# Firebird GDS code for "violation of FOREIGN KEY constraint".
+_FOREIGN_KEY_VIOLATION = 335544466
 
 PAGE_SIZE = 50
 SUGGESTIONS_LIMIT = 10
@@ -66,6 +69,14 @@ class BookExistsError(Exception):
     def __init__(self, isbn: str) -> None:
         super().__init__(f"A book with ISBN {isbn} is already in the catalogue.")
         self.isbn = isbn
+
+
+class UnknownBookError(Exception):
+    """No book in the catalogue has this ID (it may have just been deleted)."""
+
+    def __init__(self, book_id: UUID) -> None:
+        super().__init__(f"No book {book_id} in the catalogue.")
+        self.book_id = book_id
 
 
 class AuthorField(StrEnum):
@@ -466,7 +477,8 @@ def add_to_collection(
 ) -> bool:
     """
     Add a catalogue book to the user's collection with `copies` copies.
-    False, changing nothing, when it is already there.
+    False, changing nothing, when it is already there; UnknownBookError when
+    the catalogue has no such book.
     """
     try:
         with conn.cursor() as cur:
@@ -476,6 +488,8 @@ def add_to_collection(
                 (user_id.bytes, book_id.bytes, copies),
             )
     except DatabaseError as e:
+        if _FOREIGN_KEY_VIOLATION in e.gds_codes:
+            raise UnknownBookError(book_id) from e
         if _UNIQUE_KEY_VIOLATION not in e.gds_codes:
             raise
         return False

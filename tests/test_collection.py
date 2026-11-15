@@ -11,8 +11,10 @@ from flask.testing import FlaskClient
 from bookshelf.db import get_db
 from bookshelf.models.books import (
     Author,
+    Book,
     NewBook,
     Sort,
+    UnknownBookError,
     add_book,
     add_to_collection,
     find_book,
@@ -278,6 +280,23 @@ def test_catalogue_rows_show_whether_the_book_is_in_the_collection(
 
 
 # Adding
+
+
+def test_add_to_collection_refuses_a_book_not_in_the_catalogue(db_app, user):
+    with db_app.app_context(), pytest.raises(UnknownBookError):
+        add_to_collection(get_db(), user.id, uuid4())
+
+
+def test_add_a_book_deleted_meanwhile_is_not_found(
+    db_app, client, monkeypatch: pytest.MonkeyPatch
+):
+    """The book is found, then deleted by someone else before it is added."""
+    gone = Book(uuid4(), "Gone", (), None)
+    monkeypatch.setattr("bookshelf.routes.collection.find_book", lambda *_args: gone)
+
+    rv = client.post(f"/collection/books/{gone.id}/add", data={"copies": "1"})
+
+    assert rv.status_code == 404
 
 
 def test_add_from_the_list_returns_the_list_with_a_notice(db_app, client, user, other):
