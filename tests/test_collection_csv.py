@@ -91,7 +91,7 @@ def test_export_writes_every_field_of_the_users_books(db_app, user, other):
     assert _rows(text) == [
         {
             "title": "Good Omens",
-            "authors": "Pratchett, Terry; Gaiman",
+            "authors": "Terry Pratchett, Gaiman",
             "isbn": "9780552137034",
             "publisher": "Corgi",
             "year": "1991",
@@ -144,7 +144,7 @@ def test_export_then_import_round_trips(db_app, user, other):
 
 def test_import_creates_books_missing_from_the_catalogue(db_app, user):
     text = HEADER + (
-        'Good Omens,"Pratchett, Terry; Gaiman, Neil",0-552-13703-0,Corgi,1991,'
+        'Good Omens,"Terry Pratchett, Neil Gaiman",0-552-13703-0,Corgi,1991,'
         ',,A plot,"fantasy, humour",2,yes\n'
     )
 
@@ -186,7 +186,7 @@ def test_import_without_isbn_matches_title_and_authors_ignoring_case(
         add_book(conn, other.id, NewBook("Emma", (Author("Jane", "Austen"),)))
 
     report = _import(
-        db_app, user, 'title,authors\nDUNE,"herbert, frank"\nEmma,"Brontë, Emily"\n'
+        db_app, user, "title,authors\nDUNE,frank  HERBERT\nEmma,Emily Brontë\n"
     )
 
     assert (report.added, report.created) == (2, 1)
@@ -224,7 +224,7 @@ def test_import_reports_bad_rows_and_imports_the_rest(db_app, user):
         "Emma,,,,year,,,,,,\n"
         "Emma,,,,,,,,,0,\n"
         "Emma,,,,,,,,,,maybe\n"
-        'Emma,", Jane",,,,,,,,,\n'
+        f"Emma,{'x' * 128},,,,,,,,,\n"
         "Persuasion,,,,,,,,,,no\n"
     )
 
@@ -237,7 +237,7 @@ def test_import_reports_bad_rows_and_imports_the_rest(db_app, user):
         "Row 5: the year must be a whole number from 1 to 9999.",
         "Row 6: copies must be a whole number from 1 to 999.",
         "Row 7: read must be yes or no.",
-        "Row 8: each author needs a surname (“Surname, Name”).",
+        "Row 8: author names cannot be longer than 127 characters.",
     ]
     assert _collection(db_app, user) == [("Persuasion", 1, False)]
 
@@ -249,6 +249,32 @@ def test_import_reports_values_too_long(db_app, user):
         "Row 2: the title cannot be longer than 255 characters.",
         "Row 3: tags cannot be longer than 64 characters.",
     ]
+
+
+def test_import_takes_the_last_word_as_the_surname(db_app, user):
+    _import(
+        db_app, user, 'title,authors\nThe Dispossessed,"Ursula K. Le Guin, Homer"\n'
+    )
+
+    with db_app.app_context():
+        conn = get_db()
+        book_id = list_collection(conn, user.id).books[0].id
+        details = find_book_details(conn, book_id)
+    assert details is not None
+    assert details.authors == (Author("Ursula K. Le", "Guin"), Author("", "Homer"))
+
+
+def test_import_matches_multi_word_surnames_by_full_name(db_app, user, other):
+    with db_app.app_context():
+        add_book(
+            get_db(), other.id, NewBook("Earthsea", (Author("Ursula K.", "Le Guin"),))
+        )
+        text = export_collection(get_db(), other.id)
+
+    report = _import(db_app, user, text)
+
+    assert (report.added, report.created) == (1, 0)
+    assert _catalogue_size(db_app) == 1
 
 
 def test_import_strips_the_formula_guard(db_app, user):

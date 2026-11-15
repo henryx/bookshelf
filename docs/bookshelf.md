@@ -253,32 +253,37 @@ Each user exports and imports only their own collection.
 Decisions:
 
  - Columns: `title`, `authors`, `isbn`, `publisher`, `year`, `series`, `volume`, `plot`, `tags`, `copies`,
-   `read`. Authors are "Surname, Name" (or "Surname" alone) separated by "; "; tags are separated by ", ", as in
-   the book form; read is `yes` or `no`. The export is UTF-8 with a byte order mark (so spreadsheets read it as
-   UTF-8), ordered by title.
+   `read`. Authors are "Name Surname" (or "Surname" alone, as for "Homer") and, like tags, separated by ", ",
+   as tags are in the book form; read is `yes` or `no`. On import the last word of an author is the surname.
+   The export is UTF-8 with a byte order mark (so spreadsheets read it as UTF-8), ordered by title.
  - An import needs a header with `title`; the other columns are optional and in any order (missing ones are
    empty, copies 1 and not read). An unknown or repeated column, an empty file, a file that is not UTF-8 or not
    CSV, or one with more than 1000 books refuses the whole file. Blank rows are skipped.
  - Each row matches a catalogue book: by ISBN when it has one (ISBN-10 converted); without one, by title and
-   authors, ignoring case and the authors' order (the oldest such book). A row matching no book adds it to the
+   authors, ignoring case and the authors' order (the oldest such book). Authors are compared by full name
+   ("Name Surname"), so an exported "Ursula K. Le Guin" still matches the book whose author has the surname
+   "Le Guin". A row matching no book adds it to the
    catalogue, with the same rules as the add-book form.
  - Import and export are in the account area, not on the collection page: they are occasional tasks on the
    whole collection, and the collection page stays the list.
  - A book already in the collection is skipped, its copies and read left as they are; a book repeated in the
    file is added once.
- - Rows are imported one by one: a bad row (no title, invalid ISBN, year, copies or read, an author without a
-   surname, a value too long) is reported with its row number as in a spreadsheet (the header is row 1), and
+ - Rows are imported one by one: a bad row (no title, invalid ISBN, year, copies or read, a value too
+   long) is reported with its row number as in a spreadsheet (the header is row 1), and
    the others are still imported. The card shows the count added (and new to the catalogue) and skipped, and
    the rows not imported; the collection itself is on its own page.
  - A cell starting with `=`, `+`, `-`, `@`, a tab or a carriage return is exported with a `'` before it, so a
    spreadsheet shows it as text instead of running it as a formula (catalogue texts come from every user); the
    import removes that `'` again.
- - With htmx the import replaces only the card. Without JavaScript it shows the account page with its report directly instead of redirecting:
-   the report is too long for a flashed message, and posting the same file again only skips its books.
+ - With htmx the import replaces only the card. Without JavaScript it shows the account page with its report
+   directly instead of redirecting: the report is too long for a flashed message, and posting the same file again
+   only skips its books.
  - Request bodies are limited to 1 MiB (`MAX_CONTENT_LENGTH`); a larger upload answers 413.
 
 Known limitations:
 
+ - A new author with a multi-word surname is split at the last word ("Ursula K. Le Guin" becomes surname "Guin",
+   name "Ursula K. Le"); fix it afterwards by renaming the author (see "Authors").
  - Matching without an ISBN is exact on title and authors: a different spelling adds another catalogue book.
  - The import does not update catalogue fields of books it matches.
 

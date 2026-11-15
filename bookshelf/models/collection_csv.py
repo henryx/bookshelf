@@ -34,8 +34,8 @@ __all__ = [
 ]
 
 # The export's columns, in order; an import may have any of them, in any
-# order, but needs title. authors: "Surname, Name" (or "Surname" alone)
-# separated by "; ". tags: separated by ", ", as in the book form. read: yes or no.
+# order, but needs title. authors ("Name Surname", or "Surname" alone) and tags
+# are separated by ", ", as the book form's tags. read: yes or no.
 COLUMNS = (
     "title",
     "authors",
@@ -63,8 +63,8 @@ _MAX_LENGTHS = {
 }
 _AUTHOR_MAX_LENGTH = 127
 _TAG_MAX_LENGTH = 64
-_AUTHOR_SEPARATOR = ";"
-_TAG_SEPARATOR = ","
+# Between authors and between tags alike, as in the book form's tags.
+_SEPARATOR = ","
 _YES = {"yes", "y", "true", "1"}
 _NO = {"no", "n", "false", "0", ""}
 # A spreadsheet runs a cell starting with one of these as a formula: the
@@ -145,10 +145,6 @@ def _unguard(text: str) -> str:
     )
 
 
-def _format_author(author: Author) -> str:
-    return f"{author.surname}, {author.name}" if author.name else author.surname
-
-
 def export_collection(conn: Connection, user_id: UUID) -> str:
     """
     The user's collection as CSV text with COLUMNS, by title, starting with a
@@ -160,7 +156,7 @@ def export_collection(conn: Connection, user_id: UUID) -> str:
         authors: dict[bytes, list[str]] = {}
         cur.execute(_EXPORT_AUTHORS_QUERY, (user_id.bytes,))
         for book_id, name, surname in cur.fetchall():
-            author = _format_author(Author(name or "", surname))
+            author = str(Author(name or "", surname))
             authors.setdefault(book_id, []).append(author)
         tags: dict[bytes, list[str]] = {}
         cur.execute(_EXPORT_TAGS_QUERY, (user_id.bytes,))
@@ -185,14 +181,14 @@ def export_collection(conn: Connection, user_id: UUID) -> str:
     ) in books:
         values = (
             title,
-            f"{_AUTHOR_SEPARATOR} ".join(authors.get(book_id, [])),
+            f"{_SEPARATOR} ".join(authors.get(book_id, [])),
             isbn or "",
             publisher or "",
             "" if year is None else str(year),
             series or "",
             volume or "",
             plot or "",
-            f"{_TAG_SEPARATOR} ".join(tags.get(book_id, [])),
+            f"{_SEPARATOR} ".join(tags.get(book_id, [])),
             str(copies),
             "yes" if read else "no",
         )
@@ -217,14 +213,16 @@ def _number(text: str | None, low: int, high: int) -> int | None:
 
 
 def _authors(text: str | None) -> tuple[Author, ...]:
+    """
+    "Name Surname" authors separated by commas: the last word is the surname
+    ("Homer" alone has only one), so "Ursula K. Le Guin" gives "Guin".
+    """
     authors = []
-    for part in (text or "").split(_AUTHOR_SEPARATOR):
-        if not part.strip():
+    for part in (text or "").split(_SEPARATOR):
+        words = part.split()
+        if not words:
             continue
-        surname, _, name = part.partition(",")
-        author = Author(name.strip(), surname.strip())
-        if not author.surname:
-            raise _RowError("each author needs a surname (“Surname, Name”).")
+        author = Author(" ".join(words[:-1]), words[-1])
         if max(len(author.name), len(author.surname)) > _AUTHOR_MAX_LENGTH:
             raise _RowError(
                 f"author names cannot be longer than {_AUTHOR_MAX_LENGTH} characters."
@@ -234,7 +232,7 @@ def _authors(text: str | None) -> tuple[Author, ...]:
 
 
 def _tags(text: str | None) -> tuple[str, ...]:
-    tags = unique_tags(tuple((text or "").split(_TAG_SEPARATOR)))
+    tags = unique_tags(tuple((text or "").split(_SEPARATOR)))
     if any(len(tag) > _TAG_MAX_LENGTH for tag in tags):
         raise _RowError(f"tags cannot be longer than {_TAG_MAX_LENGTH} characters.")
     return tuple(tags)
@@ -311,8 +309,14 @@ def _read_rows(text: str) -> Iterator[tuple[int, dict[str, str]]]:
 
 
 def _same_authors(book: Book, authors: tuple[Author, ...]) -> bool:
-    def keys(found: tuple[Author, ...]) -> set[tuple[str, str]]:
-        return {(a.name.casefold(), a.surname.casefold()) for a in found}
+    """
+    Whether both have the same authors, by full name ("Name Surname",
+    ignoring case and spaces between words): an exported "Ursula K. Le Guin"
+    still matches Le Guin, though the import would split her name at "Guin".
+    """
+
+    def keys(found: tuple[Author, ...]) -> set[str]:
+        return {" ".join(str(a).split()).casefold() for a in found}
 
     return keys(book.authors) == keys(authors)
 
