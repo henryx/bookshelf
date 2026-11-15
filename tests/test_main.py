@@ -63,7 +63,7 @@ def _add_book(
 
 
 def _titles(html: str) -> list[str]:
-    return re.findall(r'<span class="book-title">([^<]*)</span>', html)
+    return re.findall(r'<a class="book-title"[^>]*>([^<]*)</a>', html)
 
 
 def test_main_page_lists_books_with_authors_and_year(db_app, client):

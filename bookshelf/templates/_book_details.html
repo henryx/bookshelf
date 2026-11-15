@@ -1,0 +1,10 @@
+{# A book's details, shown, and its edit form: the book dialog's content, and the body of the book page. #}
+<dl class="book-details">
+  <dt>Title</dt>
+  <dd class="book-details-title">{{ book.title }}</dd>
+  {% if book.authors %}<dt>Authors</dt><dd>{{ book.authors | join(", ") }}</dd>{% endif %}
+  {% if book.isbn %}<dt>ISBN</dt><dd class="mono">{{ book.isbn }}</dd>{% endif %}
+  {% if book.publisher %}<dt>Publisher</dt><dd>{{ book.publisher }}</dd>{% endif %}
+  {% if book.publication_year %}<dt>Year</dt><dd class="mono">{{ book.publication_year }}</dd>{% endif %}
+</dl>
+{% include "_edit_book_form.html" %}

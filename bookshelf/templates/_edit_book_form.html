@@ -1,0 +1,38 @@
+{# The edit-book form: in the book dialog, on the book page, and the htmx response when it has errors. #}
+{% set action = url_for("main.book", book_id=book.id) %}
+<form id="edit-book-form" class="card" method="post" action="{{ action }}"
+      hx-post="{{ action }}" hx-target="this" hx-swap="outerHTML"
+      hx-indicator="#edit-book-indicator" hx-disabled-elt="find button">
+  {{ form.hidden_tag() }}
+  {# The list to go back to after saving, with its search, order and page. #}
+  <input type="hidden" name="list" value="{{ list_name }}">
+  <input type="hidden" name="q" value="{{ search }}">
+  <input type="hidden" name="sort" value="{{ sort }}">
+  <input type="hidden" name="page" value="{{ page }}">
+  {% for error in form.form_errors %}
+    <p class="error" role="alert">{{ error }}</p>
+  {% endfor %}
+
+  {% macro field(f, hint=None) %}
+    {% set id = "edit-book-" ~ f.name %}
+    <label for="{{ id }}">{{ f.label.text }}</label>
+    {% if hint %}
+      {{ f(id=id, aria_describedby=id ~ "-hint", **kwargs) }}
+      <p id="{{ id }}-hint" class="hint">{{ hint }}</p>
+    {% else %}
+      {{ f(id=id, **kwargs) }}
+    {% endif %}
+    {% for error in f.errors %}<p class="error">{{ error }}</p>{% endfor %}
+  {% endmacro %}
+
+  {# Only while the book has none: once saved, an ISBN never changes. #}
+  {% if form.isbn %}
+    {{ field(form.isbn, "ISBN-10 or ISBN-13. Once saved, it cannot be changed.", autocomplete="off") }}
+  {% endif %}
+  {{ field(form.volume, "E.g. 2, II or 3/4.", maxlength=32) }}
+  {{ field(form.tags, "Separated by commas.", autocomplete="off") }}
+  {{ field(form.notes, rows=3, maxlength=4000) }}
+
+  <button type="submit">Save</button>
+  <span id="edit-book-indicator" class="htmx-indicator">Saving…</span>
+</form>

@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from flask import (
     Blueprint,
     abort,
@@ -16,16 +18,22 @@ from bookshelf.models.books import (
     SEARCH_MAX_LENGTH,
     AuthorField,
     Book,
+    BookDetails,
     BookExistsError,
+    IsbnAlreadySetError,
     Sort,
+    UnknownBookError,
     add_book,
     find_book_by_isbn,
+    find_book_details,
     list_books,
     suggest_authors,
     suggest_publishers,
+    unique_tags,
+    update_book,
 )
 from bookshelf.routes import htmx_redirect, is_htmx
-from bookshelf.routes.forms import BookForm
+from bookshelf.routes.forms import BookForm, EditBookForm
 
 __all__ = ["list_state", "list_url", "main_route", "render_catalogue"]
 
@@ -125,6 +133,107 @@ def new_book() -> BaseResponse | str:
     current_app.logger.info("Book %r added by %s", book.title, current_user.email)
     flash(f"Book “{book.title}” added.")
     return htmx_redirect(url_for("main.index"))
+
+
+def _book_list_endpoint(values: MultiDict[str, str]) -> str:
+    """The list a book was opened from: the collection or (by default) the catalogue."""
+    return "collection.index" if values.get("list") == "collection" else "main.index"
+
+
+def _render_book(
+    form: EditBookForm, book: BookDetails, values: MultiDict[str, str]
+) -> str:
+    """
+    Full page without htmx. With htmx, a GET fills the book dialog (details
+    and form); a POST with errors swaps only the form. `values`: the list
+    the book was opened from (which one, its search, order and page).
+    """
+    if not is_htmx():
+        template = "book.html"
+    elif request.method == "GET":
+        template = "_book_details.html"
+    else:
+        template = "_edit_book_form.html"
+    search, sort, page = list_state(values)
+    endpoint = _book_list_endpoint(values)
+    return render_template(
+        template,
+        form=form,
+        book=book,
+        list_name="collection" if endpoint == "collection.index" else "",
+        search=search,
+        sort=sort,
+        page=page,
+        back_url=list_url(endpoint, values),
+    )
+
+
+def _edited_fields(book: BookDetails, form: EditBookForm, isbn: str | None) -> str:
+    """The fields a save changes, for the log."""
+    fields = [
+        name
+        for name, old, new in (
+            ("volume", book.volume, form.volume.data),
+            ("notes", book.notes, form.notes.data),
+            ("tags", sorted(book.tags), sorted(unique_tags(form.tag_names()))),
+        )
+        if old != new
+    ]
+    if isbn:
+        fields.append("ISBN")
+    return ", ".join(fields) or "no changes"
+
+
+@main_route.route("/books/<uuid:book_id>", methods=("GET", "POST"))
+@login_required
+def book(book_id: UUID) -> BaseResponse | str:
+    """
+    A book's details, and saving its volume, notes and tags, and its ISBN
+    while it has none. Any user may edit any book. Saving goes back to the
+    list the book was opened from, as it was.
+    """
+    details = find_book_details(get_db(), book_id)
+    if details is None:
+        abort(404)
+    form = EditBookForm(
+        data={
+            "volume": details.volume,
+            "notes": details.notes,
+            "tags": ", ".join(details.tags),
+        }
+    )
+    # Once set, an ISBN is shown, not a field; a posted one is ignored.
+    if details.isbn:
+        del form.isbn
+    values = request.form if request.method == "POST" else request.args
+    if not form.validate_on_submit():
+        return _render_book(form, details, values)
+
+    isbn = form.isbn.data if "isbn" in form else None
+    try:
+        update_book(
+            get_db(),
+            book_id,
+            volume=form.volume.data,
+            notes=form.notes.data,
+            tags=form.tag_names(),
+            isbn=isbn,
+        )
+    except UnknownBookError:
+        # Deleted since it was looked up.
+        abort(404)
+    except (BookExistsError, IsbnAlreadySetError) as e:
+        form.form_errors.append(str(e))
+        return _render_book(form, details, values)
+
+    current_app.logger.info(
+        "Book %r edited by %s: %s",
+        details.title,
+        current_user.email,
+        _edited_fields(details, form, isbn),
+    )
+    flash(f"Book “{details.title}” saved.")
+    return htmx_redirect(list_url(_book_list_endpoint(values), values))
 
 
 @main_route.route("/authors/suggestions", methods=("GET",))

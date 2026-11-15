@@ -32,6 +32,7 @@ __all__ = [
     "AuthorForm",
     "BookForm",
     "CopiesForm",
+    "EditBookForm",
     "LoginForm",
     "NewAccountForm",
     "NewUserForm",
@@ -167,7 +168,38 @@ class CopiesForm(FlaskForm):
     copies = _copies_field("Copies")
 
 
-class BookForm(FlaskForm):
+class EditBookForm(FlaskForm):
+    """
+    A book's editable fields: ISBN (only while it has none), volume, notes
+    and tags separated by commas. BookForm adds the rest of a new book.
+    """
+
+    isbn = StringField("ISBN", filters=[_strip_or_none])
+    volume = _optional_text("Volume", 32)
+    tags = StringField("Tags")
+    notes = TextAreaField(
+        "Notes", filters=[_strip_or_none], validators=[Optional(), Length(max=4000)]
+    )
+
+    def tag_names(self) -> tuple[str, ...]:
+        return tuple((self.tags.data or "").split(","))
+
+    def validate_tags(self, _field: StringField) -> None:
+        if any(len(tag.strip()) > _TAG_MAX_LENGTH for tag in self.tag_names()):
+            raise ValidationError(
+                f"Tags cannot be longer than {_TAG_MAX_LENGTH} characters."
+            )
+
+    def validate_isbn(self, field: StringField) -> None:
+        if not field.data:
+            return
+        try:
+            normalise_isbn(field.data)
+        except InvalidIsbnError as e:
+            raise ValidationError("Not a valid ISBN.") from e
+
+
+class BookForm(EditBookForm):
     """A new book: authors as rows of name and surname, tags separated by commas."""
 
     title = StringField(
@@ -176,15 +208,9 @@ class BookForm(FlaskForm):
         validators=[DataRequired(), Length(max=_NAME_MAX_LENGTH)],
     )
     authors = FieldList(FormField(AuthorForm), "Authors", min_entries=1)
-    isbn = StringField("ISBN", filters=[_strip_or_none])
     publisher = _optional_text("Publisher", _NAME_MAX_LENGTH)
     publication_year = IntegerField(
         "Year", validators=[Optional(), NumberRange(min=1, max=9999)]
-    )
-    volume = _optional_text("Volume", 32)
-    tags = StringField("Tags")
-    notes = TextAreaField(
-        "Notes", filters=[_strip_or_none], validators=[Optional(), Length(max=4000)]
     )
     copies = _copies_field("Copies you own")
 
@@ -217,23 +243,6 @@ class BookForm(FlaskForm):
             seen.add(key)
         if repeated:
             raise ValidationError("Each author can be listed only once.")
-
-    def tag_names(self) -> tuple[str, ...]:
-        return tuple((self.tags.data or "").split(","))
-
-    def validate_tags(self, _field: StringField) -> None:
-        if any(len(tag.strip()) > _TAG_MAX_LENGTH for tag in self.tag_names()):
-            raise ValidationError(
-                f"Tags cannot be longer than {_TAG_MAX_LENGTH} characters."
-            )
-
-    def validate_isbn(self, field: StringField) -> None:
-        if not field.data:
-            return
-        try:
-            normalise_isbn(field.data)
-        except InvalidIsbnError as e:
-            raise ValidationError("Not a valid ISBN.") from e
 
     def to_book(self) -> NewBook:
         return NewBook(

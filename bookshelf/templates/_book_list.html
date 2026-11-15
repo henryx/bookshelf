@@ -29,7 +29,14 @@
   <ul class="books">
     {% for book in books.books %}
       <li>
-        <span class="book-title">{{ book.title }}</span>
+        {# The book's details open in the page's dialog; without JavaScript, on their page. #}
+        {% set book_url = url_for("main.book", book_id=book.id,
+                                  list="collection" if in_collection else None,
+                                  q=search or None,
+                                  sort=None if sort == sorts.TITLE else sort.value,
+                                  page=books.page if books.page > 1 else None) %}
+        <a class="book-title" href="{{ book_url }}" hx-get="{{ book_url }}"
+           hx-target="#book-dialog-body" hx-indicator="closest li">{{ book.title }}</a>
         {% if book.authors %}<span class="book-authors">{{ book.authors | join(", ") }}</span>{% endif %}
         {% if book.publication_year %}<span class="book-year">{{ book.publication_year }}</span>{% endif %}
         <div class="book-actions">

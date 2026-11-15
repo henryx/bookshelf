@@ -76,7 +76,7 @@ def _in_catalogue(app: Flask, book_id: UUID) -> bool:
 
 
 def _titles(html: str) -> list[str]:
-    return re.findall(r'<span class="book-title">([^<]*)</span>', html)
+    return re.findall(r'<a class="book-title"[^>]*>([^<]*)</a>', html)
 
 
 # Model

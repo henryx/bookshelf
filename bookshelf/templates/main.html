@@ -22,4 +22,13 @@
     </div>
     {% include "_add_book_form.html" %}
   </dialog>
+
+  {# Filled with a book's details by the titles in the list, then opened (app.js). #}
+  <dialog id="book-dialog" aria-labelledby="book-dialog-title">
+    <div class="section-header">
+      <h2 id="book-dialog-title">Edit book</h2>
+      <button type="button" class="secondary" data-dialog-close aria-label="Close">✕</button>
+    </div>
+    <div id="book-dialog-body"></div>
+  </dialog>
 {% endblock %}

@@ -20,9 +20,11 @@ __all__ = [
     "Author",
     "AuthorField",
     "Book",
+    "BookDetails",
     "BookExistsError",
     "BookPage",
     "InvalidIsbnError",
+    "IsbnAlreadySetError",
     "NewBook",
     "Sort",
     "UnknownBookError",
@@ -30,6 +32,7 @@ __all__ = [
     "add_to_collection",
     "find_book",
     "find_book_by_isbn",
+    "find_book_details",
     "list_books",
     "list_collection",
     "normalise_isbn",
@@ -37,6 +40,8 @@ __all__ = [
     "set_copies",
     "suggest_authors",
     "suggest_publishers",
+    "unique_tags",
+    "update_book",
 ]
 
 # Firebird GDS code for "violation of PRIMARY or UNIQUE KEY constraint".
@@ -69,6 +74,14 @@ class BookExistsError(Exception):
     def __init__(self, isbn: str) -> None:
         super().__init__(f"A book with ISBN {isbn} is already in the catalogue.")
         self.isbn = isbn
+
+
+class IsbnAlreadySetError(Exception):
+    """A book's ISBN can be set only while it has none."""
+
+    def __init__(self, book_id: UUID) -> None:
+        super().__init__("This book already has an ISBN.")
+        self.book_id = book_id
 
 
 class UnknownBookError(Exception):
@@ -126,6 +139,21 @@ class NewBook:
     are trimmed, blank ones skipped and repeats (ignoring case) dropped.
     """
 
+    title: str
+    authors: tuple[Author, ...] = ()
+    isbn: str | None = None
+    publisher: str | None = None
+    publication_year: int | None = None
+    volume: str | None = None
+    notes: str | None = None
+    tags: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, kw_only=True)
+class BookDetails:
+    """A catalogue book with every field; tags in alphabetical order."""
+
+    id: UUID
     title: str
     authors: tuple[Author, ...] = ()
     isbn: str | None = None
@@ -464,6 +492,43 @@ def find_book(conn: Connection, user_id: UUID, book_id: UUID) -> Book | None:
     return books[0] if books else None
 
 
+def find_book_details(conn: Connection, book_id: UUID) -> BookDetails | None:
+    """Every field of the catalogue book `book_id`; None if unknown."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT TITLE, ISBN, PUBLISHER, PUBLICATION_YEAR, VOLUME, NOTES "
+            "FROM BOOKS WHERE ID = ?",
+            (book_id.bytes,),
+        )
+        row = cur.fetchone()
+        if row is None:
+            return None
+        title, isbn, publisher, year, volume, notes = row
+        cur.execute(
+            "SELECT a.NAME, a.SURNAME FROM BOOK_AUTHORS ba "
+            "JOIN AUTHORS a ON a.ID = ba.AUTHOR_ID "
+            "WHERE ba.BOOK_ID = ? ORDER BY ba.SORT_ORDER",
+            (book_id.bytes,),
+        )
+        authors = tuple(Author(name, surname) for name, surname in cur.fetchall())
+        cur.execute(
+            "SELECT TAG FROM BOOK_TAGS WHERE BOOK_ID = ? ORDER BY TAG",
+            (book_id.bytes,),
+        )
+        tags = tuple(tag for (tag,) in cur.fetchall())
+    return BookDetails(
+        id=book_id,
+        title=title,
+        authors=authors,
+        isbn=isbn,
+        publisher=publisher,
+        publication_year=year,
+        volume=volume,
+        notes=notes,
+        tags=tags,
+    )
+
+
 def find_book_by_isbn(conn: Connection, user_id: UUID, isbn: str) -> Book | None:
     """The catalogue book with this ISBN-13, as find_book; None if there is none."""
     with conn.cursor() as cur:
@@ -540,7 +605,7 @@ def _unique_authors(authors: tuple[Author, ...]) -> list[Author]:
     return unique
 
 
-def _unique_ignoring_case(names: tuple[str, ...]) -> list[str]:
+def unique_tags(names: tuple[str, ...]) -> list[str]:
     """Trimmed, non-blank tags, the first of each kept (ignoring case)."""
     seen: set[str] = set()
     unique = []
@@ -615,7 +680,7 @@ def _insert_book(
             "VALUES (?, ?, ?)",
             (book_id.bytes, _author_id(cur, author), order),
         )
-    for tag in _unique_ignoring_case(book.tags):
+    for tag in unique_tags(book.tags):
         cur.execute(
             "INSERT INTO BOOK_TAGS (BOOK_ID, TAG) VALUES (?, ?)",
             (book_id.bytes, tag),
@@ -651,6 +716,69 @@ def add_book(conn: Connection, user_id: UUID, book: NewBook, copies: int = 1) ->
         _insert_book(cur, user_id, book_id, book, isbn, copies)
         transaction.commit()
     return book_id
+
+
+def _set_isbn(cur: Cursor, book_id: UUID, isbn: str) -> None:
+    """
+    Give a book without an ISBN this one. The ISBN IS NULL condition keeps
+    an ISBN from ever changing, even when the caller's view of the book is
+    out of date.
+    """
+    try:
+        cur.execute(
+            "UPDATE BOOKS SET ISBN = ? WHERE ID = ? AND ISBN IS NULL",
+            (isbn, book_id.bytes),
+        )
+    except DatabaseError as e:
+        if _UNIQUE_KEY_VIOLATION in e.gds_codes:
+            raise BookExistsError(isbn) from e
+        raise
+    if cur.affected_rows == 0:
+        raise IsbnAlreadySetError(book_id)
+
+
+def update_book(
+    conn: Connection,
+    book_id: UUID,
+    *,
+    volume: str | None,
+    notes: str | None,
+    tags: tuple[str, ...],
+    isbn: str | None = None,
+) -> None:
+    """
+    Save a book's volume and notes (None empties them) and replace its tags
+    (as when adding a book), in one transaction; the title and the other
+    fields never change. With `isbn`, also give the book that ISBN, stored
+    as ISBN-13. Nothing is saved when it raises: UnknownBookError for an
+    unknown book, InvalidIsbnError for a bad ISBN, BookExistsError if
+    another book has it, IsbnAlreadySetError if this book already has one.
+
+    The transaction is its own and read committed, as in add_book.
+    """
+    new_isbn = normalise_isbn(isbn) if isbn else None
+    with (
+        conn.transaction_manager(
+            tpb(Isolation.READ_COMMITTED_RECORD_VERSION),
+            default_action=DefaultAction.ROLLBACK,
+        ) as transaction,
+        transaction.cursor() as cur,
+    ):
+        cur.execute(
+            "UPDATE BOOKS SET VOLUME = ?, NOTES = ? WHERE ID = ?",
+            (volume, notes, book_id.bytes),
+        )
+        if cur.affected_rows == 0:
+            raise UnknownBookError(book_id)
+        cur.execute("DELETE FROM BOOK_TAGS WHERE BOOK_ID = ?", (book_id.bytes,))
+        for tag in unique_tags(tags):
+            cur.execute(
+                "INSERT INTO BOOK_TAGS (BOOK_ID, TAG) VALUES (?, ?)",
+                (book_id.bytes, tag),
+            )
+        if new_isbn is not None:
+            _set_isbn(cur, book_id, new_isbn)
+        transaction.commit()
 
 
 def suggest_authors(conn: Connection, text: str, field: AuthorField) -> list[Author]:

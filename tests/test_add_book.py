@@ -148,7 +148,7 @@ def test_add_book_shows_confirmation_on_the_list(client):
     html = client.get("/").get_data(as_text=True)
 
     assert "Book “Dune” added." in html
-    assert '<span class="book-title">Dune</span>' in html
+    assert re.search(r'<a class="book-title"[^>]*>Dune</a>', html)
 
 
 def test_add_book_with_title_only_leaves_the_rest_empty(db_app, client):
