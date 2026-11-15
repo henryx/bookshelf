@@ -24,7 +24,6 @@ from bookshelf.models.collection_csv import (
 from bookshelf.models.users import User, create_user
 
 HTMX = {"HX-Request": "true"}
-FROM_LIST = {**HTMX, "HX-Target": "book-list"}
 HEADER = "title,authors,isbn,publisher,year,series,volume,plot,tags,copies,read\n"
 
 
@@ -289,7 +288,7 @@ def test_export_route_downloads_the_csv(client, db_app, user):
     with db_app.app_context():
         add_book(get_db(), user.id, NewBook("Dune"))
 
-    rv = client.get("/collection/export")
+    rv = client.get("/account/export")
 
     assert rv.status_code == 200
     assert rv.mimetype == "text/csv"
@@ -300,7 +299,7 @@ def test_export_route_downloads_the_csv(client, db_app, user):
 
 
 def test_export_needs_login(db_client):
-    rv = db_client.get("/collection/export")
+    rv = db_client.get("/account/export")
 
     assert rv.status_code == 302
     assert "/login" in rv.headers["Location"]
@@ -309,31 +308,32 @@ def test_export_needs_login(db_client):
 def _upload(client: FlaskClient, text: str | bytes, headers=None, name="books.csv"):
     data = text.encode() if isinstance(text, str) else text
     return client.post(
-        "/collection/import",
+        "/account/import",
         data={"file": (io.BytesIO(data), name)},
         headers=headers or {},
         content_type="multipart/form-data",
     )
 
 
-def test_import_route_with_htmx_shows_the_list_and_report(client, db_app, user):
-    rv = _upload(client, "title,copies\nDune,2\n,3\n", headers=FROM_LIST)
+def test_import_route_with_htmx_shows_the_report(client, db_app, user):
+    rv = _upload(client, "title,copies\nDune,2\n,3\n", headers=HTMX)
 
     assert rv.status_code == 200
     html = rv.get_data(as_text=True)
     assert "<html" not in html
     assert "1 book added to your collection (1 new to the catalogue)." in html
     assert "Row 3: the title is required." in html
-    assert ">Dune</a>" in html
+    assert 'id="collection-csv"' in html
     assert _collection(db_app, user) == [("Dune", 2, False)]
 
 
-def test_import_route_without_javascript_shows_the_page(client, db_app, user):
+def test_import_route_without_javascript_shows_the_account_page(client, db_app, user):
     rv = _upload(client, "title\nDune\n")
 
     assert rv.status_code == 200
     html = rv.get_data(as_text=True)
     assert "<html" in html
+    assert 'id="account-form"' in html
     assert "1 book added to your collection (1 new to the catalogue)." in html
 
 
@@ -341,7 +341,7 @@ def test_import_route_reports_skipped_books(client, db_app, user):
     with db_app.app_context():
         add_book(get_db(), user.id, NewBook("Dune"))
 
-    rv = _upload(client, "title\nDune\n", headers=FROM_LIST)
+    rv = _upload(client, "title\nDune\n", headers=HTMX)
 
     assert "No books added; 1 already in your collection, skipped." in rv.get_data(
         as_text=True
@@ -357,7 +357,7 @@ def test_import_route_reports_skipped_books(client, db_app, user):
     ],
 )
 def test_import_route_refuses_bad_files(client, db_app, user, data, name, message):
-    rv = _upload(client, data, headers=FROM_LIST, name=name)
+    rv = _upload(client, data, headers=HTMX, name=name)
 
     assert rv.status_code == 200
     assert message in rv.get_data(as_text=True)
@@ -365,7 +365,7 @@ def test_import_route_refuses_bad_files(client, db_app, user, data, name, messag
 
 
 def test_import_route_without_a_file(client):
-    rv = client.post("/collection/import", data={}, headers=FROM_LIST)
+    rv = client.post("/account/import", data={}, headers=HTMX)
 
     assert "Choose a CSV file to import." in rv.get_data(as_text=True)
 
@@ -378,12 +378,19 @@ def test_import_route_refuses_files_too_large(client, app):
     assert rv.status_code == 413
 
 
-def test_collection_page_offers_import_and_export(client):
+def test_account_page_offers_import_and_export(client):
+    html = client.get("/account").get_data(as_text=True)
+
+    assert 'href="/account/export"' in html
+    assert 'action="/account/import"' in html
+    assert 'enctype="multipart/form-data"' in html
+
+
+def test_collection_page_has_no_import_or_export(client):
     html = client.get("/collection").get_data(as_text=True)
 
-    assert 'href="/collection/export"' in html
-    assert 'action="/collection/import"' in html
-    assert 'enctype="multipart/form-data"' in html
+    assert "/account/export" not in html
+    assert "/account/import" not in html
 
 
 def test_import_does_not_touch_other_users(db_app, user, other):

@@ -1,9 +1,7 @@
-from datetime import UTC, datetime
 from uuid import UUID
 
 from flask import (
     Blueprint,
-    Response,
     abort,
     current_app,
     flash,
@@ -27,14 +25,8 @@ from bookshelf.models.books import (
     set_copies,
     set_read,
 )
-from bookshelf.models.collection_csv import (
-    CsvFileError,
-    ImportReport,
-    export_collection,
-    import_collection,
-)
 from bookshelf.routes import htmx_redirect, is_htmx
-from bookshelf.routes.forms import CopiesForm, ImportForm, ReadForm
+from bookshelf.routes.forms import CopiesForm, ReadForm
 from bookshelf.routes.main import (
     author_filter,
     list_state,
@@ -53,12 +45,11 @@ def _render_collection(
     partial: bool,
     notice: str | None = None,
     error: str | None = None,
-    error_details: list[str] | None = None,
 ) -> str:
     """
     The user's collection with the search, order, page and author (one
     author's books) in `values`: the list alone when `partial`, else the page. `notice` or `error` is shown
-    above it, with `error_details` listed under the error.
+    above it.
     """
     search, sort, page = list_state(values)
     author = author_filter(values)
@@ -81,7 +72,6 @@ def _render_collection(
         author=author,
         notice=notice,
         list_error=error,
-        list_error_details=error_details,
     )
 
 
@@ -198,78 +188,3 @@ def remove(book_id: UUID) -> BaseResponse | str:
         "Book %r removed from the collection of %s", book.title, current_user.email
     )
     return _collection_response(f"“{book.title}” removed from your collection.")
-
-
-@collection_route.get("/export")
-@login_required
-def export() -> Response:
-    """The current user's collection as a CSV download."""
-    text = export_collection(get_db(), current_user.id)
-    current_app.logger.info("Collection of %s exported", current_user.email)
-    filename = f"bookshelf-collection-{datetime.now(UTC).date().isoformat()}.csv"
-    return Response(
-        text,
-        mimetype="text/csv",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
-
-
-def _plural(count: int, word: str) -> str:
-    return f"{count} {word}{'' if count == 1 else 's'}"
-
-
-def _import_notice(report: ImportReport) -> str:
-    """What an import did: "2 books added to your collection (1 new to the catalogue)."."""
-    if report.added:
-        notice = f"{_plural(report.added, 'book')} added to your collection"
-        if report.created:
-            notice += f" ({report.created} new to the catalogue)"
-    else:
-        notice = "No books added"
-    if report.skipped:
-        notice += f"; {report.skipped} already in your collection, skipped"
-    return f"{notice}."
-
-
-@collection_route.post("/import")
-@login_required
-def import_csv() -> str:
-    """
-    Add the books of an uploaded CSV file to the current user's collection
-    (see import_collection), then show the collection with what was done:
-    the list alone for htmx, else the page (no redirect: the report is too
-    long for a flashed message, and posting the file again only skips books).
-    """
-    partial = is_htmx()
-    form = ImportForm()
-    if not form.validate_on_submit():
-        error = " ".join(form.file.errors) or "The file could not be read."
-        return _render_collection(request.form, partial=partial, error=error)
-    try:
-        text = form.file.data.read().decode("utf-8-sig")
-        report = import_collection(get_db(), current_user.id, text)
-    except UnicodeDecodeError:
-        error = "The file is not UTF-8 text."
-        current_app.logger.info("Import by %s refused: not UTF-8", current_user.email)
-        return _render_collection(request.form, partial=partial, error=error)
-    except CsvFileError as e:
-        current_app.logger.info("Import by %s refused: %s", current_user.email, e)
-        return _render_collection(request.form, partial=partial, error=str(e))
-    current_app.logger.info(
-        "Import by %s: %d added (%d new to the catalogue), %d skipped, %d errors",
-        current_user.email,
-        report.added,
-        report.created,
-        report.skipped,
-        len(report.errors),
-    )
-    error = None
-    if report.errors:
-        error = f"{_plural(len(report.errors), 'row')} not imported:"
-    return _render_collection(
-        request.form,
-        partial=partial,
-        notice=_import_notice(report),
-        error=error,
-        error_details=report.errors,
-    )

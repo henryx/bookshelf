@@ -65,7 +65,7 @@ def _render_login(form: LoginForm) -> str:
 @auth_route.route("/login", methods=("GET", "POST"))
 def login() -> BaseResponse | str | tuple[str, int]:
     if current_user.is_authenticated:
-        return htmx_redirect(url_for("main.index"))
+        return htmx_redirect(url_for("collection.index"))
 
     form = LoginForm()
     if not form.validate_on_submit():
@@ -99,7 +99,7 @@ def login() -> BaseResponse | str | tuple[str, int]:
 
     clear_login_failures(conn, email, ip)
     login_user(user, remember=True)
-    return htmx_redirect(url_for("main.index"))
+    return htmx_redirect(url_for("collection.index"))
 
 
 @auth_route.route("/logout", methods=("POST",))

@@ -104,10 +104,10 @@ def test_tick_read_on_the_collection_page(reader_page: Page, live_server: str, d
     expect(reader_page.get_by_label("Dune read")).to_be_checked()
 
 
-def test_csv_import_reloads_the_list_with_its_report(
+def test_csv_import_shows_its_report_on_the_account_page(
     reader_page: Page, live_server: str, dune
 ):
-    reader_page.goto(f"{live_server}/collection")
+    reader_page.goto(f"{live_server}/account")
     reader_page.get_by_label("Import books from CSV").set_input_files(
         files=[
             {
@@ -121,18 +121,19 @@ def test_csv_import_reloads_the_list_with_its_report(
 
     reader_page.get_by_role("button", name="Import", exact=True).click()
 
-    book_list = reader_page.locator("#book-list")
-    expect(book_list).to_contain_text(
+    csv_section = reader_page.locator("#collection-csv")
+    expect(csv_section).to_contain_text(
         "1 book added to your collection (1 new to the catalogue); "
         "1 already in your collection, skipped."
     )
-    expect(book_list).to_contain_text("Row 4: the title is required.")
-    expect(reader_page.locator(".book-title")).to_have_text(["Dune", "Emma"])
+    expect(csv_section).to_contain_text("Row 4: the title is required.")
     assert reader_page.url == url
+    reader_page.goto(f"{live_server}/collection")
+    expect(reader_page.locator(".book-title")).to_have_text(["Dune", "Emma"])
 
 
 def test_csv_export_downloads_the_collection(reader_page: Page, live_server: str, dune):
-    reader_page.goto(f"{live_server}/collection")
+    reader_page.goto(f"{live_server}/account")
 
     with reader_page.expect_download() as download:
         reader_page.get_by_role("link", name="Export CSV").click()

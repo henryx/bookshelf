@@ -77,7 +77,7 @@ def test_setup_creates_schema_and_admin_and_logs_in(empty_db_app: Flask):
     rv = client.post("/setup", data=ADMIN)
 
     assert rv.status_code == 302
-    assert rv.headers["Location"] == "/"
+    assert rv.headers["Location"] == "/collection/"
     admin = _admin(empty_db_app)
     assert admin is not None
     assert admin.role is Role.ADMIN
@@ -90,7 +90,7 @@ def test_htmx_setup_redirects_via_header(empty_db_app: Flask):
     rv = empty_db_app.test_client().post("/setup", data=ADMIN, headers=HTMX)
 
     assert rv.status_code == 204
-    assert rv.headers["HX-Redirect"] == "/"
+    assert rv.headers["HX-Redirect"] == "/collection/"
 
 
 def test_setup_page_is_gone_once_done(empty_db_app: Flask):

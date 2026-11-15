@@ -1,5 +1,6 @@
 <header class="topbar">
-  <h1><a href="{{ url_for('main.index') }}">Bookshelf</a></h1>
+  {# The title leads to the first page, the user's collection. #}
+  <h1><a href="{{ url_for('collection.index') }}">Bookshelf</a></h1>
   {# The account menu, upper right. A <details>, so it opens without JavaScript;
      app.js closes it on a click elsewhere or Escape. #}
   <details class="avatar">
@@ -14,6 +15,7 @@
       </p>
       <a href="{{ url_for('account.account') }}">Your account</a>
       <a href="{{ url_for('collection.index') }}">Your collection</a>
+      <a href="{{ url_for('main.index') }}">Catalogue</a>
       <a href="{{ url_for('authors.index') }}">Authors</a>
       {% if current_user.is_admin %}
         <a href="{{ url_for('admin.users') }}">Admin</a>

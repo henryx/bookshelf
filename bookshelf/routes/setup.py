@@ -90,4 +90,4 @@ def wizard() -> BaseResponse | str:
         request.remote_addr,
     )
     login_user(admin, remember=True)
-    return htmx_redirect(url_for("main.index"))
+    return htmx_redirect(url_for("collection.index"))

@@ -40,8 +40,8 @@ area. Either may be missing; empty fields are stored as NULL, and the database k
 
 ### Login page
 
-When user open for the first time the webapp, a login page is shown. If login and password are correct, main page is
-shown, otherwise login page show an error. A persistent cookie is saved to permit user to navigate in the webapp without
+When user open for the first time the webapp, a login page is shown. If login and password are correct, the user's
+collection is shown (see "Your collection"), otherwise login page show an error. A persistent cookie is saved to permit user to navigate in the webapp without
 repeat login. If cookie is expired, or user made a logout action, next page showed is login page.
 
 Decisions:
@@ -106,7 +106,7 @@ Decisions:
 
 When the database has no schema (no `USERS` table) or no admin, every request except static files is redirected
 to a setup wizard (`/setup`). The wizard asks for an email and a password (entered twice), creates any missing
-schema (`init_db`), creates the admin and logs them in. Once an admin exists the wizard returns 404.
+schema (`init_db`), creates the admin and logs them in, on their (empty) collection. Once an admin exists the wizard returns 404.
 
 Decisions:
 
@@ -215,8 +215,9 @@ Status: built, in the top bar of every page after login.
 
 The upper right corner of the top bar shows who is logged in: their name and surname (or their email, without a
 name) next to a round avatar with their initials (or the email's first letter). On a phone only the avatar is
-shown. Clicking it opens a menu with the name and the email, "Your account", "Your collection", "Authors",
-"Admin" (admins only) and "Log out".
+shown. Clicking it opens a menu with the name and the email, "Your account", "Your collection", "Catalogue"
+(the main page), "Authors", "Admin" (admins only) and "Log out". The "Bookshelf" title on the left leads to the
+first page, the user's collection.
 
 Decisions:
 
@@ -229,7 +230,8 @@ Decisions:
 Status: built at `/account`.
 
 Every user can change their own name and surname, and their password. The email is shown but cannot be changed (see
-Login page). Save applies the changes together, and only if every field is valid.
+Login page). Save applies the changes together, and only if every field is valid. Under the form, the user exports
+their collection to CSV or imports a CSV file into it (see "Collection CSV import and export").
 
 Decisions:
 
@@ -240,6 +242,45 @@ Decisions:
  - Role and lock state are not on this page, and saving it never changes them, even if an admin changes them in
    the meantime.
  - Empty name or surname fields clear them.
+
+### Collection CSV import and export
+
+Status: built: "Export CSV" (`/account/export`) and "Import" (`/account/import`), in a "Your collection as CSV"
+card under the account form.
+
+Each user exports and imports only their own collection.
+
+Decisions:
+
+ - Columns: `title`, `authors`, `isbn`, `publisher`, `year`, `series`, `volume`, `plot`, `tags`, `copies`,
+   `read`. Authors are "Surname, Name" (or "Surname" alone) separated by "; "; tags are separated by ", ", as in
+   the book form; read is `yes` or `no`. The export is UTF-8 with a byte order mark (so spreadsheets read it as
+   UTF-8), ordered by title.
+ - An import needs a header with `title`; the other columns are optional and in any order (missing ones are
+   empty, copies 1 and not read). An unknown or repeated column, an empty file, a file that is not UTF-8 or not
+   CSV, or one with more than 1000 books refuses the whole file. Blank rows are skipped.
+ - Each row matches a catalogue book: by ISBN when it has one (ISBN-10 converted); without one, by title and
+   authors, ignoring case and the authors' order (the oldest such book). A row matching no book adds it to the
+   catalogue, with the same rules as the add-book form.
+ - Import and export are in the account area, not on the collection page: they are occasional tasks on the
+   whole collection, and the collection page stays the list.
+ - A book already in the collection is skipped, its copies and read left as they are; a book repeated in the
+   file is added once.
+ - Rows are imported one by one: a bad row (no title, invalid ISBN, year, copies or read, an author without a
+   surname, a value too long) is reported with its row number as in a spreadsheet (the header is row 1), and
+   the others are still imported. The card shows the count added (and new to the catalogue) and skipped, and
+   the rows not imported; the collection itself is on its own page.
+ - A cell starting with `=`, `+`, `-`, `@`, a tab or a carriage return is exported with a `'` before it, so a
+   spreadsheet shows it as text instead of running it as a formula (catalogue texts come from every user); the
+   import removes that `'` again.
+ - With htmx the import replaces only the card. Without JavaScript it shows the account page with its report directly instead of redirecting:
+   the report is too long for a flashed message, and posting the same file again only skips its books.
+ - Request bodies are limited to 1 MiB (`MAX_CONTENT_LENGTH`); a larger upload answers 413.
+
+Known limitations:
+
+ - Matching without an ISBN is exact on title and authors: a different spelling adds another catalogue book.
+ - The import does not update catalogue fields of books it matches.
 
 ## Books
 
@@ -450,7 +491,8 @@ Known limitations:
 
 ## Main page
 
-Status: built at `/`, with the add-book button (see Books, "Adding a book").
+Status: built at `/`, with the add-book button (see Books, "Adding a book"); linked as "Catalogue" from the account
+menu.
 
 Decisions:
 
@@ -485,7 +527,8 @@ Known limitations:
 
 ## Your collection
 
-Status: built at `/collection`, linked from the account menu.
+Status: built at `/collection`, linked from the account menu; the first page, shown after login and by the
+"Bookshelf" title.
 
 The books the user owns, from the shared catalogue: the same list as the main page (search, order, pages of 50),
 showing only their books. Each row has the number of copies, editable, with "Save", a "Read" checkbox and a
@@ -495,6 +538,9 @@ It can be limited to one author's books (`/collection?author=<id>`, see "One aut
 Decisions:
 
  - The collection has its own page; the main page stays the whole catalogue.
+ - The collection is the first page: logging in, finishing the first-run wizard, the top bar's title and the
+   error page's "Back to Bookshelf" lead to it, since a user mostly works with their own books. The catalogue
+   keeps `/`; adding a book is done there (the collection has no add button).
  - Books are added to the collection from the main page's rows, or from the add-book form when the ISBN typed is
    already in the catalogue (see "Adding a book"). Adding a book already in the collection changes nothing and
    says so.
@@ -518,43 +564,6 @@ Decisions:
 Known limitations:
 
  - Saving copies or removing a book reloads the list, so the focus goes back to the top of the page.
-
-### CSV import and export
-
-Status: built: "Export CSV" (`/collection/export`) and "Import" (`/collection/import`) on the collection page
-(not on one author's books).
-
-Each user exports and imports only their own collection.
-
-Decisions:
-
- - Columns: `title`, `authors`, `isbn`, `publisher`, `year`, `series`, `volume`, `plot`, `tags`, `copies`,
-   `read`. Authors are "Surname, Name" (or "Surname" alone) separated by "; "; tags are separated by ", ", as in
-   the book form; read is `yes` or `no`. The export is UTF-8 with a byte order mark (so spreadsheets read it as
-   UTF-8), ordered by title.
- - An import needs a header with `title`; the other columns are optional and in any order (missing ones are
-   empty, copies 1 and not read). An unknown or repeated column, an empty file, a file that is not UTF-8 or not
-   CSV, or one with more than 1000 books refuses the whole file. Blank rows are skipped.
- - Each row matches a catalogue book: by ISBN when it has one (ISBN-10 converted); without one, by title and
-   authors, ignoring case and the authors' order (the oldest such book). A row matching no book adds it to the
-   catalogue, with the same rules as the add-book form.
- - A book already in the collection is skipped, its copies and read left as they are; a book repeated in the
-   file is added once.
- - Rows are imported one by one: a bad row (no title, invalid ISBN, year, copies or read, an author without a
-   surname, a value too long) is reported with its row number as in a spreadsheet (the header is row 1), and
-   the others are still imported. The list reloads with the count added (and new to the catalogue) and skipped,
-   and the rows not imported.
- - A cell starting with `=`, `+`, `-`, `@`, a tab or a carriage return is exported with a `'` before it, so a
-   spreadsheet shows it as text instead of running it as a formula (catalogue texts come from every user); the
-   import removes that `'` again.
- - Without JavaScript the import shows the collection page with its report directly instead of redirecting:
-   the report is too long for a flashed message, and posting the same file again only skips its books.
- - Request bodies are limited to 1 MiB (`MAX_CONTENT_LENGTH`); a larger upload answers 413.
-
-Known limitations:
-
- - Matching without an ISBN is exact on title and authors: a different spelling adds another catalogue book.
- - The import does not update catalogue fields of books it matches.
 
 ## Authors
 

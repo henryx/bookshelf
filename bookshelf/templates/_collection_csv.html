@@ -1,0 +1,35 @@
+{# The account page's CSV section: export the collection, import a file into it.
+   Also the htmx response to an import, with its report (import_notice, import_error
+   and import_error_details, the rows not imported). #}
+<section id="collection-csv" class="card collection-csv" aria-labelledby="collection-csv-title">
+  <h3 id="collection-csv-title">Your collection as CSV</h3>
+  {% if import_notice %}<p class="flash" role="status">{{ import_notice }}</p>{% endif %}
+  {% if import_error %}
+    <div class="import-error" role="alert">
+      <p class="error">{{ import_error }}</p>
+      {% if import_error_details %}
+        <ul class="error-details">
+          {% for detail in import_error_details %}<li>{{ detail }}</li>{% endfor %}
+        </ul>
+      {% endif %}
+    </div>
+  {% endif %}
+  <p class="hint">Columns: title, authors (“Surname, Name; …”), isbn, publisher, year, series, volume,
+    plot, tags, copies, read (yes or no). Importing matches each book by ISBN, or by title and authors,
+    adds it to the catalogue when it is not there, and skips books already in your collection.</p>
+  <div class="collection-csv-actions">
+    <a class="button secondary" href="{{ url_for('account.export') }}" download>Export CSV</a>
+    {# With htmx only this section is replaced; without JavaScript the account page comes back. #}
+    <form class="csv-import" method="post" action="{{ url_for('account.import_csv') }}"
+          enctype="multipart/form-data"
+          hx-post="{{ url_for('account.import_csv') }}" hx-encoding="multipart/form-data"
+          hx-target="#collection-csv" hx-swap="outerHTML"
+          hx-indicator="#csv-import-indicator" hx-disabled-elt="find button">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label for="csv-import-file">Import books from CSV</label>
+      <input id="csv-import-file" type="file" name="file" accept=".csv,text/csv" required>
+      <button type="submit">Import</button>
+      <span id="csv-import-indicator" class="htmx-indicator">Importing…</span>
+    </form>
+  </div>
+</section>

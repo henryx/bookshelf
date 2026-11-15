@@ -616,3 +616,10 @@ def test_mark_read_a_book_not_in_the_collection_says_so(db_app, client, user, ot
 
 def test_mark_read_an_unknown_book_is_not_found(client):
     assert client.post(f"/collection/books/{uuid4()}/read").status_code == 404
+
+
+def test_top_bar_leads_to_the_collection_and_the_catalogue(client):
+    html = client.get("/").get_data(as_text=True)
+
+    assert '<h1><a href="/collection/">Bookshelf</a></h1>' in html
+    assert '<a href="/">Catalogue</a>' in html

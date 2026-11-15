@@ -1,7 +1,7 @@
 {# A book list and its page links: the catalogue (list_endpoint main.index) or the
    user's collection (collection.index). Part of main.html and collection.html, and
    the htmx response for searches, pages and the rows' buttons, which swap the whole
-   list so the count and pages stay right. notice / list_error (with list_error_details, a list): shown above the list.
+   list so the count and pages stay right. notice / list_error: shown above the list.
    author: the author the list is limited to (one author's books), kept by every link
    and form here; None for the whole list. #}
 {% set author_id = author.id if author else None %}
@@ -27,16 +27,7 @@
   </form>
 {%- endmacro %}
 {% if notice %}<p class="flash" role="status">{{ notice }}</p>{% endif %}
-{% if list_error %}
-  <div class="list-error" role="alert">
-    <p class="error">{{ list_error }}</p>
-    {% if list_error_details %}
-      <ul class="error-details">
-        {% for detail in list_error_details %}<li>{{ detail }}</li>{% endfor %}
-      </ul>
-    {% endif %}
-  </div>
-{% endif %}
+{% if list_error %}<p class="error" role="alert">{{ list_error }}</p>{% endif %}
 <p class="hint book-count">{{ books.total }} book{{ "" if books.total == 1 else "s" }}</p>
 {% if books.books %}
   <ul class="books">

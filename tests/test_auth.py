@@ -63,7 +63,7 @@ def test_login_success_sets_persistent_cookie(
     rv = _login(db_client, user.email, password)
 
     assert rv.status_code == 302
-    assert rv.headers["Location"] == "/"
+    assert rv.headers["Location"] == "/collection/"
     assert any("remember_token=" in c for c in rv.headers.getlist("Set-Cookie"))
     assert db_client.get("/").status_code == 200
 
@@ -225,7 +225,7 @@ def test_htmx_login_success_redirects_via_header(
 ):
     rv = _login(db_client, user.email, password, headers=HTMX)
 
-    assert rv.headers["HX-Redirect"] == "/"
+    assert rv.headers["HX-Redirect"] == "/collection/"
 
 
 def test_htmx_login_failure_returns_partial(
