@@ -27,6 +27,7 @@ from bookshelf.models.books import (
     find_book_by_isbn,
     find_book_details,
     list_books,
+    normalise_isbn,
     suggest_authors,
     suggest_publishers,
     unique_tags,
@@ -168,8 +169,26 @@ def _render_book(
     )
 
 
-def _edited_fields(book: BookDetails, form: EditBookForm, isbn: str | None) -> str:
-    """The fields a save changes, for the log."""
+def _isbn_change(book: BookDetails, form: EditBookForm) -> tuple[str | None, bool]:
+    """
+    The ISBN to save (ISBN-13), and whether it replaces (or, when None,
+    removes) the book's own: only admins have the field once the book has an
+    ISBN, and an unchanged one is not saved again.
+    """
+    if "isbn" not in form:
+        return None, False
+    isbn = normalise_isbn(form.isbn.data) if form.isbn.data else None
+    if book.isbn is None:
+        return isbn, False
+    if isbn == book.isbn:
+        return None, False
+    return isbn, True
+
+
+def _edited_fields(
+    book: BookDetails, form: EditBookForm, isbn: str | None, replace_isbn: bool
+) -> str:
+    """The fields a save changes, for the log; a corrected ISBN with both values."""
     fields = [
         name
         for name, old, new in (
@@ -179,7 +198,9 @@ def _edited_fields(book: BookDetails, form: EditBookForm, isbn: str | None) -> s
         )
         if old != new
     ]
-    if isbn:
+    if replace_isbn:
+        fields.append(f"ISBN {book.isbn} -> {isbn or 'none'}")
+    elif isbn:
         fields.append("ISBN")
     return ", ".join(fields) or "no changes"
 
@@ -189,8 +210,9 @@ def _edited_fields(book: BookDetails, form: EditBookForm, isbn: str | None) -> s
 def book(book_id: UUID) -> BaseResponse | str:
     """
     A book's details, and saving its volume, notes and tags, and its ISBN
-    while it has none. Any user may edit any book. Saving goes back to the
-    list the book was opened from, as it was.
+    while it has none. Any user may edit any book; admins may also correct
+    or remove an ISBN already set. Saving goes back to the list the book was
+    opened from, as it was.
     """
     details = find_book_details(get_db(), book_id)
     if details is None:
@@ -200,16 +222,18 @@ def book(book_id: UUID) -> BaseResponse | str:
             "volume": details.volume,
             "notes": details.notes,
             "tags": ", ".join(details.tags),
+            "isbn": details.isbn,
         }
     )
-    # Once set, an ISBN is shown, not a field; a posted one is ignored.
-    if details.isbn:
+    # Once set, an ISBN is shown, not a field, except to admins; a posted one
+    # is ignored.
+    if details.isbn and not current_user.is_admin:
         del form.isbn
     values = request.form if request.method == "POST" else request.args
     if not form.validate_on_submit():
         return _render_book(form, details, values)
 
-    isbn = form.isbn.data if "isbn" in form else None
+    isbn, replace_isbn = _isbn_change(details, form)
     try:
         update_book(
             get_db(),
@@ -218,6 +242,7 @@ def book(book_id: UUID) -> BaseResponse | str:
             notes=form.notes.data,
             tags=form.tag_names(),
             isbn=isbn,
+            replace_isbn=replace_isbn,
         )
     except UnknownBookError:
         # Deleted since it was looked up.
@@ -230,7 +255,7 @@ def book(book_id: UUID) -> BaseResponse | str:
         "Book %r edited by %s: %s",
         details.title,
         current_user.email,
-        _edited_fields(details, form, isbn),
+        _edited_fields(details, form, isbn, replace_isbn),
     )
     flash(f"Book “{details.title}” saved.")
     return htmx_redirect(list_url(_book_list_endpoint(values), values))

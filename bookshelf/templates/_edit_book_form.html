@@ -25,9 +25,11 @@
     {% for error in f.errors %}<p class="error">{{ error }}</p>{% endfor %}
   {% endmacro %}
 
-  {# Only while the book has none: once saved, an ISBN never changes. #}
-  {% if form.isbn %}
-    {{ field(form.isbn, "ISBN-10 or ISBN-13. Once saved, it cannot be changed.", autocomplete="off") }}
+  {# While the book has none; once saved, only admins get the field, to correct or remove it. #}
+  {% if form.isbn and book.isbn %}
+    {{ field(form.isbn, "Empty it to remove it. Only admins can change or remove it.", autocomplete="off") }}
+  {% elif form.isbn %}
+    {{ field(form.isbn, "ISBN-10 or ISBN-13. Once saved, only admins can change it.", autocomplete="off") }}
   {% endif %}
   {{ field(form.volume, "E.g. 2, II or 3/4.", maxlength=32) }}
   {{ field(form.tags, "Separated by commas.", autocomplete="off") }}

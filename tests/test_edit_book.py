@@ -1,4 +1,4 @@
-"""Editing a book: its volume, notes and tags, and its ISBN while it has none."""
+"""Editing a book: its volume, notes and tags, and its ISBN (while it has none, or by an admin)."""
 
 import logging
 import re
@@ -22,7 +22,7 @@ from bookshelf.models.books import (
     find_book_details,
     update_book,
 )
-from bookshelf.models.users import User
+from bookshelf.models.users import Role, User, create_user
 
 HTMX = {"HX-Request": "true"}
 DUNE_ISBN = "9780441172719"
@@ -56,9 +56,18 @@ def _update(
     notes: str | None = None,
     tags: tuple[str, ...] = (),
     isbn: str | None = None,
+    replace_isbn: bool = False,
 ) -> None:
     with db_app.app_context():
-        update_book(get_db(), book_id, volume=volume, notes=notes, tags=tags, isbn=isbn)
+        update_book(
+            get_db(),
+            book_id,
+            volume=volume,
+            notes=notes,
+            tags=tags,
+            isbn=isbn,
+            replace_isbn=replace_isbn,
+        )
 
 
 DUNE = NewBook(
@@ -153,6 +162,25 @@ def test_update_book_refuses_an_invalid_isbn(db_app, user):
 
     with pytest.raises(InvalidIsbnError):
         _update(db_app, book_id, isbn="12345")
+
+
+def test_update_book_replaces_or_removes_the_isbn(db_app, user):
+    book_id = _book(db_app, user, NewBook("Dune", isbn=EMMA_ISBN))
+
+    _update(db_app, book_id, isbn="0-441-17271-7", replace_isbn=True)
+    assert _details(db_app, book_id).isbn == DUNE_ISBN
+
+    _update(db_app, book_id, replace_isbn=True)
+    assert _details(db_app, book_id).isbn is None
+
+
+def test_replaced_isbn_must_not_be_another_books(db_app, user):
+    _book(db_app, user, NewBook("Emma", isbn=EMMA_ISBN))
+    book_id = _book(db_app, user, NewBook("Dune", isbn=DUNE_ISBN))
+
+    with pytest.raises(BookExistsError, match=EMMA_ISBN):
+        _update(db_app, book_id, isbn=EMMA_ISBN, replace_isbn=True)
+    assert _details(db_app, book_id).isbn == DUNE_ISBN
 
 
 def test_update_an_unknown_book(db_app):
@@ -338,3 +366,78 @@ def test_list_titles_open_the_book(db_app, client, user, list_url, book_url):
     assert f'<a class="book-title" href="{url}" hx-get="{url}"' in html
     assert 'hx-target="#book-dialog-body"' in html
     assert '<dialog id="book-dialog"' in html
+
+
+# Admins correct a wrong ISBN
+
+
+@pytest.fixture
+def admin_client(db_app: Flask, db_client: FlaskClient, password: str) -> FlaskClient:
+    with db_app.app_context():
+        create_user(get_db(), "boss@example.com", password, role=Role.ADMIN)
+    rv = db_client.post(
+        "/login", data={"email": "boss@example.com", "password": password}
+    )
+    assert rv.status_code == 302
+    return db_client
+
+
+def test_admin_can_edit_a_set_isbn(db_app, admin_client, user):
+    book_id = _book(db_app, user, NewBook("Dune", isbn=EMMA_ISBN))
+
+    html = admin_client.get(_url(book_id), headers=HTMX).get_data(as_text=True)
+
+    assert re.search(rf'<input [^>]*name="isbn"[^>]*value="{EMMA_ISBN}"', html)
+    assert "Only admins can change or remove it." in html
+
+
+def test_admin_corrects_a_wrong_isbn(db_app, admin_client, user, caplog):
+    book_id = _book(db_app, user, NewBook("Dune", isbn=EMMA_ISBN))
+
+    with caplog.at_level(logging.INFO):
+        rv = admin_client.post(_url(book_id), data={"isbn": "0-441-17271-7"})
+
+    assert rv.status_code == 302
+    assert _details(db_app, book_id).isbn == DUNE_ISBN
+    assert f"ISBN {EMMA_ISBN} -> {DUNE_ISBN}" in caplog.text
+
+
+def test_admin_removes_an_isbn(db_app, admin_client, user, caplog):
+    book_id = _book(db_app, user, NewBook("Dune", isbn=EMMA_ISBN))
+
+    with caplog.at_level(logging.INFO):
+        admin_client.post(_url(book_id), data={"isbn": ""})
+
+    assert _details(db_app, book_id).isbn is None
+    assert f"ISBN {EMMA_ISBN} -> none" in caplog.text
+
+
+def test_admin_save_keeping_the_isbn_leaves_it(db_app, admin_client, user, caplog):
+    book_id = _book(db_app, user, NewBook("Dune", isbn=DUNE_ISBN))
+
+    with caplog.at_level(logging.INFO):
+        admin_client.post(_url(book_id), data={"isbn": "978-0-441-17271-9"})
+
+    assert _details(db_app, book_id).isbn == DUNE_ISBN
+    assert "Book 'Dune' edited by boss@example.com: no changes" in caplog.text
+
+
+def test_admin_cannot_take_another_books_isbn(db_app, admin_client, user):
+    _book(db_app, user, NewBook("Emma", isbn=EMMA_ISBN))
+    book_id = _book(db_app, user, NewBook("Dune", isbn=DUNE_ISBN))
+
+    rv = admin_client.post(_url(book_id), data={"isbn": EMMA_ISBN}, headers=HTMX)
+
+    assert f"A book with ISBN {EMMA_ISBN} is already in the catalogue." in (
+        rv.get_data(as_text=True)
+    )
+    assert _details(db_app, book_id).isbn == DUNE_ISBN
+
+
+def test_admin_isbn_is_validated(db_app, admin_client, user):
+    book_id = _book(db_app, user, NewBook("Dune", isbn=DUNE_ISBN))
+
+    rv = admin_client.post(_url(book_id), data={"isbn": "12345"}, headers=HTMX)
+
+    assert "Not a valid ISBN." in rv.get_data(as_text=True)
+    assert _details(db_app, book_id).isbn == DUNE_ISBN

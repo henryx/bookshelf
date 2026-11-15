@@ -721,8 +721,8 @@ def add_book(conn: Connection, user_id: UUID, book: NewBook, copies: int = 1) ->
 def _set_isbn(cur: Cursor, book_id: UUID, isbn: str) -> None:
     """
     Give a book without an ISBN this one. The ISBN IS NULL condition keeps
-    an ISBN from ever changing, even when the caller's view of the book is
-    out of date.
+    an ISBN from changing, even when the caller's view of the book is out of
+    date: only _replace_isbn (admins) changes one.
     """
     try:
         cur.execute(
@@ -737,6 +737,16 @@ def _set_isbn(cur: Cursor, book_id: UUID, isbn: str) -> None:
         raise IsbnAlreadySetError(book_id)
 
 
+def _replace_isbn(cur: Cursor, book_id: UUID, isbn: str | None) -> None:
+    """Set a book's ISBN, whatever it was, or remove it (None)."""
+    try:
+        cur.execute("UPDATE BOOKS SET ISBN = ? WHERE ID = ?", (isbn, book_id.bytes))
+    except DatabaseError as e:
+        if isbn is not None and _UNIQUE_KEY_VIOLATION in e.gds_codes:
+            raise BookExistsError(isbn) from e
+        raise
+
+
 def update_book(
     conn: Connection,
     book_id: UUID,
@@ -745,14 +755,17 @@ def update_book(
     notes: str | None,
     tags: tuple[str, ...],
     isbn: str | None = None,
+    replace_isbn: bool = False,
 ) -> None:
     """
     Save a book's volume and notes (None empties them) and replace its tags
     (as when adding a book), in one transaction; the title and the other
     fields never change. With `isbn`, also give the book that ISBN, stored
-    as ISBN-13. Nothing is saved when it raises: UnknownBookError for an
-    unknown book, InvalidIsbnError for a bad ISBN, BookExistsError if
-    another book has it, IsbnAlreadySetError if this book already has one.
+    as ISBN-13, if it has none. With `replace_isbn` (admins correcting a
+    wrong one), the ISBN becomes `isbn` whatever it was, and None removes it.
+    Nothing is saved when it raises: UnknownBookError for an unknown book,
+    InvalidIsbnError for a bad ISBN, BookExistsError if another book has it,
+    IsbnAlreadySetError if this book already has one (without replace_isbn).
 
     The transaction is its own and read committed, as in add_book.
     """
@@ -776,7 +789,9 @@ def update_book(
                 "INSERT INTO BOOK_TAGS (BOOK_ID, TAG) VALUES (?, ?)",
                 (book_id.bytes, tag),
             )
-        if new_isbn is not None:
+        if replace_isbn:
+            _replace_isbn(cur, book_id, new_isbn)
+        elif new_isbn is not None:
             _set_isbn(cur, book_id, new_isbn)
         transaction.commit()
 
