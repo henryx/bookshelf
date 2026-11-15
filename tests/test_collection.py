@@ -23,6 +23,7 @@ from bookshelf.models.books import (
     list_collection,
     remove_from_collection,
     set_copies,
+    set_read,
 )
 from bookshelf.models.users import User, create_user
 
@@ -510,3 +511,108 @@ def test_duplicate_isbn_of_a_book_in_the_collection_says_so(db_app, client, user
 
     assert "“Dune” is already in your collection" in html
     assert f"/collection/books/{dune}/add" not in html
+
+
+# Read
+
+
+def _read(db_app: Flask, user: User) -> dict[str, bool]:
+    with db_app.app_context():
+        return {b.title: b.read for b in list_collection(get_db(), user.id).books}
+
+
+def test_books_start_as_not_read(db_app, user, other):
+    _book(db_app, user, "Dune")
+    emma = _book(db_app, other, "Emma")
+    with db_app.app_context():
+        add_to_collection(get_db(), user.id, emma)
+
+    assert _read(db_app, user) == {"Dune": False, "Emma": False}
+
+
+def test_set_read_is_per_user(db_app, user, other):
+    dune = _book(db_app, user, "Dune")
+    with db_app.app_context():
+        add_to_collection(get_db(), other.id, dune)
+        assert set_read(get_db(), user.id, dune, read=True)
+
+    assert _read(db_app, user) == {"Dune": True}
+    assert _read(db_app, other) == {"Dune": False}
+
+    with db_app.app_context():
+        assert set_read(get_db(), user.id, dune, read=False)
+    assert _read(db_app, user) == {"Dune": False}
+
+
+def test_set_read_of_a_book_not_in_the_collection(db_app, user, other):
+    emma = _book(db_app, other, "Emma")
+
+    with db_app.app_context():
+        assert not set_read(get_db(), user.id, emma, read=True)
+
+
+def test_collection_rows_have_a_read_checkbox(db_app, client, user):
+    _book(db_app, user, "Dune")
+
+    html = client.get("/collection").get_data(as_text=True)
+
+    checkbox = re.search(r'<input type="checkbox" name="read"[^>]*>', html)
+    assert checkbox is not None
+    assert 'aria-label="Dune read"' in checkbox[0]
+    assert "checked" not in checkbox[0]
+    # Saved as soon as it changes; a Save button only without JavaScript.
+    assert re.search(r'<form [^>]*hx-trigger="change"[^>]*>', html)
+    assert re.search(r"<noscript>\s*<button[^>]*>Save</button>\s*</noscript>", html)
+
+
+def test_the_catalogue_has_no_read_checkbox(db_app, client, user):
+    _book(db_app, user, "Dune")
+
+    assert 'name="read"' not in client.get("/").get_data(as_text=True)
+
+
+def test_mark_a_book_read_from_the_list(db_app, client, user):
+    dune = _book(db_app, user, "Dune")
+
+    rv = client.post(
+        f"/collection/books/{dune}/read",
+        data={"read": "y", "page": "1"},
+        headers=FROM_LIST,
+    )
+    html = rv.get_data(as_text=True)
+
+    assert "“Dune” marked as read." in html
+    assert re.search(r'<input type="checkbox" name="read"[^>]*checked', html)
+    assert _read(db_app, user) == {"Dune": True}
+
+
+def test_unmark_a_book_without_javascript(db_app, client, user):
+    dune = _book(db_app, user, "Dune")
+    with db_app.app_context():
+        set_read(get_db(), user.id, dune, read=True)
+
+    rv = client.post(f"/collection/books/{dune}/read", data={"q": "du"})
+
+    assert rv.status_code == 302
+    assert rv.headers["Location"] == "/collection/?q=du"
+    assert _read(db_app, user) == {"Dune": False}
+    assert "“Dune” marked as not read." in client.get("/collection").get_data(
+        as_text=True
+    )
+
+
+def test_mark_read_a_book_not_in_the_collection_says_so(db_app, client, user, other):
+    emma = _book(db_app, other, "Emma")
+
+    rv = client.post(
+        f"/collection/books/{emma}/read", data={"read": "y"}, headers=FROM_LIST
+    )
+
+    assert re.search(
+        r'class="error"[^>]*>“Emma” is not in your collection.',
+        rv.get_data(as_text=True),
+    )
+
+
+def test_mark_read_an_unknown_book_is_not_found(client):
+    assert client.post(f"/collection/books/{uuid4()}/read").status_code == 404

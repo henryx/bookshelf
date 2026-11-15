@@ -36,6 +36,7 @@ __all__ = [
     "LoginForm",
     "NewAccountForm",
     "NewUserForm",
+    "ReadForm",
     "RenameAuthorForm",
     "UserForm",
 ]
@@ -255,6 +256,12 @@ class EditBookForm(FlaskForm):
             normalise_isbn(field.data)
         except InvalidIsbnError as e:
             raise ValidationError("Not a valid ISBN.") from e
+
+
+class ReadForm(FlaskForm):
+    """Whether the current user has read a book in their collection."""
+
+    read = BooleanField("Read")
 
 
 class BookForm(EditBookForm):

@@ -87,3 +87,18 @@ def test_remove_on_the_collection_page(reader_page: Page, live_server: str, dune
     expect(reader_page.locator("#book-list")).to_contain_text(
         "Your collection is empty"
     )
+
+
+def test_tick_read_on_the_collection_page(reader_page: Page, live_server: str, dune):
+    reader_page.goto(f"{live_server}/collection")
+    checkbox = reader_page.get_by_label("Dune read")
+    expect(checkbox).not_to_be_checked()
+
+    checkbox.check()
+
+    expect(reader_page.locator("#book-list")).to_contain_text("“Dune” marked as read.")
+    expect(reader_page.get_by_label("Dune read")).to_be_checked()
+    # No visible Save button with JavaScript: it is inside <noscript>.
+    expect(reader_page.locator(".read-form button")).to_be_hidden()
+    reader_page.reload()
+    expect(reader_page.get_by_label("Dune read")).to_be_checked()

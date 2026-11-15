@@ -14,9 +14,9 @@
 {%- endmacro %}
 {# A row button's form: posts to url, keeping the list's search, order and page, so
    the list comes back as it was (without JavaScript, the redirect keeps them). #}
-{% macro row_form(url, form_class="") -%}
+{% macro row_form(url, form_class="", trigger=None) -%}
   <form class="{{ form_class }}" method="post" action="{{ url }}"
-        hx-post="{{ url }}" hx-target="#book-list" hx-swap="innerHTML"
+        hx-post="{{ url }}" {% if trigger %}hx-trigger="{{ trigger }}" {% endif %}hx-target="#book-list" hx-swap="innerHTML"
         hx-indicator="closest li" hx-disabled-elt="find button">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     {% if author_id %}<input type="hidden" name="author" value="{{ author_id }}">{% endif %}
@@ -57,6 +57,17 @@
                        aria-label="Copies of {{ book.title }}">
               </label>
               <button type="submit" class="secondary">Save</button>
+            {% endcall %}
+            {# Saved as soon as it is ticked or unticked; without JavaScript, by its Save button. #}
+            {% call row_form(url_for("collection.read", book_id=book.id), "read-form", trigger="change") %}
+              <label>
+                <input type="checkbox" name="read" value="y" {%- if book.read %} checked{% endif %}
+                       aria-label="{{ book.title }} read">
+                <span class="hint">Read</span>
+              </label>
+              <noscript>
+                <button type="submit" class="secondary">Save</button>
+              </noscript>
             {% endcall %}
             {% call row_form(url_for("collection.remove", book_id=book.id)) %}
               <button type="submit" class="secondary" aria-label="Remove {{ book.title }} from your collection">Remove</button>

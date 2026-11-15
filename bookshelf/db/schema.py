@@ -80,12 +80,14 @@ TABLES: dict[str, str] = {
             TAG VARCHAR(64) NOT NULL COLLATE UNICODE_CI
         )
     """,
-    # Each user's collection: the books they own, and how many copies.
+    # Each user's collection: the books they own, how many copies, and whether
+    # they have read it (not read until they say so).
     "COLLECTION_BOOKS": """
         CREATE TABLE COLLECTION_BOOKS (
             USER_ID UUID NOT NULL,
             BOOK_ID UUID NOT NULL,
-            COPIES SMALLINT DEFAULT 1 NOT NULL
+            COPIES SMALLINT DEFAULT 1 NOT NULL,
+            IS_READ BOOLEAN DEFAULT FALSE NOT NULL
         )
     """,
 }

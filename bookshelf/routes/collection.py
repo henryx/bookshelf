@@ -23,9 +23,10 @@ from bookshelf.models.books import (
     list_collection,
     remove_from_collection,
     set_copies,
+    set_read,
 )
 from bookshelf.routes import htmx_redirect, is_htmx
-from bookshelf.routes.forms import CopiesForm
+from bookshelf.routes.forms import CopiesForm, ReadForm
 from bookshelf.routes.main import (
     author_filter,
     list_state,
@@ -155,6 +156,23 @@ def copies(book_id: UUID) -> BaseResponse | str:
             f"“{book.title}” is not in your collection.", error=True
         )
     return _collection_response(f"Copies of “{book.title}” set to {count}.")
+
+
+@collection_route.post("/books/<uuid:book_id>/read")
+@login_required
+def read(book_id: UUID) -> BaseResponse | str:
+    """Mark a book in the user's collection as read, or not (the checkbox unticked)."""
+    book = _book_or_404(book_id)
+    form = ReadForm()
+    if not form.validate_on_submit():
+        abort(400, description="The request could not be read. Please try again.")
+    is_read = bool(form.read.data)
+    if not set_read(get_db(), current_user.id, book.id, read=is_read):
+        return _collection_response(
+            f"“{book.title}” is not in your collection.", error=True
+        )
+    state = "read" if is_read else "not read"
+    return _collection_response(f"“{book.title}” marked as {state}.")
 
 
 @collection_route.post("/books/<uuid:book_id>/remove")

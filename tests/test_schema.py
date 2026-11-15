@@ -177,7 +177,12 @@ def _assert_complete_schema(conn: Connection) -> None:
     assert _reference(conn, "FK_BOOK_TAGS_BOOK") == ("BOOK_ID", "BOOKS", "CASCADE")
     assert _index_columns(conn, "IDX_BOOK_TAGS_TAG") == ["TAG"]
 
-    assert _columns(conn, "COLLECTION_BOOKS") == ["USER_ID", "BOOK_ID", "COPIES"]
+    assert _columns(conn, "COLLECTION_BOOKS") == [
+        "USER_ID",
+        "BOOK_ID",
+        "COPIES",
+        "IS_READ",
+    ]
     assert _domain(conn, "COLLECTION_BOOKS", "USER_ID") == "UUID"
     assert _domain(conn, "COLLECTION_BOOKS", "BOOK_ID") == "UUID"
     assert _constraints(conn, "COLLECTION_BOOKS") == {

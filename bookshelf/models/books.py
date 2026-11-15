@@ -42,6 +42,7 @@ __all__ = [
     "normalise_isbn",
     "remove_from_collection",
     "set_copies",
+    "set_read",
     "suggest_authors",
     "suggest_publishers",
     "unique_authors",
@@ -145,7 +146,8 @@ class Author:
 class Book:
     """
     A book as shown in the book lists. copies: how many the current user
-    owns, or None when the book is not in their collection.
+    owns, or None when the book is not in their collection; read: whether
+    they have read it (False when it is not in their collection).
     """
 
     id: UUID
@@ -153,6 +155,7 @@ class Book:
     authors: tuple[Author, ...]
     publication_year: int | None
     copies: int | None = None
+    read: bool = False
 
 
 @dataclass(frozen=True)
@@ -230,7 +233,7 @@ _COUNT_QUERY = """
 # the one scan the search needs also counts them.
 _LIST_QUERIES: dict[Sort, str] = {
     Sort.TITLE: """
-        SELECT p.ID, p.TITLE, p.PUBLICATION_YEAR, cb.COPIES, a.NAME, a.SURNAME, a.ID, p.TOTAL
+        SELECT p.ID, p.TITLE, p.PUBLICATION_YEAR, cb.COPIES, cb.IS_READ, a.NAME, a.SURNAME, a.ID, p.TOTAL
         FROM (
             SELECT b.ID, b.TITLE, b.PUBLICATION_YEAR, COUNT(*) OVER () AS TOTAL
             FROM BOOKS b
@@ -245,7 +248,7 @@ _LIST_QUERIES: dict[Sort, str] = {
     """,
     # By first author's surname, then name; books without authors last.
     Sort.AUTHOR: """
-        SELECT p.ID, p.TITLE, p.PUBLICATION_YEAR, cb.COPIES, a.NAME, a.SURNAME, a.ID, p.TOTAL
+        SELECT p.ID, p.TITLE, p.PUBLICATION_YEAR, cb.COPIES, cb.IS_READ, a.NAME, a.SURNAME, a.ID, p.TOTAL
         FROM (
             SELECT b.ID, b.TITLE, b.PUBLICATION_YEAR, COUNT(*) OVER () AS TOTAL,
                    (SELECT FIRST 1 fa.SURNAME
@@ -266,7 +269,7 @@ _LIST_QUERIES: dict[Sort, str] = {
     """,
     # Newest first.
     Sort.ADDED: """
-        SELECT p.ID, p.TITLE, p.PUBLICATION_YEAR, cb.COPIES, a.NAME, a.SURNAME, a.ID, p.TOTAL
+        SELECT p.ID, p.TITLE, p.PUBLICATION_YEAR, cb.COPIES, cb.IS_READ, a.NAME, a.SURNAME, a.ID, p.TOTAL
         FROM (
             SELECT b.ID, b.TITLE, b.PUBLICATION_YEAR, b.CREATED_AT,
                    COUNT(*) OVER () AS TOTAL
@@ -295,9 +298,9 @@ _COLLECTION_COUNT_QUERY = """
 # book entered the catalogue: collections do not record when a book joined.
 _COLLECTION_QUERIES: dict[Sort, str] = {
     Sort.TITLE: """
-        SELECT p.ID, p.TITLE, p.PUBLICATION_YEAR, p.COPIES, a.NAME, a.SURNAME, a.ID, p.TOTAL
+        SELECT p.ID, p.TITLE, p.PUBLICATION_YEAR, p.COPIES, p.IS_READ, a.NAME, a.SURNAME, a.ID, p.TOTAL
         FROM (
-            SELECT b.ID, b.TITLE, b.PUBLICATION_YEAR, cb.COPIES,
+            SELECT b.ID, b.TITLE, b.PUBLICATION_YEAR, cb.COPIES, cb.IS_READ,
                    COUNT(*) OVER () AS TOTAL
             FROM BOOKS b
             JOIN COLLECTION_BOOKS cb ON cb.BOOK_ID = b.ID
@@ -311,9 +314,9 @@ _COLLECTION_QUERIES: dict[Sort, str] = {
         ORDER BY p.TITLE, p.ID, ba.SORT_ORDER
     """,
     Sort.AUTHOR: """
-        SELECT p.ID, p.TITLE, p.PUBLICATION_YEAR, p.COPIES, a.NAME, a.SURNAME, a.ID, p.TOTAL
+        SELECT p.ID, p.TITLE, p.PUBLICATION_YEAR, p.COPIES, p.IS_READ, a.NAME, a.SURNAME, a.ID, p.TOTAL
         FROM (
-            SELECT b.ID, b.TITLE, b.PUBLICATION_YEAR, cb.COPIES,
+            SELECT b.ID, b.TITLE, b.PUBLICATION_YEAR, cb.COPIES, cb.IS_READ,
                    COUNT(*) OVER () AS TOTAL,
                    (SELECT FIRST 1 fa.SURNAME
                     FROM BOOK_AUTHORS fba JOIN AUTHORS fa ON fa.ID = fba.AUTHOR_ID
@@ -333,9 +336,9 @@ _COLLECTION_QUERIES: dict[Sort, str] = {
         ORDER BY p.FIRST_SURNAME NULLS LAST, p.FIRST_NAME, p.TITLE, p.ID, ba.SORT_ORDER
     """,
     Sort.ADDED: """
-        SELECT p.ID, p.TITLE, p.PUBLICATION_YEAR, p.COPIES, a.NAME, a.SURNAME, a.ID, p.TOTAL
+        SELECT p.ID, p.TITLE, p.PUBLICATION_YEAR, p.COPIES, p.IS_READ, a.NAME, a.SURNAME, a.ID, p.TOTAL
         FROM (
-            SELECT b.ID, b.TITLE, b.PUBLICATION_YEAR, b.CREATED_AT, cb.COPIES,
+            SELECT b.ID, b.TITLE, b.PUBLICATION_YEAR, b.CREATED_AT, cb.COPIES, cb.IS_READ,
                    COUNT(*) OVER () AS TOTAL
             FROM BOOKS b
             JOIN COLLECTION_BOOKS cb ON cb.BOOK_ID = b.ID
@@ -352,7 +355,7 @@ _COLLECTION_QUERIES: dict[Sort, str] = {
 
 # One book, a row per author as in the lists, with the user's copies.
 _FIND_BOOK_QUERY = """
-    SELECT b.ID, b.TITLE, b.PUBLICATION_YEAR, cb.COPIES, a.NAME, a.SURNAME, a.ID
+    SELECT b.ID, b.TITLE, b.PUBLICATION_YEAR, cb.COPIES, cb.IS_READ, a.NAME, a.SURNAME, a.ID
     FROM BOOKS b
     LEFT JOIN COLLECTION_BOOKS cb ON cb.BOOK_ID = b.ID AND cb.USER_ID = ?
     LEFT JOIN BOOK_AUTHORS ba ON ba.BOOK_ID = b.ID
@@ -362,7 +365,7 @@ _FIND_BOOK_QUERY = """
 """
 
 _FIND_BOOK_BY_ISBN_QUERY = """
-    SELECT b.ID, b.TITLE, b.PUBLICATION_YEAR, cb.COPIES, a.NAME, a.SURNAME, a.ID
+    SELECT b.ID, b.TITLE, b.PUBLICATION_YEAR, cb.COPIES, cb.IS_READ, a.NAME, a.SURNAME, a.ID
     FROM BOOKS b
     LEFT JOIN COLLECTION_BOOKS cb ON cb.BOOK_ID = b.ID AND cb.USER_ID = ?
     LEFT JOIN BOOK_AUTHORS ba ON ba.BOOK_ID = b.ID
@@ -425,17 +428,27 @@ def _search_params(
     return search, *_isbn_searches(search), author_id.bytes if author_id else None
 
 
-# ID, TITLE, PUBLICATION_YEAR, the user's COPIES, then one author's NAME, SURNAME, ID.
+# ID, TITLE, PUBLICATION_YEAR, the user's COPIES and IS_READ, then one author's
+# NAME, SURNAME, ID.
 type _BookRow = tuple[
-    bytes, str, int | None, int | None, str | None, str | None, bytes | None
+    bytes,
+    str,
+    int | None,
+    int | None,
+    bool | None,
+    str | None,
+    str | None,
+    bytes | None,
 ]
 
 
 def _books(rows: list[_BookRow]) -> list[Book]:
     """Group the per-author rows into books, keeping their order."""
     books: dict[bytes, Book] = {}
-    for book_id, title, year, copies, name, surname, author_id in rows:
-        book = books.get(book_id) or Book(UUID(bytes=book_id), title, (), year, copies)
+    for book_id, title, year, copies, read, name, surname, author_id in rows:
+        book = books.get(book_id) or Book(
+            UUID(bytes=book_id), title, (), year, copies, read=bool(read)
+        )
         if surname is not None and author_id is not None:
             author = Author(name or "", surname, id=UUID(bytes=author_id))
             book = replace(book, authors=(*book.authors, author))
@@ -617,6 +630,18 @@ def set_copies(conn: Connection, user_id: UUID, book_id: UUID, copies: int) -> b
         cur.execute(
             "UPDATE COLLECTION_BOOKS SET COPIES = ? WHERE USER_ID = ? AND BOOK_ID = ?",
             (copies, user_id.bytes, book_id.bytes),
+        )
+        updated = cur.affected_rows > 0
+    conn.commit()
+    return updated
+
+
+def set_read(conn: Connection, user_id: UUID, book_id: UUID, *, read: bool) -> bool:
+    """Mark a book in the user's collection as read or not; False if it is not there."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE COLLECTION_BOOKS SET IS_READ = ? WHERE USER_ID = ? AND BOOK_ID = ?",
+            (read, user_id.bytes, book_id.bytes),
         )
         updated = cur.affected_rows > 0
     conn.commit()
