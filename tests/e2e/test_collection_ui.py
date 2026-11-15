@@ -1,5 +1,5 @@
 """The collection in a browser: adding from the catalogue, the duplicate-ISBN
-offer, and changing copies or removing books on the collection page."""
+offer, changing copies in the book dialog and removing books on the collection page."""
 
 from uuid import UUID
 
@@ -48,7 +48,7 @@ def test_add_from_the_catalogue_updates_the_row_in_place(reader_page: Page, emma
 def test_duplicate_isbn_offers_the_existing_book(reader_page: Page, emma):
     reader_page.get_by_role("link", name="Add book").click()
     dialog = reader_page.locator("#add-book-dialog")
-    dialog.get_by_role("textbox", name="Title").fill("Emma")
+    dialog.get_by_role("combobox", name="Title").fill("Emma")
     dialog.get_by_label("ISBN").fill(EMMA_ISBN)
     dialog.get_by_label("Copies you own").fill("3")
     dialog.get_by_role("button", name="Add book").click()
@@ -61,18 +61,17 @@ def test_duplicate_isbn_offers_the_existing_book(reader_page: Page, emma):
     expect(reader_page.locator(".in-collection")).to_have_text("In your collection · 3")
 
 
-def test_change_copies_on_the_collection_page(
-    reader_page: Page, live_server: str, dune
-):
+def test_change_copies_in_the_book_dialog(reader_page: Page, live_server: str, dune):
     reader_page.goto(f"{live_server}/")
+    expect(reader_page.locator(".book-copies")).to_have_text("Copies · 2")
 
-    reader_page.get_by_label("Copies of Dune").fill("5")
-    reader_page.get_by_role("button", name="Save").click()
+    reader_page.get_by_role("link", name="Dune").click()
+    dialog = reader_page.locator("#book-dialog")
+    dialog.get_by_label("Copies you own").fill("5")
+    dialog.get_by_role("button", name="Save").click()
 
-    expect(reader_page.locator("#book-list")).to_contain_text(
-        "Copies of “Dune” set to 5."
-    )
-    expect(reader_page.get_by_label("Copies of Dune")).to_have_value("5")
+    expect(reader_page.locator(".flash")).to_have_text("Book “Dune” saved.")
+    expect(reader_page.locator(".book-copies")).to_have_text("Copies · 5")
 
 
 def test_remove_on_the_collection_page(reader_page: Page, live_server: str, dune):

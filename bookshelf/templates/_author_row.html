@@ -1,7 +1,8 @@
 {# One author row of a book form (see _author_rows.html). Takes id_prefix, index (a number, or "__index__" in the
    <template> that app.js copies), name, surname, errors and first: the first row
    has the + button, the others a - button. Both submit the form when JavaScript
-   is off, so the server adds or removes the row. #}
+   is off, so the server adds or removes the row. readonly (a picked book in the add-book form):
+   read-only fields and no buttons. #}
 {# Typing in either field fills its <datalist> with matching authors from the
    server (app.js sends the text as q); picking one fills both fields. #}
 {% set prefix = "authors-" ~ index %}
@@ -12,13 +13,14 @@
          aria-label="Author {{ field }}" list="{{ id }}-suggestions" data-suggest data-author-field="{{ field }}"
          hx-get="{{ url_for('main.author_suggestions') }}" hx-vals='{"field": "{{ field }}"}'
          hx-trigger="input changed delay:200ms" hx-target="#{{ id }}-suggestions" hx-swap="innerHTML"
-         hx-sync="this:replace" hx-indicator="closest .author-row">
+         hx-sync="this:replace" hx-indicator="closest .author-row"{% if readonly %} readonly{% endif %}>
   <datalist id="{{ id }}-suggestions"></datalist>
 {% endmacro %}
 <div class="author-row" data-row data-index="{{ index }}">
   {{ author_input("name", name, "Name") }}
   {{ author_input("surname", surname, "Surname") }}
-  {% if first %}
+  {% if readonly %}
+  {% elif first %}
     <button type="submit" class="row-button" name="add_author" value="1" formnovalidate
             data-row-add aria-label="Add another author" title="Add another author">+</button>
   {% else %}

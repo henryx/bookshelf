@@ -52,6 +52,13 @@
   </div>
   {% with id_prefix = "edit-book-" %}{% include "_category_rows.html" %}{% endwith %}
   {{ field(form.plot, rows=3, maxlength=4000) }}
+  {# Only while the book is in the user's collection. #}
+  {% if form.copies %}
+    {# At the right, apart from the book's fields, as when adding a book. #}
+    <div class="field copies-field">
+      {{ field(form.copies, "How many you own: in your collection only.", min=1, max=999, required=True) }}
+    </div>
+  {% endif %}
 
   <button type="submit">Save</button>
   <span id="edit-book-indicator" class="htmx-indicator">Saving…</span>

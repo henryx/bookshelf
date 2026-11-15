@@ -22,6 +22,7 @@ from bookshelf.models.books import (
     NewBook,
     UnknownBookError,
     add_book,
+    find_book,
     find_book_details,
     update_book,
 )
@@ -389,6 +390,72 @@ def test_save_goes_back_only_to_a_book_list(db_app, client, user):
     rv = client.post(_url(book_id), data={"list": "https://evil.example"})
 
     assert rv.headers["Location"] == "/catalogue"
+
+
+# Copies: the edit form also changes how many copies the user owns
+
+
+def _copies(db_app: Flask, user: User, book_id: UUID) -> int | None:
+    with db_app.app_context():
+        book = find_book(get_db(), user.id, book_id)
+    assert book is not None
+    return book.copies
+
+
+def test_book_in_the_collection_has_a_copies_field(db_app, client, user):
+    with db_app.app_context():
+        book_id = add_book(get_db(), user.id, DUNE, copies=2)
+
+    html = client.get(_url(book_id), headers=HTMX).get_data(as_text=True)
+
+    tag = re.search(r'<input [^>]*name="copies"[^>]*>', html)
+    assert tag
+    assert 'value="2"' in tag[0]
+    assert 'id="edit-book-copies"' in tag[0]
+    assert "Copies you own" in html
+
+
+def test_book_not_in_the_collection_has_no_copies_field(db_app, client, password):
+    with db_app.app_context():
+        other = create_user(get_db(), "other@example.com", password)
+    book_id = _book(db_app, other, DUNE)
+
+    html = client.get(_url(book_id), headers=HTMX).get_data(as_text=True)
+
+    assert 'name="copies"' not in html
+
+
+def test_save_sets_the_copies(db_app, client, user):
+    book_id = _book(db_app, user, DUNE)
+
+    rv = client.post(_url(book_id), data={"copies": "5", "volume": "2"}, headers=HTMX)
+
+    assert rv.status_code == 204
+    assert _copies(db_app, user, book_id) == 5
+    assert _details(db_app, book_id).volume == "2"
+
+
+def test_save_without_copies_keeps_them(db_app, client, user):
+    with db_app.app_context():
+        book_id = add_book(get_db(), user.id, DUNE, copies=3)
+
+    client.post(_url(book_id), data={"volume": "2"}, headers=HTMX)
+
+    assert _copies(db_app, user, book_id) == 3
+
+
+@pytest.mark.parametrize("copies", ["0", "1000", "many"])
+def test_save_refuses_invalid_copies(db_app, client, user, copies):
+    book_id = _book(db_app, user, DUNE)
+
+    rv = client.post(
+        _url(book_id), data={"copies": copies, "volume": "2"}, headers=HTMX
+    )
+
+    assert rv.status_code == 200
+    assert 'class="error"' in rv.get_data(as_text=True)
+    assert _copies(db_app, user, book_id) == 1
+    assert _details(db_app, book_id).volume == DUNE.volume
 
 
 def test_save_sets_the_isbn(db_app, client, user):

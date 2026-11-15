@@ -50,14 +50,8 @@
         {% if book.publication_year %}<span class="book-year">{{ book.publication_year }}</span>{% endif %}
         <div class="book-actions">
           {% if in_collection %}
-            {% call row_form(url_for("collection.copies", book_id=book.id), "copies-form") %}
-              <label>
-                <span class="hint">Copies</span>
-                <input type="number" name="copies" value="{{ book.copies }}" min="1" max="999" required
-                       aria-label="Copies of {{ book.title }}">
-              </label>
-              <button type="submit" class="secondary">Save</button>
-            {% endcall %}
+            {# Changed in the book's dialog. #}
+            <span class="book-copies">Copies · {{ book.copies }}</span>
             {# Saved as soon as it is ticked or unticked; without JavaScript, by its Save button. #}
             {% call row_form(url_for("collection.read", book_id=book.id), "read-form", trigger="change") %}
               <label>

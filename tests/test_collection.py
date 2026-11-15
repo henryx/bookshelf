@@ -236,7 +236,8 @@ def test_collection_page_lists_own_books_with_copies(db_app, client, user, other
     assert "<html" in html
     assert "Your collection" in html
     assert _titles(html) == ["Dune"]
-    assert re.search(r'<input [^>]*name="copies"[^>]*value="2"', html)
+    assert '<span class="book-copies">Copies · 2</span>' in html
+    assert "copies-form" not in html
     assert f'action="/collection/books/{book_id}/remove"' in html
     assert "hx-indicator" in html
 
@@ -383,52 +384,10 @@ def test_add_with_invalid_copies(db_app, client, user, other, copies):
 def test_collection_changes_require_login(db_app, db_client, user):
     dune = _book(db_app, user, "Dune")
 
-    for action in ("add", "copies", "remove"):
+    for action in ("add", "remove"):
         rv = db_client.post(f"/collection/books/{dune}/{action}", data={"copies": "1"})
         assert rv.status_code == 302
         assert "/login" in rv.headers["Location"]
-
-
-# Copies
-
-
-def test_set_copies_from_the_list(db_app, client, user):
-    dune = _book(db_app, user, "Dune")
-
-    rv = client.post(
-        f"/collection/books/{dune}/copies", data={"copies": "3"}, headers=FROM_LIST
-    )
-    html = rv.get_data(as_text=True)
-
-    assert "Copies of “Dune” set to 3." in html
-    assert re.search(r'<input [^>]*name="copies"[^>]*value="3"', html)
-    assert _copies(db_app, user, dune) == 3
-
-
-def test_set_invalid_copies_shows_an_error(db_app, client, user):
-    dune = _book(db_app, user, "Dune", copies=2)
-
-    rv = client.post(
-        f"/collection/books/{dune}/copies", data={"copies": "0"}, headers=FROM_LIST
-    )
-    html = rv.get_data(as_text=True)
-
-    assert 'class="error"' in html
-    assert "between 1 and 999" in html
-    assert _copies(db_app, user, dune) == 2
-
-
-def test_set_copies_of_a_book_not_in_the_collection_says_so(
-    db_app, client, user, other
-):
-    emma = _book(db_app, other, "Emma")
-
-    rv = client.post(
-        f"/collection/books/{emma}/copies", data={"copies": "2"}, headers=FROM_LIST
-    )
-
-    assert "“Emma” is not in your collection." in rv.get_data(as_text=True)
-    assert _copies(db_app, user, emma) is None
 
 
 def test_remove_a_book_not_in_the_collection_shows_an_error(
@@ -440,17 +399,6 @@ def test_remove_a_book_not_in_the_collection_shows_an_error(
     html = rv.get_data(as_text=True)
 
     assert re.search(r'class="error"[^>]*>“Emma” is not in your collection.', html)
-
-
-def test_set_copies_without_htmx_redirects_to_the_collection(db_app, client, user):
-    dune = _book(db_app, user, "Dune")
-
-    rv = client.post(
-        f"/collection/books/{dune}/copies", data={"copies": "2", "page": "1"}
-    )
-
-    assert rv.status_code == 302
-    assert urlsplit(rv.headers["Location"]).path == "/"
 
 
 # Removing

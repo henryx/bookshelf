@@ -118,6 +118,31 @@
     row.querySelector('[data-author-field="surname"]').value = picked.dataset.surname;
   });
 
+  // Picking a catalogue book from the add-book form's title or ISBN
+  // <datalist> ([data-book-pick]) loads it into the form, read-only, to add
+  // it to the collection: the form's [data-book-loader] fetches it. Only a
+  // pick does: typing fires an InputEvent ("insertText"), while a pick fires
+  // a plain Event (Chromium) or an "insertReplacementText" InputEvent. A
+  // title several books share is not picked: their ISBN tells them apart.
+  document.addEventListener("input", function (event) {
+    var input = event.target;
+    if (!(input instanceof HTMLInputElement) || !input.matches("[data-book-pick]") || !input.list) {
+      return;
+    }
+    if (event instanceof InputEvent && event.inputType !== "insertReplacementText") {
+      return;
+    }
+    var matches = Array.prototype.filter.call(input.list.options, function (option) {
+      return option.value === input.value && option.dataset.bookId;
+    });
+    var loader = input.form && input.form.querySelector("[data-book-loader]");
+    if (matches.length !== 1 || !loader) {
+      return;
+    }
+    loader.setAttribute("hx-vals", JSON.stringify({ book: matches[0].dataset.bookId }));
+    htmx.trigger(loader, "book-picked");
+  });
+
   // The account menu (<details class="avatar">) opens and closes on its own
   // summary without JavaScript; this also closes it on a click outside it,
   // or on Escape (giving the focus back to its summary).
@@ -150,12 +175,18 @@
     });
   }
 
-  // Content swapped into a closed dialog (e.g. a user's details) opens it;
-  // an error swapped into the banner closes any open dialog.
+  // Content swapped into a closed dialog (e.g. a user's details) opens it,
+  // but not suggestions: they may arrive after the dialog was closed.
+  // An error swapped into the banner closes any open dialog.
   document.addEventListener("htmx:afterSwap", function (event) {
     var target = event.detail.target;
     if (target.id === "error-banner") {
       closeDialogs();
+      return;
+    }
+    // detail.elt is the target here; the element that asked is in requestConfig.
+    var source = event.detail.requestConfig && event.detail.requestConfig.elt;
+    if (source && source.matches("[data-suggest]")) {
       return;
     }
     var dialog = target.closest("dialog");

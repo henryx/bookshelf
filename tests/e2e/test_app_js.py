@@ -38,7 +38,7 @@ def _show_unreachable_error(page: Page) -> None:
 
     page.route("**/books/new", abort)
     _open_add_book(page)
-    page.get_by_role("textbox", name="Title").fill("Dune")
+    page.get_by_role("combobox", name="Title").fill("Dune")
     page.get_by_role("button", name="Add book").click()
     expect(page.locator("#error-banner")).to_contain_text(UNREACHABLE)
     page.unroute("**/books/new", abort)
@@ -82,6 +82,21 @@ def test_author_suggestions_keep_the_error(reader_page: Page, herbert_book):
 
 
 # Dialogs
+
+
+def test_late_suggestions_do_not_reopen_a_closed_dialog(
+    reader_page: Page, herbert_book
+):
+    _open_add_book(reader_page)
+    dialog = reader_page.locator("#add-book-dialog")
+
+    with reader_page.expect_response("**/books/suggestions*"):
+        reader_page.get_by_role("combobox", name="Title").fill("Du")
+        reader_page.keyboard.press("Escape")
+        expect(dialog).to_be_hidden()
+
+    expect(reader_page.locator("#book-title-suggestions option")).to_have_count(1)
+    expect(dialog).to_be_hidden()
 
 
 def test_add_button_opens_dialog_without_leaving_the_page(reader_page: Page):

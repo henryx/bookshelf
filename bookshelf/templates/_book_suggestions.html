@@ -1,0 +1,12 @@
+{# Options for the add-book form's title or ISBN <datalist> (field: title or isbn). The
+   value fills the field; the label tells books apart; data-book-id is the book app.js
+   loads into the form when one is picked. #}
+{% for book in books %}
+  {% set authors = book.authors | join(", ") %}
+  {% if field == "isbn" %}
+    {% set value, details = book.isbn, [book.title, authors] %}
+  {% else %}
+    {% set value, details = book.title, [authors, book.publication_year] %}
+  {% endif %}
+  <option value="{{ value }}" data-book-id="{{ book.id }}" label="{{ details | select | join(' · ') }}"></option>
+{% endfor %}

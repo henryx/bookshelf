@@ -362,7 +362,8 @@ Decisions:
 
 ### Adding a book
 
-Status: built (`/books/new`, with suggestions from `/authors/suggestions` and `/publishers/suggestions`).
+Status: built (`/books/new`, with suggestions from `/books/suggestions`, `/authors/suggestions` and
+`/publishers/suggestions`).
 
 A round "+" button floats over the bottom-right corner of the main page and of "Your collection". It opens a
 dialog with the book's fields and the number of copies the user owns (1 by default); "Add book" saves it to the
@@ -403,6 +404,15 @@ Decisions:
    form offers to add that book to the user's collection instead, with the copies typed in the form (a button
    posting the form to the collection; without JavaScript through `formaction`). If the book is already in their
    collection, the form says so, with its copies.
+ - Typing a title or an ISBN suggests up to 10 catalogue books whose title (ignoring case) or ISBN starts with
+   the text (`/books/suggestions?field=title|isbn`); an ISBN ignores hyphens and spaces, and a whole ISBN-10
+   matches its ISBN-13. Each suggestion shows the authors and year (for a title) or the title and authors (for
+   an ISBN), to tell books apart. Picking one loads the book into the form (`/books/new?book=<id>`): every field
+   filled and read-only but the copies, and the button becomes "Add to my collection", which adds it to the
+   user's collection like the duplicate-ISBN offer. If the book is already in their collection, the form says
+   so, with no button. "Choose another book" empties the form again.
+ - Only picking a suggestion loads a book: typing a whole title does not, since another book may have the same
+   title. A title several catalogue books share is not loaded even when picked; its ISBN tells them apart.
  - The publication year is between 1 and 9999; copies between 1 and 999.
 
 Known limitations:
@@ -411,6 +421,8 @@ Known limitations:
    authors already in another row.
  - If two authors have the same full name split differently ("Anne Marie" + "Smith" and "Anne" +
    "Marie Smith"), picking either suggestion fills the row with the first one.
+ - Picking a title or ISBN needs JavaScript; without it the form is filled by hand, and a duplicate ISBN is
+   still caught when it is submitted.
 
 ### Editing a book
 
@@ -437,8 +449,10 @@ Decisions:
    or empty to remove the ISBN. A wrong but valid ISBN would otherwise stay forever, and also keep the real book
    with that ISBN out of the catalogue. The log records the old and the new ISBN.
  - The title is never editable: it is shown, not a field.
- - Any user may edit any book, as for adding; copies are not part of this form (they belong to "Your
-   collection").
+ - Any user may edit any book, as for adding. While the book is in the user's collection the form also has
+   "Copies you own" (between 1 and 999), saved with the book; this is the only place copies are changed, the
+   collection's rows show them read-only. A book not in their collection has no copies field, and a save
+   without one leaves the copies as they are.
  - Categories are entered as for adding a book: one per row, with suggestions, blank ones skipped, a repeat
    (ignoring case) kept once. Saving replaces the book's categories with the ones entered.
  - Saving changes nothing else, so a save with no changes is harmless. The log records who edited which book and
@@ -553,8 +567,8 @@ Status: built at `/`, linked from the account menu; the first page, shown after 
 "Bookshelf" title.
 
 The books the user owns, from the shared catalogue: the same list as the main page (search, order, pages of 50),
-showing only their books. Each row has the number of copies, editable, with "Save", a "Read" checkbox and a
-"Remove" button.
+showing only their books. Each row shows the number of copies ("Copies · 2", read-only: they are changed in
+the book's dialog, see "Editing a book"), a "Read" checkbox and a "Remove" button.
 It can be limited to one author's books (`/?author=<id>`, see "One author's books").
 
 Decisions:
@@ -571,16 +585,17 @@ Decisions:
    says so.
  - Removing a book takes one click, with no confirmation: it only leaves the collection, and can be added again
    from the main page (with one copy).
- - Changing the copies of, or removing, a book that is not in the collection (e.g. removed in another tab) shows
+ - Removing a book that is not in the collection (e.g. removed in another tab) shows
    an error saying so.
  - Adding a book that was deleted from the catalogue after the page was loaded answers 404, as for an unknown
    book.
- - Copies are between 1 and 999, as when adding a book.
+ - Copies are between 1 and 999, as when adding a book. They are shown, not edited, in the rows: changing them
+   is part of editing the book, so a row has no form of its own for them.
  - "Read" is the user's own: each user marks their copy (`COLLECTION_BOOKS.IS_READ`), and a book starts as not
    read, also when it is added to a collection. With htmx, ticking or unticking the checkbox saves it at once and
    the list reloads with "“Dune” marked as read." (or "not read"). Without JavaScript the row has a Save button
    for it, inside `<noscript>` so it is never shown otherwise. The catalogue shows no read status.
- - With htmx, the rows' buttons (add, save, remove) and the read checkbox reload only the list, keeping its search, order and page,
+ - With htmx, the rows' buttons (add, remove) and the read checkbox reload only the list, keeping its search, order and page,
    with a message above it. Without JavaScript they are plain forms, and the server redirects back to the list
    with the same search, order and page and the message shown on it.
  - "Date added" orders the collection by when each book entered the catalogue: the collection does not record
@@ -588,7 +603,7 @@ Decisions:
 
 Known limitations:
 
- - Saving copies or removing a book reloads the list, so the focus goes back to the top of the page.
+ - Removing a book reloads the list, so the focus goes back to the top of the page.
 
 ## Authors
 
@@ -641,7 +656,7 @@ that author.
 Decisions:
 
  - It is the main page's (or the collection's) list, not a page of its own: search, order, pages, the row buttons
-   ("Add to collection"; copies and "Remove") and the edit dialog all work as in the whole list, and keep to the
+   ("Add to collection"; "Read" and "Remove") and the edit dialog all work as in the whole list, and keep to the
    author. The list's links and forms carry the author
    along with its search, order and page, and saving a book in the dialog goes back to it.
  - The search searches only the author's books (title, any of their authors, ISBN).

@@ -22,7 +22,6 @@ from bookshelf.models.books import (
     find_book,
     list_collection,
     remove_from_collection,
-    set_copies,
     set_read,
 )
 from bookshelf.routes import htmx_redirect, is_htmx
@@ -143,23 +142,6 @@ def _collection_response(message: str, *, error: bool = False) -> BaseResponse |
         return _render_collection(request.form, partial=True, notice=message)
     flash(message)
     return htmx_redirect(list_url("collection.index", request.form))
-
-
-@collection_route.post("/collection/books/<uuid:book_id>/copies")
-@login_required
-def copies(book_id: UUID) -> BaseResponse | str:
-    """Change how many copies of a book in their collection the user owns."""
-    book = _book_or_404(book_id)
-    form = CopiesForm()
-    if not form.validate_on_submit():
-        error = " ".join(form.copies.errors)
-        return _collection_response(f"Copies of “{book.title}”: {error}", error=True)
-    count = form.copies.data or 1
-    if not set_copies(get_db(), current_user.id, book.id, count):
-        return _collection_response(
-            f"“{book.title}” is not in your collection.", error=True
-        )
-    return _collection_response(f"Copies of “{book.title}” set to {count}.")
 
 
 @collection_route.post("/collection/books/<uuid:book_id>/read")

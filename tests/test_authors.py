@@ -515,20 +515,6 @@ def test_an_authors_books_in_the_collection(db_app, client, user, password):
     assert f'<input type="hidden" name="author" value="{frank.id}">' in html
 
 
-def test_changing_copies_keeps_to_the_author(db_app, client, user):
-    dune = _book(db_app, user, "Dune", FRANK)
-    _book(db_app, user, "Emma", JANE)
-    frank = _entry(db_app, FRANK)
-
-    rv = client.post(
-        f"/collection/books/{dune}/copies",
-        data={"copies": "2", "author": str(frank.id), "page": "1"},
-        headers={**HTMX, "HX-Target": "book-list"},
-    )
-
-    assert _titles(rv.get_data(as_text=True)) == ["Dune"]
-
-
 def test_removing_without_javascript_returns_to_the_authors_books(db_app, client, user):
     dune = _book(db_app, user, "Dune", FRANK)
     frank = _entry(db_app, FRANK)

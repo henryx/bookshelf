@@ -198,7 +198,9 @@ class EditBookForm(FlaskForm):
     """
     A book's editable fields: authors as rows of name and surname, ISBN
     (while it has none, or for admins), publisher, year, series, volume, plot and
-    categories, one per row. BookForm adds a new book's title and copies.
+    categories, one per row; and the copies the user owns, while the book is
+    in their collection (left out, they stay as they are). BookForm adds a new
+    book's title and makes the copies required.
     """
 
     authors = FieldList(FormField(AuthorForm), "Authors", min_entries=1)
@@ -226,6 +228,9 @@ class EditBookForm(FlaskForm):
     )
     plot = TextAreaField(
         "Plot", filters=[_strip_or_none], validators=[Optional(), Length(max=4000)]
+    )
+    copies = IntegerField(
+        "Copies you own", validators=[Optional(), NumberRange(min=1, max=_MAX_COPIES)]
     )
 
     def add_row(self, field: FieldList) -> None:

@@ -1,8 +1,14 @@
 {# The add-book form: in the dialog of the catalogue and of the collection, on the add page, and the
    htmx response when it has errors. add_list: "collection" when opened from the collection, where
-   adding the book goes back to; "" for the catalogue. #}
-<form id="add-book-form" class="card" method="post" action="{{ url_for('main.new_book') }}"
-      hx-post="{{ url_for('main.new_book') }}" hx-target="this" hx-swap="outerHTML"
+   adding the book goes back to; "" for the catalogue.
+   picked: a catalogue book picked from the title or ISBN suggestions. The form then shows it
+   read-only and adds it to the user's collection (only the copies can be changed). #}
+{% set picked = picked | default(none) %}
+{% set readonly = picked is not none %}
+{% set new_url = url_for("main.new_book", list=add_list or none) %}
+{% set action = url_for("collection.add", book_id=picked.id) if picked else url_for("main.new_book") %}
+<form id="add-book-form" class="card{% if picked %} picked-book{% endif %}" method="post" action="{{ action }}"
+      hx-post="{{ action }}" hx-target="this" hx-swap="outerHTML"
       hx-indicator="#add-book-indicator" hx-disabled-elt="find button">
   {{ form.hidden_tag() }}
   {% if add_list %}<input type="hidden" name="list" value="{{ add_list }}">{% endif %}
@@ -26,22 +32,62 @@
       {% endif %}
     </div>
   {% endif %}
+  {% if picked %}
+    <div class="existing-book">
+      {% if picked.copies %}
+        <p>“{{ picked.title }}” is already in your collection
+          ({{ picked.copies }} {{ "copy" if picked.copies == 1 else "copies" }}).
+          <a href="{{ url_for('collection.index') }}">Your collection</a></p>
+      {% else %}
+        <p>“{{ picked.title }}” is in the catalogue: add it to your collection.</p>
+      {% endif %}
+      <a href="{{ new_url }}" hx-get="{{ new_url }}" hx-target="#add-book-form" hx-swap="outerHTML"
+         hx-indicator="#add-book-loading">Choose another book</a>
+    </div>
+  {% else %}
+    {# Picking a title or ISBN suggestion triggers this (app.js), with the book's id. #}
+    <span hidden data-book-loader hx-get="{{ new_url }}" hx-trigger="book-picked"
+          hx-target="#add-book-form" hx-swap="outerHTML" hx-indicator="#add-book-loading"></span>
+  {% endif %}
 
-  {% macro field(name, hint=None) %}
+  {% macro field(name, hint=None, locked=true) %}
+    {# locked=false keeps a field editable for a picked book (the copies). #}
     {% set f = form[name] %}
     <label for="book-{{ name }}">{{ f.label.text }}</label>
     {% if hint %}
-      {{ f(id="book-" ~ name, aria_describedby="book-" ~ name ~ "-hint", **kwargs) }}
+      {{ f(id="book-" ~ name, aria_describedby="book-" ~ name ~ "-hint", readonly=readonly and locked, **kwargs) }}
       <p id="book-{{ name }}-hint" class="hint">{{ hint }}</p>
     {% else %}
-      {{ f(id="book-" ~ name, **kwargs) }}
+      {{ f(id="book-" ~ name, readonly=readonly and locked, **kwargs) }}
     {% endif %}
     {% for error in f.errors %}<p class="error">{{ error }}</p>{% endfor %}
   {% endmacro %}
 
-  {{ field("title", required=True, maxlength=255, autocomplete="off") }}
+  {# Typing a title or an ISBN lists matching catalogue books in its <datalist> (app.js sends the
+     text as q); picking one loads it into the form (data-book-pick). #}
+  {{ field("title", required=True, maxlength=255, autocomplete="off", list="book-title-suggestions",
+           data_suggest=True, data_book_pick=True, **{
+             "hx-get": url_for("main.book_suggestions"),
+             "hx-vals": '{"field": "title"}',
+             "hx-trigger": "input changed delay:200ms",
+             "hx-target": "#book-title-suggestions",
+             "hx-swap": "innerHTML",
+             "hx-sync": "this:replace",
+             "hx-indicator": "this",
+           }) }}
+  <datalist id="book-title-suggestions"></datalist>
   {% with id_prefix = "book-" %}{% include "_author_rows.html" %}{% endwith %}
-  {{ field("isbn", "ISBN-10 or ISBN-13; hyphens and spaces are fine.", autocomplete="off") }}
+  {{ field("isbn", "ISBN-10 or ISBN-13; hyphens and spaces are fine.", autocomplete="off",
+           list="book-isbn-suggestions", data_suggest=True, data_book_pick=True, **{
+             "hx-get": url_for("main.book_suggestions"),
+             "hx-vals": '{"field": "isbn"}',
+             "hx-trigger": "input changed delay:200ms",
+             "hx-target": "#book-isbn-suggestions",
+             "hx-swap": "innerHTML",
+             "hx-sync": "this:replace",
+             "hx-indicator": "this",
+           }) }}
+  <datalist id="book-isbn-suggestions"></datalist>
   {# Publisher and year side by side; the year needs only a few digits. #}
   <div class="field-row">
     {# Typing lists matching publishers in the <datalist> (app.js sends the text as q). #}
@@ -66,8 +112,15 @@
   </div>
   {% with id_prefix = "book-" %}{% include "_category_rows.html" %}{% endwith %}
   {{ field("plot", rows=3, maxlength=4000) }}
-  {{ field("copies", "Added to your collection with this many copies.", min=1, max=999, required=True) }}
 
-  <button type="submit">Add book</button>
+  {% if not (picked and picked.copies) %}
+    {# At the right, apart from the book's fields: it is about the user's collection. #}
+    <div class="field copies-field">
+      {{ field("copies", "Added to your collection with this many copies.", locked=false, min=1, max=999,
+               required=True) }}
+    </div>
+    <button type="submit">{{ "Add to my collection" if picked else "Add book" }}</button>
+  {% endif %}
   <span id="add-book-indicator" class="htmx-indicator">Adding…</span>
+  <span id="add-book-loading" class="htmx-indicator">Loading…</span>
 </form>
