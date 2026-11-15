@@ -14,9 +14,14 @@ UNREACHABLE = "Could not reach the server"
 
 @pytest.fixture
 def herbert_book(db_app: Flask, user: User) -> None:
-    """A book by Frank Herbert from Penguin, for the suggestions."""
+    """A book by Frank Herbert from Penguin, in Science fiction, for the suggestions."""
     with db_app.app_context():
-        book = NewBook("Dune", (Author("Frank", "Herbert"),), publisher="Penguin")
+        book = NewBook(
+            "Dune",
+            (Author("Frank", "Herbert"),),
+            publisher="Penguin",
+            categories=("Science fiction",),
+        )
         add_book(get_db(), user.id, book)
 
 
@@ -115,7 +120,7 @@ def test_plus_adds_an_author_row_and_focuses_it(reader_page: Page):
 
     reader_page.get_by_role("button", name="Add another author").click()
 
-    rows = reader_page.locator("#add-book-dialog [data-row]")
+    rows = reader_page.locator("#add-book-dialog .author-rows [data-row]")
     expect(rows).to_have_count(2)
     expect(rows.nth(1).locator('[data-author-field="name"]')).to_be_focused()
 
@@ -126,7 +131,9 @@ def test_minus_removes_its_author_row(reader_page: Page):
 
     reader_page.get_by_role("button", name="Remove this author").click()
 
-    expect(reader_page.locator("#add-book-dialog [data-row]")).to_have_count(1)
+    expect(
+        reader_page.locator("#add-book-dialog .author-rows [data-row]")
+    ).to_have_count(1)
 
 
 def test_added_rows_get_their_own_index(reader_page: Page):
@@ -139,13 +146,36 @@ def test_added_rows_get_their_own_index(reader_page: Page):
     add.click()
 
     names = reader_page.locator(
-        '#add-book-dialog [data-row] [data-author-field="name"]'
+        '#add-book-dialog .author-rows [data-row] [data-author-field="name"]'
     )
     ids = names.evaluate_all("inputs => inputs.map(i => i.name)")
     assert ids == ["authors-0-name", "authors-2-name", "authors-3-name"]
 
 
+def test_plus_adds_a_category_row_and_minus_removes_it(reader_page: Page):
+    _open_add_book(reader_page)
+    rows = reader_page.locator("#add-book-dialog .category-rows [data-row]")
+
+    reader_page.get_by_role("button", name="Add another category").click()
+
+    expect(rows).to_have_count(2)
+    expect(rows.nth(1).locator("input")).to_be_focused()
+    reader_page.get_by_role("button", name="Remove this category").click()
+    expect(rows).to_have_count(1)
+
+
 # Suggestions
+
+
+def test_added_category_row_suggests_categories(reader_page: Page, herbert_book):
+    _open_add_book(reader_page)
+    reader_page.get_by_role("button", name="Add another category").click()
+
+    reader_page.locator("#book-categories-1").fill("sci")
+
+    expect(
+        reader_page.locator("#book-categories-1-suggestions option")
+    ).to_have_attribute("value", "Science fiction")
 
 
 def test_publisher_field_suggests_matching_publishers(reader_page: Page, herbert_book):

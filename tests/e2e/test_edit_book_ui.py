@@ -65,7 +65,7 @@ def test_fix_a_misspelled_author(db_app: Flask, user: User, reader_page: Page):
     dialog = reader_page.locator("#book-dialog")
     dialog.locator("#edit-book-authors-0-name").fill("Jane")
     dialog.get_by_role("button", name="Add another author").click()
-    expect(dialog.locator("[data-row]")).to_have_count(2)
+    expect(dialog.locator(".author-rows [data-row]")).to_have_count(2)
     dialog.get_by_label("Year").fill("1815")
     dialog.get_by_role("button", name="Save").click()
 

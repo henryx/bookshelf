@@ -75,7 +75,9 @@ def _authors(db_app: Flask) -> list[Author]:
 
 
 def test_delete_book_removes_it_and_authors_left_without_books(db_app, user):
-    dune = _book(db_app, user, NewBook("Dune", authors=(FRANK, JANE), tags=("sf",)))
+    dune = _book(
+        db_app, user, NewBook("Dune", authors=(FRANK, JANE), categories=("sf",))
+    )
     _book(db_app, user, NewBook("Emma", authors=(JANE,)))
 
     with db_app.app_context():

@@ -44,7 +44,7 @@
     }
   });
 
-  // Repeatable rows (e.g. a book's authors): in a [data-rows] container,
+  // Repeatable rows (a book's authors and categories): in a [data-rows] container,
   // [data-row-add] appends a copy of its <template data-row-template> with
   // "__index__" replaced by a number no other row uses, and
   // [data-row-remove] deletes the [data-row] it is in. The buttons also
@@ -76,7 +76,7 @@
     var html = template.innerHTML.replace(/__index__/g, String(nextIndex(container)));
     template.insertAdjacentHTML("beforebegin", html);
     var added = template.previousElementSibling;
-    // The copy has hx-* attributes (author suggestions): let htmx see them.
+    // The copy has hx-* attributes (suggestions): let htmx see them.
     htmx.process(added);
     var input = added && added.querySelector("input");
     if (input) {
@@ -84,7 +84,7 @@
     }
   });
 
-  // Suggestions: a [data-suggest] field (an author's name or surname, the
+  // Suggestions: a [data-suggest] field (an author's name or surname, a category, the
   // publisher) asks the server for matches as you type, sending its text as
   // q instead of under its own form name (e.g. authors-0-name).
   document.addEventListener("htmx:configRequest", function (event) {

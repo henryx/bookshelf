@@ -1,0 +1,18 @@
+{# A book form's category rows (form.categories) with their add/remove template: in the
+   add-book and edit-book forms, like the author rows. id_prefix ("book-", "edit-book-")
+   keeps their ids apart, as both can be on the same page. #}
+<fieldset class="category-rows" data-rows aria-describedby="{{ id_prefix }}categories-hint">
+  <legend>Categories</legend>
+  {% for entry in form.categories %}
+    {% with index=entry.name.rpartition("-")[2], value=entry.data, first=loop.first,
+            errors=entry.errors %}
+      {% include "_category_row.html" %}
+    {% endwith %}
+  {% endfor %}
+  <template data-row-template>
+    {% with index="__index__", value="", first=False, errors=[] %}
+      {% include "_category_row.html" %}
+    {% endwith %}
+  </template>
+  <p id="{{ id_prefix }}categories-hint" class="hint">One per row; typing suggests the categories already used.</p>
+</fieldset>

@@ -167,15 +167,19 @@ def _assert_complete_schema(conn: Connection) -> None:
         "RESTRICT",
     )
 
-    assert _columns(conn, "BOOK_TAGS") == ["BOOK_ID", "TAG"]
-    assert _domain(conn, "BOOK_TAGS", "BOOK_ID") == "UUID"
-    assert _constraints(conn, "BOOK_TAGS") == {
-        "PK_BOOK_TAGS": "PRIMARY KEY",
-        "CHK_BOOK_TAGS_TAG": "CHECK",
-        "FK_BOOK_TAGS_BOOK": "FOREIGN KEY",
+    assert _columns(conn, "BOOK_CATEGORIES") == ["BOOK_ID", "CATEGORY"]
+    assert _domain(conn, "BOOK_CATEGORIES", "BOOK_ID") == "UUID"
+    assert _constraints(conn, "BOOK_CATEGORIES") == {
+        "PK_BOOK_CATEGORIES": "PRIMARY KEY",
+        "CHK_BOOK_CATEGORIES_CATEGORY": "CHECK",
+        "FK_BOOK_CATEGORIES_BOOK": "FOREIGN KEY",
     }
-    assert _reference(conn, "FK_BOOK_TAGS_BOOK") == ("BOOK_ID", "BOOKS", "CASCADE")
-    assert _index_columns(conn, "IDX_BOOK_TAGS_TAG") == ["TAG"]
+    assert _reference(conn, "FK_BOOK_CATEGORIES_BOOK") == (
+        "BOOK_ID",
+        "BOOKS",
+        "CASCADE",
+    )
+    assert _index_columns(conn, "IDX_BOOK_CATEGORIES_CATEGORY") == ["CATEGORY"]
 
     assert _columns(conn, "COLLECTION_BOOKS") == [
         "USER_ID",

@@ -10,6 +10,7 @@ from uuid import UUID
 from firebird.driver import Connection
 
 from bookshelf.models.books import (
+    CATEGORY_MAX_LENGTH,
     Author,
     Book,
     BookExistsError,
@@ -22,7 +23,7 @@ from bookshelf.models.books import (
     find_book_by_isbn,
     normalise_isbn,
     unique_authors,
-    unique_tags,
+    unique_categories,
 )
 
 __all__ = [
@@ -35,8 +36,8 @@ __all__ = [
 ]
 
 # The export's columns, in order; an import may have any of them, in any
-# order, but needs title. authors ("Name Surname", or "Surname" alone) and tags
-# are separated by ", ", as the book form's tags. read: yes or no.
+# order, but needs title. authors ("Name Surname", or "Surname" alone) and
+# categories are separated by ", ". read: yes or no.
 COLUMNS = (
     "title",
     "authors",
@@ -46,7 +47,7 @@ COLUMNS = (
     "series",
     "volume",
     "plot",
-    "tags",
+    "categories",
     "copies",
     "read",
 )
@@ -54,7 +55,7 @@ COLUMNS = (
 # request has to end before the worker timeout.
 MAX_ROWS = 1000
 _MAX_COPIES = 999
-# Column sizes in BOOKS, AUTHORS and BOOK_TAGS.
+# Column sizes in BOOKS and AUTHORS (categories: CATEGORY_MAX_LENGTH).
 _MAX_LENGTHS = {
     "title": 255,
     "publisher": 255,
@@ -63,8 +64,7 @@ _MAX_LENGTHS = {
     "plot": 4000,
 }
 _AUTHOR_MAX_LENGTH = 127
-_TAG_MAX_LENGTH = 64
-# Between authors and between tags alike, as in the book form's tags.
+# Between authors and between categories alike.
 _SEPARATOR = ","
 _YES = {"yes", "y", "true", "1"}
 _NO = {"no", "n", "false", "0", ""}
@@ -105,7 +105,7 @@ class _Row:
     read: bool
 
 
-# Export: the user's books, then the authors and tags of all of them.
+# Export: the user's books, then the authors and categories of all of them.
 _EXPORT_BOOKS_QUERY = """
     SELECT b.ID, b.TITLE, b.ISBN, b.PUBLISHER, b.PUBLICATION_YEAR, b.SERIES,
         b.VOLUME, b.PLOT, cb.COPIES, cb.IS_READ
@@ -124,12 +124,12 @@ _EXPORT_AUTHORS_QUERY = """
     ORDER BY ba.BOOK_ID, ba.SORT_ORDER
 """
 
-_EXPORT_TAGS_QUERY = """
-    SELECT bt.BOOK_ID, bt.TAG
+_EXPORT_CATEGORIES_QUERY = """
+    SELECT bc.BOOK_ID, bc.CATEGORY
     FROM COLLECTION_BOOKS cb
-    JOIN BOOK_TAGS bt ON bt.BOOK_ID = cb.BOOK_ID
+    JOIN BOOK_CATEGORIES bc ON bc.BOOK_ID = cb.BOOK_ID
     WHERE cb.USER_ID = ?
-    ORDER BY bt.BOOK_ID, bt.TAG
+    ORDER BY bc.BOOK_ID, bc.CATEGORY
 """
 
 # Books with this title (ignoring case: UNICODE_CI), oldest first.
@@ -161,10 +161,10 @@ def export_collection(conn: Connection, user_id: UUID) -> str:
         for book_id, name, surname in cur.fetchall():
             author = str(Author(name or "", surname))
             authors.setdefault(book_id, []).append(author)
-        tags: dict[bytes, list[str]] = {}
-        cur.execute(_EXPORT_TAGS_QUERY, (user_id.bytes,))
-        for book_id, tag in cur.fetchall():
-            tags.setdefault(book_id, []).append(tag)
+        categories: dict[bytes, list[str]] = {}
+        cur.execute(_EXPORT_CATEGORIES_QUERY, (user_id.bytes,))
+        for book_id, category in cur.fetchall():
+            categories.setdefault(book_id, []).append(category)
 
     out = io.StringIO()
     out.write("﻿")
@@ -191,7 +191,7 @@ def export_collection(conn: Connection, user_id: UUID) -> str:
             series or "",
             volume or "",
             plot or "",
-            f"{_SEPARATOR} ".join(tags.get(book_id, [])),
+            f"{_SEPARATOR} ".join(categories.get(book_id, [])),
             str(copies),
             "yes" if read else "no",
         )
@@ -250,11 +250,13 @@ def _authors(text: str | None) -> tuple[Author, ...]:
     return tuple(unique_authors(tuple(authors)))
 
 
-def _tags(text: str | None) -> tuple[str, ...]:
-    tags = unique_tags(tuple((text or "").split(_SEPARATOR)))
-    if any(len(tag) > _TAG_MAX_LENGTH for tag in tags):
-        raise _RowError(f"tags cannot be longer than {_TAG_MAX_LENGTH} characters.")
-    return tuple(tags)
+def _categories(text: str | None) -> tuple[str, ...]:
+    categories = unique_categories(tuple((text or "").split(_SEPARATOR)))
+    if any(len(category) > CATEGORY_MAX_LENGTH for category in categories):
+        raise _RowError(
+            f"categories cannot be longer than {CATEGORY_MAX_LENGTH} characters."
+        )
+    return tuple(categories)
 
 
 def _isbn(text: str | None) -> str | None:
@@ -288,7 +290,7 @@ def _parse_row(row: dict[str, str]) -> _Row:
         series=_text(row, "series"),
         volume=_text(row, "volume"),
         plot=_text(row, "plot"),
-        tags=_tags(_text(row, "tags")),
+        categories=_categories(_text(row, "categories")),
     )
     return _Row(book, copies, read in _YES)
 

@@ -61,7 +61,7 @@ def _update(
     series: str | None = None,
     volume: str | None = None,
     plot: str | None = None,
-    tags: tuple[str, ...] = (),
+    categories: tuple[str, ...] = (),
     isbn: str | None = None,
     replace_isbn: bool = False,
 ) -> None:
@@ -75,7 +75,7 @@ def _update(
             series=series,
             volume=volume,
             plot=plot,
-            tags=tags,
+            categories=categories,
             isbn=isbn,
             replace_isbn=replace_isbn,
         )
@@ -89,7 +89,7 @@ DUNE = NewBook(
     publication_year=1965,
     volume="1",
     plot="First of six.",
-    tags=("sf", "Classic"),
+    categories=("sf", "Classic"),
 )
 
 
@@ -109,7 +109,7 @@ def test_find_book_details_has_every_field(db_app, user):
         series="Dune Chronicles",
         volume="1",
         plot="First of six.",
-        tags=("Classic", "sf"),
+        categories=("Classic", "sf"),
         collections=1,
     )
 
@@ -119,15 +119,19 @@ def test_find_book_details_of_an_unknown_book(db_app):
         assert find_book_details(get_db(), uuid4()) is None
 
 
-def test_update_book_saves_volume_plot_and_tags(db_app, user):
+def test_update_book_saves_volume_plot_and_categories(db_app, user):
     book_id = _book(db_app, user, DUNE)
 
     _update(
-        db_app, book_id, volume="II", plot="Signed.", tags=(" new ", "", "NEW", "x")
+        db_app,
+        book_id,
+        volume="II",
+        plot="Signed.",
+        categories=(" new ", "", "NEW", "x"),
     )
 
     details = _details(db_app, book_id)
-    assert (details.volume, details.plot, details.tags) == (
+    assert (details.volume, details.plot, details.categories) == (
         "II",
         "Signed.",
         ("new", "x"),
@@ -141,7 +145,7 @@ def test_update_book_empties_fields(db_app, user):
     _update(db_app, book_id)
 
     details = _details(db_app, book_id)
-    assert (details.volume, details.plot, details.tags) == (None, None, ())
+    assert (details.volume, details.plot, details.categories) == (None, None, ())
     assert (details.authors, details.publisher, details.publication_year) == (
         (),
         None,
@@ -303,7 +307,8 @@ def _form(**fields: str) -> dict[str, str]:
         "series": "Dune Chronicles",
         "volume": "1",
         "plot": "First of six.",
-        "tags": "Classic, sf",
+        "categories-0": "Classic",
+        "categories-1": "sf",
         **fields,
     }
 
@@ -323,7 +328,9 @@ def test_book_details_for_the_dialog(db_app, client, user):
     assert re.search(r'<input [^>]*name="publisher"[^>]*value="Ace"', html)
     assert re.search(r'<input [^>]*name="publication_year"[^>]*value="1965"', html)
     assert re.search(r'<input [^>]*name="volume"[^>]*value="1"', html)
-    assert re.search(r'<input [^>]*name="tags"[^>]*value="Classic, sf"', html)
+    assert re.search(r'<input id="edit-book-categories-0" [^>]*value="Classic"', html)
+    assert re.search(r'<input id="edit-book-categories-1" [^>]*value="sf"', html)
+    assert 'name="add_category"' in html
     assert "First of six." in html
     assert 'name="isbn"' in html
 
@@ -348,14 +355,21 @@ def test_isbn_is_shown_not_editable_once_set(db_app, client, user):
 
 def test_save_redirects_to_the_list_it_came_from(db_app, client, user):
     book_id = _book(db_app, user, DUNE)
-    data = {"volume": "2", "tags": "a, b", "plot": "", "q": "dune", "page": "1"}
+    data = {
+        "volume": "2",
+        "categories-0": "a",
+        "categories-1": "b",
+        "plot": "",
+        "q": "dune",
+        "page": "1",
+    }
 
     rv = client.post(_url(book_id), data=data, headers=HTMX)
 
     assert rv.status_code == 204
     assert rv.headers["HX-Redirect"] == "/?q=dune"
     details = _details(db_app, book_id)
-    assert (details.volume, details.plot, details.tags) == ("2", None, ("a", "b"))
+    assert (details.volume, details.plot, details.categories) == ("2", None, ("a", "b"))
     assert "Book “Dune” saved." in client.get("/").get_data(as_text=True)
 
 
@@ -400,7 +414,7 @@ def test_posted_isbn_is_ignored_once_the_book_has_one(db_app, client, user):
     [
         ({"isbn": "12345"}, "Not a valid ISBN."),
         ({"volume": "x" * 33}, "32 characters"),
-        ({"tags": "y" * 65}, "64 characters"),
+        ({"categories-0": "y" * 65}, "64 characters"),
     ],
 )
 def test_save_with_errors_shows_the_form_again(db_app, client, user, data, error):
@@ -474,9 +488,10 @@ def test_save_is_logged_with_the_changed_fields(db_app, client, user, caplog):
     book_id = _book(db_app, user, DUNE)
 
     with caplog.at_level(logging.INFO):
-        client.post(_url(book_id), data=_form(tags="sf, new", publication_year="1966"))
+        data = _form(publication_year="1966", **{"categories-1": "new"})
+        client.post(_url(book_id), data=data)
 
-    assert f"Book 'Dune' edited by {user.email}: year, tags" in caplog.text
+    assert f"Book 'Dune' edited by {user.email}: year, categories" in caplog.text
 
 
 def test_unchanged_save_is_logged_as_such(db_app, client, user, caplog):

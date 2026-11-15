@@ -73,11 +73,12 @@ TABLES: dict[str, str] = {
             SORT_ORDER SMALLINT NOT NULL
         )
     """,
-    # Free tags, stored on each book; unique per book, ignoring case.
-    "BOOK_TAGS": """
-        CREATE TABLE BOOK_TAGS (
+    # A book's categories, free text stored on each book (so a category exists
+    # while a book has it); unique per book, ignoring case.
+    "BOOK_CATEGORIES": """
+        CREATE TABLE BOOK_CATEGORIES (
             BOOK_ID UUID NOT NULL,
-            TAG VARCHAR(64) NOT NULL COLLATE UNICODE_CI
+            CATEGORY VARCHAR(64) NOT NULL COLLATE UNICODE_CI
         )
     """,
     # Each user's collection: the books they own, how many copies, and whether
@@ -172,15 +173,17 @@ CONSTRAINTS: dict[str, str] = {
         "ALTER TABLE BOOK_AUTHORS ADD CONSTRAINT FK_BOOK_AUTHORS_AUTHOR "
         "FOREIGN KEY (AUTHOR_ID) REFERENCES AUTHORS (ID)"
     ),
-    "PK_BOOK_TAGS": (
-        "ALTER TABLE BOOK_TAGS ADD CONSTRAINT PK_BOOK_TAGS PRIMARY KEY (BOOK_ID, TAG)"
+    "PK_BOOK_CATEGORIES": (
+        "ALTER TABLE BOOK_CATEGORIES ADD CONSTRAINT PK_BOOK_CATEGORIES "
+        "PRIMARY KEY (BOOK_ID, CATEGORY)"
     ),
-    "CHK_BOOK_TAGS_TAG": (
-        "ALTER TABLE BOOK_TAGS ADD CONSTRAINT CHK_BOOK_TAGS_TAG CHECK ("
-        "TAG <> '' AND CHAR_LENGTH(TAG) = CHAR_LENGTH(TRIM(TAG)))"
+    "CHK_BOOK_CATEGORIES_CATEGORY": (
+        "ALTER TABLE BOOK_CATEGORIES ADD CONSTRAINT CHK_BOOK_CATEGORIES_CATEGORY "
+        "CHECK ("
+        "CATEGORY <> '' AND CHAR_LENGTH(CATEGORY) = CHAR_LENGTH(TRIM(CATEGORY)))"
     ),
-    "FK_BOOK_TAGS_BOOK": (
-        "ALTER TABLE BOOK_TAGS ADD CONSTRAINT FK_BOOK_TAGS_BOOK "
+    "FK_BOOK_CATEGORIES_BOOK": (
+        "ALTER TABLE BOOK_CATEGORIES ADD CONSTRAINT FK_BOOK_CATEGORIES_BOOK "
         "FOREIGN KEY (BOOK_ID) REFERENCES BOOKS (ID) ON DELETE CASCADE"
     ),
     "PK_COLLECTION_BOOKS": (
@@ -220,8 +223,11 @@ INDEXES: dict[str, str] = {
     "IDX_BOOKS_CREATED_AT": (
         "CREATE DESCENDING INDEX IDX_BOOKS_CREATED_AT ON BOOKS (CREATED_AT)"
     ),
-    # Books with a tag.
-    "IDX_BOOK_TAGS_TAG": "CREATE INDEX IDX_BOOK_TAGS_TAG ON BOOK_TAGS (TAG)",
+    # Books in a category, and category suggestions (categories starting with
+    # the typed text).
+    "IDX_BOOK_CATEGORIES_CATEGORY": (
+        "CREATE INDEX IDX_BOOK_CATEGORIES_CATEGORY ON BOOK_CATEGORIES (CATEGORY)"
+    ),
 }
 
 # PSQL functions, created after INDEXES. Each is created or replaced on every

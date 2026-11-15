@@ -25,7 +25,13 @@ from wtforms.validators import (
     Optional,
 )
 
-from bookshelf.models.books import Author, InvalidIsbnError, NewBook, normalise_isbn
+from bookshelf.models.books import (
+    CATEGORY_MAX_LENGTH,
+    Author,
+    InvalidIsbnError,
+    NewBook,
+    normalise_isbn,
+)
 from bookshelf.models.users import PasswordTooShortError, Role, validate_new_password
 
 __all__ = [
@@ -43,10 +49,9 @@ __all__ = [
     "UserForm",
 ]
 
-# Column sizes in BOOKS, AUTHORS, BOOK_TAGS and USERS.
+# Column sizes in BOOKS, AUTHORS and USERS.
 _NAME_MAX_LENGTH = 255
 _AUTHOR_NAME_MAX_LENGTH = 127
-_TAG_MAX_LENGTH = 64
 _PERSON_NAME_MAX_LENGTH = 127
 
 
@@ -192,7 +197,7 @@ class EditBookForm(FlaskForm):
     """
     A book's editable fields: authors as rows of name and surname, ISBN
     (while it has none, or for admins), publisher, year, series, volume, plot and
-    tags separated by commas. BookForm adds a new book's title and copies.
+    categories, one per row. BookForm adds a new book's title and copies.
     """
 
     authors = FieldList(FormField(AuthorForm), "Authors", min_entries=1)
@@ -203,21 +208,35 @@ class EditBookForm(FlaskForm):
     )
     series = _optional_text("Series", _NAME_MAX_LENGTH)
     volume = _optional_text("Volume", 32)
-    tags = StringField("Tags")
+    categories = FieldList(
+        StringField(
+            "Category",
+            filters=[_strip],
+            validators=[
+                Length(
+                    max=CATEGORY_MAX_LENGTH,
+                    message=f"Categories cannot be longer than {CATEGORY_MAX_LENGTH} "
+                    "characters.",
+                )
+            ],
+        ),
+        "Categories",
+        min_entries=1,
+    )
     plot = TextAreaField(
         "Plot", filters=[_strip_or_none], validators=[Optional(), Length(max=4000)]
     )
 
-    def add_author_row(self) -> None:
-        """One more empty author row (the + button without JavaScript)."""
-        self.authors.append_entry()
+    def add_row(self, field: FieldList) -> None:
+        """One more empty row of authors or categories (the + button without JavaScript)."""
+        field.append_entry()
 
-    def remove_author_row(self, index: str) -> None:
-        """Drop the author row numbered `index` (the - button without JavaScript)."""
-        name = f"{self.authors.name}-{index}"
-        self.authors.entries = [e for e in self.authors.entries if e.name != name]
-        if not self.authors.entries:
-            self.authors.append_entry()
+    def remove_row(self, field: FieldList, index: str) -> None:
+        """Drop the row numbered `index` (the - button without JavaScript)."""
+        name = f"{field.name}-{index}"
+        field.entries = [e for e in field.entries if e.name != name]
+        if not field.entries:
+            field.append_entry()
 
     def validate_authors(self, field: FieldList) -> None:
         """
@@ -242,14 +261,9 @@ class EditBookForm(FlaskForm):
         """The author rows as typed, empty ones included (see unique_authors)."""
         return tuple(entry.form.to_author() for entry in self.authors)
 
-    def tag_names(self) -> tuple[str, ...]:
-        return tuple((self.tags.data or "").split(","))
-
-    def validate_tags(self, _field: StringField) -> None:
-        if any(len(tag.strip()) > _TAG_MAX_LENGTH for tag in self.tag_names()):
-            raise ValidationError(
-                f"Tags cannot be longer than {_TAG_MAX_LENGTH} characters."
-            )
+    def category_names(self) -> tuple[str, ...]:
+        """The category rows as typed, empty ones included (see unique_categories)."""
+        return tuple(entry.data or "" for entry in self.categories)
 
     def validate_isbn(self, field: StringField) -> None:
         if not field.data:
@@ -298,7 +312,7 @@ class BookForm(EditBookForm):
             series=self.series.data,
             volume=self.volume.data,
             plot=self.plot.data,
-            tags=self.tag_names(),
+            categories=self.category_names(),
         )
 
 

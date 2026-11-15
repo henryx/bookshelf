@@ -35,9 +35,10 @@ from bookshelf.models.books import (
     list_books,
     normalise_isbn,
     suggest_authors,
+    suggest_categories,
     suggest_publishers,
     unique_authors,
-    unique_tags,
+    unique_categories,
     update_book,
 )
 from bookshelf.routes import htmx_redirect, is_htmx
@@ -165,18 +166,29 @@ def _render_add(form: BookForm, existing: Book | None = None) -> str:
     )
 
 
+def _change_rows(form: EditBookForm) -> bool:
+    """
+    Without JavaScript the + and - buttons of the author and category rows
+    submit the form (add_author, remove_author=<index>, and the same for
+    category): add or remove that row. True when one did, so the form is
+    shown again without saving.
+    """
+    for field, row in ((form.authors, "author"), (form.categories, "category")):
+        if f"add_{row}" in request.form:
+            form.add_row(field)
+            return True
+        if remove := request.form.get(f"remove_{row}"):
+            form.remove_row(field, remove)
+            return True
+    return False
+
+
 @main_route.route("/books/new", methods=("GET", "POST"))
 @login_required
 def new_book() -> BaseResponse | str:
     """Add a book to the catalogue and to the current user's collection."""
     form = BookForm()
-    # Without JavaScript the + and - buttons of the author rows submit the
-    # form: show it again with the row added or removed, without saving.
-    if "add_author" in request.form:
-        form.add_author_row()
-        return _render_add(form)
-    if remove := request.form.get("remove_author"):
-        form.remove_author_row(remove)
+    if _change_rows(form):
         return _render_add(form)
     if not form.validate_on_submit():
         return _render_add(form)
@@ -264,7 +276,11 @@ def _edited_fields(
             ("series", book.series, form.series.data),
             ("volume", book.volume, form.volume.data),
             ("plot", book.plot, form.plot.data),
-            ("tags", sorted(book.tags), sorted(unique_tags(form.tag_names()))),
+            (
+                "categories",
+                sorted(book.categories),
+                sorted(unique_categories(form.category_names())),
+            ),
         )
         if old != new
     ]
@@ -297,7 +313,7 @@ def book(book_id: UUID) -> BaseResponse | str:
             "series": details.series,
             "volume": details.volume,
             "plot": details.plot,
-            "tags": ", ".join(details.tags),
+            "categories": list(details.categories) or [""],
             "isbn": details.isbn,
         }
     )
@@ -306,13 +322,7 @@ def book(book_id: UUID) -> BaseResponse | str:
     if details.isbn and not current_user.is_admin:
         del form.isbn
     values = request.form if request.method == "POST" else request.args
-    # Without JavaScript the + and - buttons of the author rows submit the
-    # form: show it again with the row added or removed, without saving.
-    if "add_author" in request.form:
-        form.add_author_row()
-        return _render_book(form, details, values)
-    if remove := request.form.get("remove_author"):
-        form.remove_author_row(remove)
+    if _change_rows(form):
         return _render_book(form, details, values)
     if not form.validate_on_submit():
         return _render_book(form, details, values)
@@ -328,7 +338,7 @@ def book(book_id: UUID) -> BaseResponse | str:
             series=form.series.data,
             volume=form.volume.data,
             plot=form.plot.data,
-            tags=form.tag_names(),
+            categories=form.category_names(),
             isbn=isbn,
             replace_isbn=replace_isbn,
         )
@@ -414,3 +424,11 @@ def publisher_suggestions() -> str:
     """<option>s for the publisher's <datalist>: publishers starting with `q`."""
     publishers = suggest_publishers(get_db(), request.args.get("q", ""))
     return render_template("_publisher_suggestions.html", publishers=publishers)
+
+
+@main_route.route("/categories/suggestions", methods=("GET",))
+@login_required
+def category_suggestions() -> str:
+    """<option>s for a category row's <datalist>: categories starting with `q`."""
+    categories = suggest_categories(get_db(), request.args.get("q", ""))
+    return render_template("_category_suggestions.html", categories=categories)

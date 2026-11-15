@@ -252,9 +252,9 @@ Each user exports and imports only their own collection.
 
 Decisions:
 
- - Columns: `title`, `authors`, `isbn`, `publisher`, `year`, `series`, `volume`, `plot`, `tags`, `copies`,
-   `read`. Authors are "Name Surname" (or "Surname" alone, as for "Homer") and, like tags, separated by ", ",
-   as tags are in the book form; read is `yes` or `no`. On import the last word of an author is the surname,
+ - Columns: `title`, `authors`, `isbn`, `publisher`, `year`, `series`, `volume`, `plot`, `categories`,
+   `copies`, `read`. Authors ("Name Surname", or "Surname" alone, as for "Homer") and categories are both
+   separated by ", "; read is `yes` or `no`. On import the last word of an author is the surname,
    and a `year` holding a whole date ("1991-05-12", "12/05/1991", "May 12, 1991") gives its year (its only
    four-digit number); a year that cannot be told ("12/05/91", "1991-2001") is a bad row. The export is UTF-8
    with a byte order mark (so spreadsheets read it as UTF-8), ordered by title.
@@ -320,9 +320,10 @@ Decisions:
    uniqueness still holds. An author used by a book cannot be deleted. An author no book uses any more after a book
    is edited is deleted, and so is an author merged into another by a rename; there is no other way to delete
    one.
- - Books are classified by free tags and a series: a book can have any number of tags, typed freely, and belong
-   to one series. There are no genres or shelf locations. Tags are stored as text on each book, with no list of
-   tags of their own.
+ - Books are classified by categories and a series: a book can have any number of categories, typed freely
+   (with suggestions of the ones already used), and belong to one series. There are no shelf locations.
+   Categories are stored as text on each book (`BOOK_CATEGORIES`), with no list of categories of their own: a
+   category exists while a book has it. They replaced the earlier free tags.
  - The series is free text on each book ("Discworld"), ignoring case like the publisher, with no list of series
    of its own. The volume is the book's place in it, free text too ("2", "II", "3/4"), since volumes are numbered
    in many ways. Books have no language.
@@ -342,12 +343,12 @@ Decisions:
  - The library can be exported as a CSV file. There is no import in the first version.
  - ISBNs are stored as 13 digits: hyphens and spaces are removed and an ISBN-10 is converted to its ISBN-13, so
    the same book typed either way is caught as a duplicate.
- - Titles, publishers, author names and surnames, and tags ignore case when compared and sorted ("Sci-fi" and
-   "sci-fi" are one tag), but not accents ("Citta" and "Città" differ). All are trimmed; titles, surnames and
-   tags cannot be blank. Empty optional fields (publisher, series, volume, plot, …) are stored as NULL.
+ - Titles, publishers, author names and surnames, and categories ignore case when compared and sorted ("Sci-fi"
+   and "sci-fi" are one category), but not accents ("Citta" and "Città" differ). All are trimmed; titles, surnames and
+   categories cannot be blank. Empty optional fields (publisher, series, volume, plot, …) are stored as NULL.
  - Deleting a user removes their collection, which may leave books in no collection (and so deletable).
  - Sizes: title and publisher up to 255 characters, author name and surname up to 127 each, volume up to 32,
-   series up to 255, tag up to 64, plot up to 4000. Name and surname are limited to 127 because the unique index on both must
+   series up to 255, category up to 64, plot up to 4000. Name and surname are limited to 127 because the unique index on both must
    fit Firebird's index key limit (8 KB pages). Who added a book is not recorded.
 
 ### Adding a book
@@ -383,7 +384,11 @@ Decisions:
    the keyboard and screen readers, but its look is the browser's. Without JavaScript the fields are plain
    inputs, with no suggestions.
  - Publisher and year share a row, and so do series and volume; the year and volume fields are narrow.
- - Tags are separated by commas. Blank tags are skipped, and a tag repeated (ignoring case) is kept once.
+ - Categories are rows of one field, like the authors: the first row has a "+" button that adds a row, the
+   others a "−" button that removes theirs (without JavaScript both submit the form, and the server adds or
+   removes the row). Typing in a row suggests categories already used in the catalogue that start with the
+   text, ignoring case (`/categories/suggestions`, as for publishers). Blank rows are skipped, and a category
+   repeated (ignoring case) is kept once.
  - The ISBN must be a valid ISBN-10 or ISBN-13, check digit included, so a mistyped ISBN is caught; it is saved
    as ISBN-13. An ISBN already in the catalogue is refused with a message naming it. Under the message the
    form offers to add that book to the user's collection instead, with the copies typed in the form (a button
@@ -409,9 +414,9 @@ reloads the list with a confirmation. Without JavaScript the title is a link to 
 
 Decisions:
 
- - Editable: authors, publisher, publication year, series, volume, plot and tags, with the same fields, rules and
+ - Editable: authors, publisher, publication year, series, volume, plot and categories, with the same fields, rules and
    suggestions as when adding a book. Each may be emptied: an empty publisher, year, series, volume or plot is
-   stored as NULL, no authors or no tags leave the book with none.
+   stored as NULL, no authors or no categories leave the book with none.
  - Authors are picked again on every save, as when adding: each row is the existing author with that name and
    surname (ignoring case), or a new one. So a misspelled author is fixed on a book by typing the right name
    (or picking it from the suggestions). An author that no book uses any more after a save is deleted, so the
@@ -425,8 +430,8 @@ Decisions:
  - The title is never editable: it is shown, not a field.
  - Any user may edit any book, as for adding; copies are not part of this form (they belong to "Your
    collection").
- - Tags are typed as for adding a book: separated by commas, blank ones skipped, a repeat (ignoring case) kept
-   once. Saving replaces the book's tags with the ones typed.
+ - Categories are entered as for adding a book: one per row, with suggestions, blank ones skipped, a repeat
+   (ignoring case) kept once. Saving replaces the book's categories with the ones entered.
  - Saving changes nothing else, so a save with no changes is harmless. The log records who edited which book and
    which fields changed.
  - If two users edit the same book at once, the last save wins for every field but a new ISBN, including an ISBN
@@ -441,7 +446,7 @@ Technical details:
    from a form opened before someone else set it. An admin's correction passes `replace_isbn=True`, which sets the
    ISBN, or NULL, without that condition; an ISBN saved unchanged is not written again, so a save of other fields
    does not undo a correction made meanwhile. The title is in no `UPDATE`, so it cannot change.
- - `EditBookForm` holds every editable field (authors, ISBN, publisher, year, series, volume, tags, plot) with their
+ - `EditBookForm` holds every editable field (authors, ISBN, publisher, year, series, volume, categories, plot) with their
    validators and the author-row handling; `BookForm`, for adding a book, adds the title and copies. The author
    rows are `_author_rows.html`, shared by both forms with an `id_prefix` (`book-`, `edit-book-`), since both
    dialogs are on the main page.
@@ -479,7 +484,7 @@ Decisions:
    that message in the error banner: the database's foreign key (`FK_COLLECTION_BOOKS_BOOK`) decides, so no
    book in a collection is ever lost.
  - Deleting asks for confirmation ("Delete “Dune”? This cannot be undone.") and removes the book for good, with
-   its author links and tags. An author left without books is deleted too, as when editing a book.
+   its author links and categories. An author left without books is deleted too, as when editing a book.
  - Afterwards the list the book was deleted from comes back as it was, with a confirmation and the deletion
    logged with the admin who made it. When the list was one author's books and that author went with the book,
    it comes back as the whole list instead of an author page that no longer exists.
@@ -505,7 +510,7 @@ menu.
 Decisions:
 
  - The main page is the book list, with a search box. There is no separate dashboard page.
- - One search box searches title, author and ISBN together. There are no separate filters (by author or tag).
+ - One search box searches title, author and ISBN together. There are no separate filters (by author or category).
  - The list is sorted by title by default; the user can sort it by author or by date added instead.
  - The list is shown in pages of 50 books.
  - On the phone, books are shown as a list of rows, not a grid (books have no covers; see Books).

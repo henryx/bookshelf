@@ -239,26 +239,33 @@ def test_author_of_a_book_cannot_be_deleted(conn: Connection):
     assert _refused(conn, "DELETE FROM AUTHORS WHERE ID = ?", (author_id,))
 
 
-def test_tags_are_unique_per_book_ignoring_case(conn: Connection):
+def test_categories_are_unique_per_book_ignoring_case(conn: Connection):
     book_id = _add_book(conn)
     _run(
-        conn, "INSERT INTO BOOK_TAGS (BOOK_ID, TAG) VALUES (?, ?)", (book_id, "Sci-fi")
+        conn,
+        "INSERT INTO BOOK_CATEGORIES (BOOK_ID, CATEGORY) VALUES (?, ?)",
+        (book_id, "Sci-fi"),
     )
 
-    assert _refused(
-        conn, "INSERT INTO BOOK_TAGS (BOOK_ID, TAG) VALUES (?, ?)", (book_id, "sci-FI")
-    )
-    assert (
-        _count(conn, "SELECT COUNT(*) FROM BOOK_TAGS WHERE TAG = ?", ("SCI-FI",)) == 1
-    )
-
-
-@pytest.mark.parametrize("tag", ["", " Untrimmed", "Untrimmed "])
-def test_tag_must_be_non_blank_and_trimmed(conn: Connection, tag: str):
     assert _refused(
         conn,
-        "INSERT INTO BOOK_TAGS (BOOK_ID, TAG) VALUES (?, ?)",
-        (_add_book(conn), tag),
+        "INSERT INTO BOOK_CATEGORIES (BOOK_ID, CATEGORY) VALUES (?, ?)",
+        (book_id, "sci-FI"),
+    )
+    assert (
+        _count(
+            conn, "SELECT COUNT(*) FROM BOOK_CATEGORIES WHERE CATEGORY = ?", ("SCI-FI",)
+        )
+        == 1
+    )
+
+
+@pytest.mark.parametrize("category", ["", " Untrimmed", "Untrimmed "])
+def test_category_must_be_non_blank_and_trimmed(conn: Connection, category: str):
+    assert _refused(
+        conn,
+        "INSERT INTO BOOK_CATEGORIES (BOOK_ID, CATEGORY) VALUES (?, ?)",
+        (_add_book(conn), category),
     )
 
 
@@ -291,7 +298,7 @@ def test_deleting_a_user_empties_their_collection(conn: Connection, user: User):
     assert _count(conn, "SELECT COUNT(*) FROM BOOKS WHERE ID = ?", (book_id,)) == 1
 
 
-def test_deleting_a_book_removes_its_author_and_tag_links(conn: Connection):
+def test_deleting_a_book_removes_its_author_and_category_links(conn: Connection):
     book_id = _add_book(conn)
     author_id = _add_author(conn, "Calvino", "Italo")
     _run(
@@ -299,10 +306,14 @@ def test_deleting_a_book_removes_its_author_and_tag_links(conn: Connection):
         "INSERT INTO BOOK_AUTHORS (BOOK_ID, AUTHOR_ID, SORT_ORDER) VALUES (?, ?, 1)",
         (book_id, author_id),
     )
-    _run(conn, "INSERT INTO BOOK_TAGS (BOOK_ID, TAG) VALUES (?, ?)", (book_id, "Novel"))
+    _run(
+        conn,
+        "INSERT INTO BOOK_CATEGORIES (BOOK_ID, CATEGORY) VALUES (?, ?)",
+        (book_id, "Novel"),
+    )
 
     _run(conn, "DELETE FROM BOOKS WHERE ID = ?", (book_id,))
 
     assert _count(conn, "SELECT COUNT(*) FROM BOOK_AUTHORS") == 0
-    assert _count(conn, "SELECT COUNT(*) FROM BOOK_TAGS") == 0
+    assert _count(conn, "SELECT COUNT(*) FROM BOOK_CATEGORIES") == 0
     assert _count(conn, "SELECT COUNT(*) FROM AUTHORS") == 1

@@ -24,7 +24,7 @@ from bookshelf.models.collection_csv import (
 from bookshelf.models.users import User, create_user
 
 HTMX = {"HX-Request": "true"}
-HEADER = "title,authors,isbn,publisher,year,series,volume,plot,tags,copies,read\n"
+HEADER = "title,authors,isbn,publisher,year,series,volume,plot,categories,copies,read\n"
 
 
 @pytest.fixture
@@ -79,7 +79,7 @@ def test_export_writes_every_field_of_the_users_books(db_app, user, other):
                 series="Standalone",
                 volume="1",
                 plot="The end of the world,\non a Saturday.",
-                tags=("fantasy", "humour"),
+                categories=("fantasy", "humour"),
             ),
             copies=2,
         )
@@ -98,7 +98,7 @@ def test_export_writes_every_field_of_the_users_books(db_app, user, other):
             "series": "Standalone",
             "volume": "1",
             "plot": "The end of the world,\non a Saturday.",
-            "tags": "fantasy, humour",
+            "categories": "fantasy, humour",
             "copies": "2",
             "read": "yes",
         }
@@ -163,7 +163,7 @@ def test_import_creates_books_missing_from_the_catalogue(db_app, user):
         "Corgi",
         1991,
     )
-    assert (details.plot, details.tags) == ("A plot", ("fantasy", "humour"))
+    assert (details.plot, details.categories) == ("A plot", ("fantasy", "humour"))
 
 
 def test_import_matches_a_catalogue_book_by_isbn(db_app, user, other):
@@ -243,11 +243,11 @@ def test_import_reports_bad_rows_and_imports_the_rest(db_app, user):
 
 
 def test_import_reports_values_too_long(db_app, user):
-    report = _import(db_app, user, f"title,tags\n{'x' * 256},\nDune,{'t' * 65}\n")
+    report = _import(db_app, user, f"title,categories\n{'x' * 256},\nDune,{'t' * 65}\n")
 
     assert report.errors == [
         "Row 2: the title cannot be longer than 255 characters.",
-        "Row 3: tags cannot be longer than 64 characters.",
+        "Row 3: categories cannot be longer than 64 characters.",
     ]
 
 

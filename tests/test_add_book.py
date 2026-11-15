@@ -41,6 +41,11 @@ def _authors(*rows: tuple[str, str], start: int = 0) -> dict[str, str]:
     return fields
 
 
+def _categories(*names: str, start: int = 0) -> dict[str, str]:
+    """Form fields for category rows, numbered from `start`."""
+    return {f"categories-{i}": name for i, name in enumerate(names, start=start)}
+
+
 def _post(client: FlaskClient, **fields: str):
     data = {"title": "Dune", "copies": "1", **fields}
     return client.post("/books/new", data=data, headers=HTMX)
@@ -102,7 +107,7 @@ def test_add_book_saves_it_in_the_catalogue_and_collection(db_app, client, user)
         publication_year="1990",
         series=" Discworld ",
         volume=" II ",
-        tags="fantasy, Humour,  , FANTASY",
+        **_categories("fantasy", " Humour ", "  ", "FANTASY"),
         plot="Signed copy",
         copies="2",
     )
@@ -133,10 +138,12 @@ def test_add_book_saves_it_in_the_catalogue_and_collection(db_app, client, user)
         (book_id,),
     )
     assert authors == [("Terry", "Pratchett"), ("Neil", "Gaiman")]
-    tags = _rows(
-        db_app, "SELECT TAG FROM BOOK_TAGS WHERE BOOK_ID = ? ORDER BY TAG", (book_id,)
+    categories = _rows(
+        db_app,
+        "SELECT CATEGORY FROM BOOK_CATEGORIES WHERE BOOK_ID = ? ORDER BY CATEGORY",
+        (book_id,),
     )
-    assert [tag for (tag,) in tags] == ["fantasy", "Humour"]
+    assert [category for (category,) in categories] == ["fantasy", "Humour"]
     copies = _scalar(
         db_app,
         "SELECT COPIES FROM COLLECTION_BOOKS WHERE USER_ID = ? AND BOOK_ID = ?",
@@ -257,7 +264,7 @@ def test_add_book_without_htmx_redirects(client):
             "Field cannot be longer than 127 characters.",
         ),
         (_authors(("Ann", "x" * 128)), "Field cannot be longer than 127 characters."),
-        ({"tags": "x" * 65}, "Tags cannot be longer than 64 characters."),
+        (_categories("x" * 65), "Categories cannot be longer than 64 characters."),
         ({"publication_year": "abc"}, "Not a valid integer value."),
         ({"publication_year": "10000"}, "Number must be between 1 and 9999."),
         ({"copies": "0"}, "Number must be between 1 and 999."),
@@ -671,3 +678,90 @@ def test_add_page_from_the_collection_keeps_the_list(client):
     html = client.get("/books/new?list=collection").get_data(as_text=True)
 
     assert '<input type="hidden" name="list" value="collection">' in html
+
+
+# Categories
+
+
+def test_form_has_one_category_row_and_no_tags(client):
+    html = client.get("/books/new").get_data(as_text=True)
+
+    assert 'name="categories-0"' in html
+    assert 'name="add_category"' in html
+    assert 'name="categories-__index__"' in html
+    assert 'name="tags"' not in html
+
+
+def test_category_input_asks_for_suggestions(client):
+    html = client.get("/books/new").get_data(as_text=True)
+
+    input_tag = re.search(r'<input [^>]*id="book-categories-0"[^>]*>', html)
+    assert input_tag
+    assert 'list="book-categories-0-suggestions"' in input_tag[0]
+    assert 'hx-get="/categories/suggestions"' in input_tag[0]
+    assert "data-suggest" in input_tag[0]
+    assert '<datalist id="book-categories-0-suggestions">' in html
+
+
+def test_add_category_row_without_javascript(db_app, client):
+    rv = client.post(
+        "/books/new",
+        data={"title": "Dune", "copies": "1", "add_category": "1", **_categories("sf")},
+    )
+    html = rv.get_data(as_text=True)
+
+    assert 'value="sf"' in html
+    assert 'name="categories-1"' in html
+    assert 'name="remove_category" value="1"' in html
+    assert _scalar(db_app, "SELECT COUNT(*) FROM BOOKS") == 0
+
+
+def test_remove_category_row_without_javascript(db_app, client):
+    rv = client.post(
+        "/books/new",
+        data={
+            "title": "Dune",
+            "copies": "1",
+            "remove_category": "1",
+            **_categories("sf", "classic"),
+        },
+    )
+    html = rv.get_data(as_text=True)
+
+    assert 'value="sf"' in html
+    assert 'value="classic"' not in html
+    assert _scalar(db_app, "SELECT COUNT(*) FROM BOOKS") == 0
+
+
+def _suggest_category(client: FlaskClient, q: str):
+    return client.get("/categories/suggestions", query_string={"q": q}, headers=HTMX)
+
+
+def test_category_suggestions_by_start_ignoring_case(client):
+    _post(client, title="Mort", **_categories("Fantasy", "Humour"))
+    _post(client, title="Dune", **_categories("FANTASY", "Science fiction"))
+    _post(client, title="Emma", **_categories("Fairy tales"))
+
+    values = _values(_suggest_category(client, "fa").get_data(as_text=True))
+
+    assert len(values) == 2
+    assert values[0] == "Fairy tales"
+    assert values[1].casefold() == "fantasy"
+
+
+@pytest.mark.parametrize("q", ["", "   ", "x" * 65])
+def test_no_category_suggestions_for_blank_or_too_long_text(client, q):
+    _post(client, title="Mort", **_categories("Fantasy"))
+
+    assert _values(_suggest_category(client, q).get_data(as_text=True)) == []
+
+
+def test_category_suggestions_are_limited(client):
+    for n in range(12):
+        _post(client, title=f"Book {n}", **_categories(f"Genre {n:02}"))
+
+    assert len(_values(_suggest_category(client, "genre").get_data(as_text=True))) == 10
+
+
+def test_category_suggestions_require_login(db_client):
+    assert db_client.get("/categories/suggestions?q=f").status_code == 302

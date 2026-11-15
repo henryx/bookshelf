@@ -82,10 +82,10 @@ All settings come from environment variables:
 
 The main page is the book list: one search box over title, author and ISBN, sorting by title, author or date
 added, in pages of 50. The round "+" button at the bottom right (here and in your collection) opens the
-"Add book" dialog. Authors are rows of
-name and surname ("+" adds a row, "−" removes one). The author and publisher fields suggest existing entries as
-you type, and picking an author fills both name and surname. The book is added to the shared catalogue and to
-your own collection.
+"Add book" dialog. Authors are rows of name and surname, and categories rows of one field (a book can have
+several); in both "+" adds a row and "−" removes one. The author, category and publisher fields suggest existing
+entries as you type, and picking an author fills both name and surname. The book is added to the shared catalogue
+and to your own collection.
 
 Clicking a book's title opens it in a dialog to edit every field but the title; the ISBN can be set while the
 book has none, and only admins can change or remove one already set. Admins can also delete a book from that

@@ -15,6 +15,7 @@ from firebird.driver import (
 )
 
 __all__ = [
+    "CATEGORY_MAX_LENGTH",
     "PAGE_SIZE",
     "SEARCH_MAX_LENGTH",
     "SUGGESTIONS_LIMIT",
@@ -44,9 +45,10 @@ __all__ = [
     "set_copies",
     "set_read",
     "suggest_authors",
+    "suggest_categories",
     "suggest_publishers",
     "unique_authors",
-    "unique_tags",
+    "unique_categories",
     "update_book",
 ]
 
@@ -63,6 +65,8 @@ SUGGESTIONS_LIMIT = 10
 _AUTHOR_NAME_MAX_LENGTH = 127
 # BOOKS.PUBLISHER; a longer text matches no publisher.
 _PUBLISHER_MAX_LENGTH = 255
+# BOOK_CATEGORIES.CATEGORY; a longer text matches no category.
+CATEGORY_MAX_LENGTH = 64
 # The longest searched text (TITLE, or an author's name and surname); a
 # longer text matches nothing.
 SEARCH_MAX_LENGTH = 255
@@ -161,7 +165,7 @@ class Book:
 @dataclass(frozen=True)
 class NewBook:
     """
-    A book to add. Optional texts are None when not given; authors and tags
+    A book to add. Optional texts are None when not given; authors and categories
     are trimmed, blank ones skipped and repeats (ignoring case) dropped.
     """
 
@@ -173,13 +177,13 @@ class NewBook:
     series: str | None = None
     volume: str | None = None
     plot: str | None = None
-    tags: tuple[str, ...] = ()
+    categories: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, kw_only=True)
 class BookDetails:
     """
-    A catalogue book with every field; tags in alphabetical order.
+    A catalogue book with every field; categories in alphabetical order.
     collections: how many users have it in their collection.
     """
 
@@ -192,7 +196,7 @@ class BookDetails:
     series: str | None = None
     volume: str | None = None
     plot: str | None = None
-    tags: tuple[str, ...] = ()
+    categories: tuple[str, ...] = ()
     collections: int = 0
 
 
@@ -572,10 +576,10 @@ def find_book_details(conn: Connection, book_id: UUID) -> BookDetails | None:
         )
         authors = tuple(Author(name, surname) for name, surname in cur.fetchall())
         cur.execute(
-            "SELECT TAG FROM BOOK_TAGS WHERE BOOK_ID = ? ORDER BY TAG",
+            "SELECT CATEGORY FROM BOOK_CATEGORIES WHERE BOOK_ID = ? ORDER BY CATEGORY",
             (book_id.bytes,),
         )
-        tags = tuple(tag for (tag,) in cur.fetchall())
+        categories = tuple(category for (category,) in cur.fetchall())
     return BookDetails(
         id=book_id,
         title=title,
@@ -586,7 +590,7 @@ def find_book_details(conn: Connection, book_id: UUID) -> BookDetails | None:
         series=series,
         volume=volume,
         plot=plot,
-        tags=tags,
+        categories=categories,
         collections=collections,
     )
 
@@ -685,8 +689,8 @@ def unique_authors(authors: tuple[Author, ...]) -> list[Author]:
     return unique
 
 
-def unique_tags(names: tuple[str, ...]) -> list[str]:
-    """Trimmed, non-blank tags, the first of each kept (ignoring case)."""
+def unique_categories(names: tuple[str, ...]) -> list[str]:
+    """Trimmed, non-blank categories, the first of each kept (ignoring case)."""
     seen: set[str] = set()
     unique = []
     for name in (n.strip() for n in names):
@@ -810,10 +814,10 @@ def _insert_book(
             raise BookExistsError(isbn) from e
         raise
     _insert_authors(cur, book_id, book.authors)
-    for tag in unique_tags(book.tags):
+    for category in unique_categories(book.categories):
         cur.execute(
-            "INSERT INTO BOOK_TAGS (BOOK_ID, TAG) VALUES (?, ?)",
-            (book_id.bytes, tag),
+            "INSERT INTO BOOK_CATEGORIES (BOOK_ID, CATEGORY) VALUES (?, ?)",
+            (book_id.bytes, category),
         )
     cur.execute(
         "INSERT INTO COLLECTION_BOOKS (USER_ID, BOOK_ID, COPIES, IS_READ) "
@@ -895,13 +899,13 @@ def update_book(
     series: str | None,
     volume: str | None,
     plot: str | None,
-    tags: tuple[str, ...],
+    categories: tuple[str, ...],
     isbn: str | None = None,
     replace_isbn: bool = False,
 ) -> None:
     """
     Save a book's publisher, year, series, volume and plot (None empties them) and
-    replace its authors and tags (picked or created as when adding a book),
+    replace its authors and categories (picked or created as when adding a book),
     in one transaction; the title never changes, and an author no book uses
     any more is deleted. With `isbn`, also give the book that ISBN, stored
     as ISBN-13, if it has none. With `replace_isbn` (admins correcting a
@@ -928,11 +932,11 @@ def update_book(
         if cur.affected_rows == 0:
             raise UnknownBookError(book_id)
         _replace_authors(cur, book_id, authors)
-        cur.execute("DELETE FROM BOOK_TAGS WHERE BOOK_ID = ?", (book_id.bytes,))
-        for tag in unique_tags(tags):
+        cur.execute("DELETE FROM BOOK_CATEGORIES WHERE BOOK_ID = ?", (book_id.bytes,))
+        for category in unique_categories(categories):
             cur.execute(
-                "INSERT INTO BOOK_TAGS (BOOK_ID, TAG) VALUES (?, ?)",
-                (book_id.bytes, tag),
+                "INSERT INTO BOOK_CATEGORIES (BOOK_ID, CATEGORY) VALUES (?, ?)",
+                (book_id.bytes, category),
             )
         if replace_isbn:
             _replace_isbn(cur, book_id, new_isbn)
@@ -943,7 +947,7 @@ def update_book(
 
 def delete_book(conn: Connection, book_id: UUID) -> DeletedBook:
     """
-    Delete a book for good, with its author links and tags. An author it
+    Delete a book for good, with its author links and categories. An author it
     leaves without books is deleted too, as when editing.
     Raises UnknownBookError for an unknown book and BookInCollectionError if
     it is in any user's collection (even one added at this moment); nothing
@@ -965,7 +969,7 @@ def delete_book(conn: Connection, book_id: UUID) -> DeletedBook:
         (title,) = row
         authors = _author_ids(cur, book_id)
         try:
-            # Its BOOK_AUTHORS and BOOK_TAGS rows go with it (ON DELETE CASCADE).
+            # Its BOOK_AUTHORS and BOOK_CATEGORIES rows go with it (ON DELETE CASCADE).
             cur.execute("DELETE FROM BOOKS WHERE ID = ?", (book_id.bytes,))
         except DatabaseError as e:
             # FK_COLLECTION_BOOKS_BOOK: someone owns it.
@@ -1020,3 +1024,22 @@ def suggest_publishers(conn: Connection, text: str) -> list[str]:
             (text, SUGGESTIONS_LIMIT),
         )
         return [publisher for (publisher,) in cur.fetchall()]
+
+
+def suggest_categories(conn: Connection, text: str) -> list[str]:
+    """
+    Up to SUGGESTIONS_LIMIT categories used in the catalogue that start with
+    `text`, ignoring case; spellings differing only in case are one
+    category. Blank or too long text suggests nothing.
+    """
+    text = text.strip()
+    if not text or len(text) > CATEGORY_MAX_LENGTH:
+        return []
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT DISTINCT CATEGORY FROM BOOK_CATEGORIES "
+            "WHERE CATEGORY STARTING WITH ? "
+            "ORDER BY CATEGORY FETCH FIRST ? ROWS ONLY",
+            (text, SUGGESTIONS_LIMIT),
+        )
+        return [category for (category,) in cur.fetchall()]

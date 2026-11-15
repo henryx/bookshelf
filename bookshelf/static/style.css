@@ -1055,7 +1055,8 @@ dialog .card {
 }
 
 /* Author rows of the add-book form: name, surname and a +/- button. */
-.author-rows {
+.author-rows,
+.category-rows {
   display: grid;
   gap: 0.5rem;
   margin: 0.5rem 0 0;
@@ -1063,7 +1064,8 @@ dialog .card {
   border: 0;
 }
 
-.author-rows legend {
+.author-rows legend,
+.category-rows legend {
   padding: 0;
   margin-bottom: 0.5rem;
 }
@@ -1074,12 +1076,21 @@ dialog .card {
   gap: 0.5rem;
 }
 
-.author-row .error {
+/* A category row: the field, then its + or - button. */
+.category-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 2.75rem;
+  gap: 0.5rem;
+}
+
+.author-row .error,
+.category-row .error {
   grid-column: 1 / -1;
 }
 
-/* Looking up author or publisher suggestions. */
+/* Looking up author, category or publisher suggestions. */
 .author-row.htmx-request input,
+.category-row.htmx-request input,
 .field.htmx-request input {
   cursor: progress;
 }

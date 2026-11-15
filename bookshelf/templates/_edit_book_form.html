@@ -50,7 +50,7 @@
     <div class="field">{{ field(form.series, maxlength=255, autocomplete="off") }}</div>
     <div class="field">{{ field(form.volume, "E.g. 2, II or 3/4.", maxlength=32) }}</div>
   </div>
-  {{ field(form.tags, "Separated by commas.", autocomplete="off") }}
+  {% with id_prefix = "edit-book-" %}{% include "_category_rows.html" %}{% endwith %}
   {{ field(form.plot, rows=3, maxlength=4000) }}
 
   <button type="submit">Save</button>
