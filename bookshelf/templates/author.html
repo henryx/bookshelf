@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{# Without JavaScript an author's Rename link opens this page instead of the dialog. #}
+{% block title %}{{ entry.author }} · Bookshelf{% endblock %}
+{% from "_hero.html" import hero %}
+{% block hero %}
+  {% call hero() %}{% include "_topbar.html" %}{% endcall %}
+{% endblock %}
+{% block content %}
+  <p><a href="{{ back_url }}">← Authors</a></p>
+  <h2>Rename author</h2>
+  {% include "_rename_author_form.html" %}
+{% endblock %}

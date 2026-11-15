@@ -1,0 +1,36 @@
+{# The authors list and its page links: part of authors.html, and the htmx response for
+   searches and pages. Each row's Rename link opens the rename dialog (without JavaScript,
+   the rename page), keeping the list's search and page to come back to. #}
+{% macro page_link(number, label) -%}
+  {%- set url = url_for("authors.index", q=search or None, page=number) -%}
+  <a href="{{ url }}" hx-get="{{ url }}" hx-target="#author-list" hx-push-url="true"
+     hx-indicator="#author-pages-indicator">{{ label }}</a>
+{%- endmacro %}
+<p class="hint book-count">{{ authors.total }} author{{ "" if authors.total == 1 else "s" }}</p>
+{% if authors.authors %}
+  <ul class="authors">
+    {% for entry in authors.authors %}
+      {% set url = url_for("authors.rename", author_id=entry.id, q=search or None,
+                           page=authors.page if authors.page > 1 else None) %}
+      <li>
+        <span class="author-name">{{ entry.author.surname }}{% if entry.author.name %}, {{ entry.author.name }}{% endif %}</span>
+        <span class="author-books">{{ entry.books }} book{{ "" if entry.books == 1 else "s" }}</span>
+        <a class="button secondary" href="{{ url }}" hx-get="{{ url }}" hx-target="#author-dialog-body"
+           hx-indicator="closest li" aria-label="Rename {{ entry.author }}">Rename</a>
+        <span class="htmx-indicator">…</span>
+      </li>
+    {% endfor %}
+  </ul>
+{% elif search %}
+  <p>No authors match “{{ search }}”.</p>
+{% else %}
+  <p>No authors yet: they are added with their books.</p>
+{% endif %}
+{% if authors.pages > 1 %}
+  <nav class="pages" aria-label="Pages">
+    {% if authors.page > 1 %}{{ page_link(authors.page - 1, "← Previous") }}{% endif %}
+    <span>Page {{ authors.page }} of {{ authors.pages }}</span>
+    {% if authors.page < authors.pages %}{{ page_link(authors.page + 1, "Next →") }}{% endif %}
+    <span id="author-pages-indicator" class="htmx-indicator">…</span>
+  </nav>
+{% endif %}

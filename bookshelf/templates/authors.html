@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% from "_hero.html" import hero %}
+{% block title %}Authors · Bookshelf{% endblock %}
+{% block hero %}
+  {% call hero() %}
+    {% include "_topbar.html" %}
+    {# Without JavaScript a plain GET; with htmx typing reloads only the list. #}
+    <form class="book-search" role="search" method="get" action="{{ url_for('authors.index') }}"
+          hx-get="{{ url_for('authors.index') }}"
+          hx-trigger="submit, input changed delay:300ms from:#author-search-q"
+          hx-target="#author-list" hx-push-url="true" hx-sync="this:replace"
+          hx-indicator="#author-search-indicator" hx-disabled-elt="find button">
+      <input id="author-search-q" type="search" name="q" value="{{ search }}"
+             maxlength="{{ search_max_length }}" placeholder="Name or surname"
+             aria-label="Search authors">
+      <button type="submit">Search</button>
+      <span id="author-search-indicator" class="htmx-indicator">…</span>
+    </form>
+  {% endcall %}
+{% endblock %}
+{% block content %}
+  <h2>Authors</h2>
+  <div id="author-list">
+    {% include "_author_list.html" %}
+  </div>
+
+  {# Filled with an author's rename form by the Rename links, then opened (app.js). #}
+  <dialog id="author-dialog" aria-labelledby="author-dialog-title">
+    <div class="section-header">
+      <h2 id="author-dialog-title">Rename author</h2>
+      <button type="button" class="secondary" data-dialog-close aria-label="Close">✕</button>
+    </div>
+    <div id="author-dialog-body"></div>
+  </dialog>
+{% endblock %}

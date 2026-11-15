@@ -233,6 +233,7 @@ button:disabled {
 }
 
 button.secondary,
+a.button.secondary,
 .row-button {
   background: transparent;
   border-color: var(--rule);
@@ -826,6 +827,42 @@ a.book-title:focus-visible {
 /* Room below the list so the button never covers the last row or the page links. */
 #book-list {
   padding-bottom: 6rem;
+}
+
+/* Authors list: surname first, in the display face, the book count in mono,
+   the Rename button at the end of the row. */
+.authors {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.authors li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 1rem;
+  padding: 0.75rem 0;
+  border-bottom: 2px dotted var(--rule);
+}
+
+.author-name {
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.author-books {
+  flex: 1;
+  font-family: var(--font-mono);
+  font-size: 0.9375rem;
+  color: var(--ink-muted);
+}
+
+.authors a.button {
+  padding: 0.25rem 0.875rem;
+  font-size: 0.875rem;
 }
 
 /* A book's fixed details, above its edit form: labels light, values heavy. */

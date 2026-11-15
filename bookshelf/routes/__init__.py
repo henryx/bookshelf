@@ -1,7 +1,16 @@
 from flask import Response, redirect, request
 from werkzeug.wrappers import Response as BaseResponse
 
-__all__ = ["account", "auth", "collection", "htmx_redirect", "is_htmx", "main", "setup"]
+__all__ = [
+    "account",
+    "auth",
+    "authors",
+    "collection",
+    "htmx_redirect",
+    "is_htmx",
+    "main",
+    "setup",
+]
 
 
 def is_htmx() -> bool:

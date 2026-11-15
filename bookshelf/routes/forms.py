@@ -36,6 +36,7 @@ __all__ = [
     "LoginForm",
     "NewAccountForm",
     "NewUserForm",
+    "RenameAuthorForm",
     "UserForm",
 ]
 
@@ -145,6 +146,22 @@ class AuthorForm(Form):
     def validate_surname(self, field: StringField) -> None:
         if self.name.data and not field.data:
             raise ValidationError("Surname is required.")
+
+    def to_author(self) -> Author:
+        return Author(self.name.data or "", self.surname.data or "")
+
+
+class RenameAuthorForm(FlaskForm):
+    """An author's new name (optional, as for "Homer") and surname."""
+
+    name = StringField(
+        "Name", filters=[_strip], validators=[Length(max=_AUTHOR_NAME_MAX_LENGTH)]
+    )
+    surname = StringField(
+        "Surname",
+        filters=[_strip],
+        validators=[DataRequired(), Length(max=_AUTHOR_NAME_MAX_LENGTH)],
+    )
 
     def to_author(self) -> Author:
         return Author(self.name.data or "", self.surname.data or "")

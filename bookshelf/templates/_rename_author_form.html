@@ -1,0 +1,29 @@
+{# The rename-author form: the rename dialog's content, the body of the rename page, and
+   the htmx response when it has errors. #}
+{% set action = url_for("authors.rename", author_id=entry.id) %}
+<form id="rename-author-form" class="card" method="post" action="{{ action }}"
+      hx-post="{{ action }}" hx-target="this" hx-swap="outerHTML"
+      hx-indicator="#rename-author-indicator" hx-disabled-elt="find button">
+  {{ form.hidden_tag() }}
+  {# The list to go back to after renaming, with its search and page. #}
+  <input type="hidden" name="q" value="{{ search }}">
+  <input type="hidden" name="page" value="{{ page }}">
+  {% for error in form.form_errors %}
+    <p class="error" role="alert">{{ error }}</p>
+  {% endfor %}
+  <p class="hint">“{{ entry.author }}” is an author of {{ entry.books }} book{{ "" if entry.books == 1 else "s" }}:
+    the new name applies to every one. If another author already has that name, the two become one.</p>
+
+  <label for="rename-author-name">{{ form.name.label.text }}</label>
+  {{ form.name(id="rename-author-name", maxlength=127, autocomplete="off",
+               aria_describedby="rename-author-name-hint") }}
+  <p id="rename-author-name-hint" class="hint">Empty for authors known by one name.</p>
+  {% for error in form.name.errors %}<p class="error">{{ error }}</p>{% endfor %}
+
+  <label for="rename-author-surname">{{ form.surname.label.text }}</label>
+  {{ form.surname(id="rename-author-surname", maxlength=127, autocomplete="off", required=True) }}
+  {% for error in form.surname.errors %}<p class="error">{{ error }}</p>{% endfor %}
+
+  <button type="submit">Rename</button>
+  <span id="rename-author-indicator" class="htmx-indicator">Renaming…</span>
+</form>
