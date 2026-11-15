@@ -29,6 +29,7 @@ from bookshelf.models.books import (
     CATEGORY_MAX_LENGTH,
     Author,
     InvalidIsbnError,
+    IsbnLostDigitsError,
     NewBook,
     normalise_isbn,
 )
@@ -270,6 +271,11 @@ class EditBookForm(FlaskForm):
             return
         try:
             normalise_isbn(field.data)
+        except IsbnLostDigitsError as e:
+            raise ValidationError(
+                "This ISBN became a number in a spreadsheet, which lost its digits: "
+                "enter it again."
+            ) from e
         except InvalidIsbnError as e:
             raise ValidationError("Not a valid ISBN.") from e
 

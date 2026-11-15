@@ -257,10 +257,9 @@ Decisions:
    separated by ", "; read is `yes` or `no`. On import the last word of an author is the surname,
    and a `year` holding a whole date ("1991-05-12", "12/05/1991", "May 12, 1991") gives its year (its only
    four-digit number); a year that cannot be told ("12/05/91", "1991-2001") is a bad row. An ISBN tolerates
-   what spreadsheets and copying do to it: invisible characters (zero-width spaces, byte order marks) are
-   dropped, and a leading `'` or a trailing `.0` / `,0` (an ISBN saved as a number) taken off; one in scientific
-   notation ("9.78886E+12") has lost its digits, so the row is refused saying so. The export is UTF-8
-   with a byte order mark (so spreadsheets read it as UTF-8), ordered by title.
+   what spreadsheets and copying do to it, as in the forms (see Books); one in scientific notation
+   ("9.78886E+12") has lost its digits, so the row is refused saying so. The export is UTF-8 with a byte order
+   mark (so spreadsheets read it as UTF-8), ordered by title.
  - An import needs a header with `title`; the other columns are optional and in any order (missing ones are
    empty, copies 1 and not read). Other columns are ignored, and named in the import's summary ("Ignored 2
    columns: colour, shelf.") so that a misspelt one is noticed. A repeated column, an empty file, a file that is
@@ -344,9 +343,15 @@ Decisions:
    with the same title and authors are allowed.
  - A book can be deleted only while it is in no user's collection; otherwise deletion is refused. Deleting a
    book removes it for good (it cannot be restored) and asks for confirmation first (see "Deleting a book").
- - The library can be exported as a CSV file. There is no import in the first version.
+ - Each user's collection can be exported to a CSV file and a CSV file imported into it (see "Collection CSV
+   import and export").
  - ISBNs are stored as 13 digits: hyphens and spaces are removed and an ISBN-10 is converted to its ISBN-13, so
    the same book typed either way is caught as a duplicate.
+ - Wherever an ISBN is entered (the add and edit forms, the CSV import), it tolerates what spreadsheets and
+   copying do to it (`normalise_isbn`): invisible characters (zero-width spaces, byte order marks, any Unicode
+   format character) are dropped, and a leading `'` (kept as text) or a trailing `.0` / `,0` (saved as a number)
+   taken off. An ISBN in scientific notation ("9.78044E+12") has lost digits a spreadsheet dropped, so it is
+   refused with a message saying so (`IsbnLostDigitsError`) rather than "Not a valid ISBN".
  - Titles, publishers, author names and surnames, and categories ignore case when compared and sorted ("Sci-fi"
    and "sci-fi" are one category), but not accents ("Citta" and "Città" differ). All are trimmed; titles, surnames and
    categories cannot be blank. Empty optional fields (publisher, series, volume, plot, …) are stored as NULL.

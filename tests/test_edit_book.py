@@ -399,6 +399,14 @@ def test_save_sets_the_isbn(db_app, client, user):
     assert _details(db_app, book_id).isbn == DUNE_ISBN
 
 
+def test_save_tolerates_a_pasted_isbn(db_app, client, user):
+    book_id = _book(db_app, user, DUNE)
+
+    client.post(_url(book_id), data={"isbn": "'0441172717\u200b"})
+
+    assert _details(db_app, book_id).isbn == DUNE_ISBN
+
+
 def test_posted_isbn_is_ignored_once_the_book_has_one(db_app, client, user):
     book_id = _book(db_app, user, NewBook("Dune", isbn=DUNE_ISBN))
 
@@ -413,6 +421,7 @@ def test_posted_isbn_is_ignored_once_the_book_has_one(db_app, client, user):
     ("data", "error"),
     [
         ({"isbn": "12345"}, "Not a valid ISBN."),
+        ({"isbn": "9.78044E+12"}, "became a number in a spreadsheet"),
         ({"volume": "x" * 33}, "32 characters"),
         ({"categories-0": "y" * 65}, "64 characters"),
     ],

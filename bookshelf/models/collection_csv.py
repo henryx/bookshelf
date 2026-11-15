@@ -3,7 +3,6 @@
 import csv
 import io
 import re
-import unicodedata
 from dataclasses import dataclass, field
 from uuid import UUID
 
@@ -15,6 +14,7 @@ from bookshelf.models.books import (
     Book,
     BookExistsError,
     InvalidIsbnError,
+    IsbnLostDigitsError,
     NewBook,
     UnknownBookError,
     add_book,
@@ -73,11 +73,6 @@ _NO = {"no", "n", "false", "0", ""}
 _FORMULA_STARTS = ("=", "+", "-", "@", "\t", "\r")
 # A year in a date: four digits on their own ("1991-05-12", "12/05/1991").
 _DATE_YEAR = re.compile(r"(?<!\d)\d{4}(?!\d)")
-# An ISBN a spreadsheet saved as a number: "9788861924314.0" (",0" with a
-# decimal comma) keeps its digits; scientific notation ("9.78886E+12") has
-# lost them.
-_DECIMAL_ZERO = re.compile(r"(\d+)[.,]0+")
-_SCIENTIFIC = re.compile(r"\d[.,]\d+E\+?\d+", re.IGNORECASE)
 
 
 class CsvFileError(ValueError):
@@ -269,23 +264,18 @@ def _categories(text: str | None) -> tuple[str, ...]:
 def _isbn(text: str | None) -> str | None:
     """
     The ISBN-13 of an ISBN cell, tolerating what spreadsheets and copying do
-    to it: invisible characters (zero-width spaces, byte order marks), a
-    leading ' that kept it text, a ".0" that made it a number. _RowError
-    when it is not a valid ISBN, or was written in scientific notation.
+    to it (see normalise_isbn). _RowError when it is not a valid ISBN, or
+    was written in scientific notation.
     """
     if text is None:
         return None
-    visible = "".join(c for c in text if unicodedata.category(c) != "Cf")
-    isbn = visible.strip().removeprefix("'")
-    if _SCIENTIFIC.fullmatch(isbn):
-        raise _RowError(
-            f"the ISBN became a number in a spreadsheet ({isbn}), which lost its "
-            "digits: format the column as text and enter the ISBN again."
-        )
-    if whole := _DECIMAL_ZERO.fullmatch(isbn):
-        isbn = whole[1]
     try:
-        return normalise_isbn(isbn)
+        return normalise_isbn(text)
+    except IsbnLostDigitsError as e:
+        raise _RowError(
+            f"the ISBN became a number in a spreadsheet ({text}), which lost its "
+            "digits: format the column as text and enter the ISBN again."
+        ) from e
     except InvalidIsbnError as e:
         raise _RowError("not a valid ISBN.") from e
 

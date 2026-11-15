@@ -14,6 +14,7 @@ from bookshelf.db import get_db
 from bookshelf.models.books import (
     Author,
     InvalidIsbnError,
+    IsbnLostDigitsError,
     NewBook,
     add_book,
     list_books,
@@ -315,6 +316,13 @@ def test_invalid_add_without_htmx_shows_the_add_page(client):
         ("0 441 17271 7", "9780441172719"),
         ("080442957X", "9780804429573"),
         ("080442957x", "9780804429573"),
+        # What spreadsheets and copying do to ISBNs.
+        ("9780441172719.0", "9780441172719"),
+        ("9780441172719,00", "9780441172719"),
+        ("'9780441172719", "9780441172719"),
+        ("9780441172719\u200b", "9780441172719"),
+        ("\ufeff978-0-441-17271-9", "9780441172719"),
+        ("\u00a09780441172719\u00a0", "9780441172719"),
     ],
 )
 def test_normalise_isbn(isbn, expected):
@@ -322,11 +330,45 @@ def test_normalise_isbn(isbn, expected):
 
 
 @pytest.mark.parametrize(
-    "isbn", ["", "abc", "9780441172718", "0441172718", "97804411727190", "X441172717"]
+    "isbn",
+    [
+        "",
+        "abc",
+        "9780441172718",
+        "0441172718",
+        "97804411727190",
+        "X441172717",
+        "9780441172718.0",
+        "978044117271.9",
+        "\u200b",
+    ],
 )
 def test_normalise_isbn_rejects_invalid(isbn):
     with pytest.raises(InvalidIsbnError):
         normalise_isbn(isbn)
+
+
+@pytest.mark.parametrize("isbn", ["9.78044E+12", "9,78044117271E+12", "9.78044e12"])
+def test_normalise_isbn_rejects_scientific_notation(isbn):
+    with pytest.raises(IsbnLostDigitsError):
+        normalise_isbn(isbn)
+
+
+def test_add_book_tolerates_a_pasted_isbn(db_app, client):
+    rv = _post(client, title="Dune", isbn="\u200b9780441172719.0")
+
+    assert rv.status_code == 204
+    assert _scalar(db_app, "SELECT ISBN FROM BOOKS") == "9780441172719"
+
+
+def test_add_book_explains_an_isbn_in_scientific_notation(db_app, client):
+    rv = _post(client, title="Dune", isbn="9.78044E+12")
+
+    assert (
+        "This ISBN became a number in a spreadsheet, which lost its digits: enter it again."
+        in rv.get_data(as_text=True)
+    )
+    assert _scalar(db_app, "SELECT COUNT(*) FROM BOOKS") == 0
 
 
 def test_add_book_model_returns_id_listed_in_catalogue(db_app, user):
