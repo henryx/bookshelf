@@ -234,7 +234,7 @@ def test_import_reports_bad_rows_and_imports_the_rest(db_app, user):
     assert report.errors == [
         "Row 2: the title is required.",
         "Row 4: not a valid ISBN.",
-        "Row 5: the year must be a whole number from 1 to 9999.",
+        "Row 5: the year must be a whole number from 1 to 9999, or a date with it.",
         "Row 6: copies must be a whole number from 1 to 999.",
         "Row 7: read must be yes or no.",
         "Row 8: author names cannot be longer than 127 characters.",
@@ -248,6 +248,27 @@ def test_import_reports_values_too_long(db_app, user):
     assert report.errors == [
         "Row 2: the title cannot be longer than 255 characters.",
         "Row 3: tags cannot be longer than 64 characters.",
+    ]
+
+
+@pytest.mark.parametrize(
+    "year",
+    ["1991", "1991-05-12", "12/05/1991", "May 12, 1991", "1991-05-12T10:30:00"],
+)
+def test_import_takes_the_year_of_a_date(db_app, user, year):
+    report = _import(db_app, user, f'title,year\nDune,"{year}"\n')
+
+    assert report.errors == []
+    with db_app.app_context():
+        assert list_collection(get_db(), user.id).books[0].publication_year == 1991
+
+
+@pytest.mark.parametrize("year", ["12/05/91", "1991-2001", "0000-01-01", "soon"])
+def test_import_refuses_a_year_it_cannot_tell(db_app, user, year):
+    report = _import(db_app, user, f'title,year\nDune,"{year}"\n')
+
+    assert report.errors == [
+        "Row 2: the year must be a whole number from 1 to 9999, or a date with it."
     ]
 
 

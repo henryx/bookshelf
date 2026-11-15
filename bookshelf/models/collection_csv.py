@@ -2,6 +2,7 @@
 
 import csv
 import io
+import re
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from uuid import UUID
@@ -70,6 +71,8 @@ _NO = {"no", "n", "false", "0", ""}
 # A spreadsheet runs a cell starting with one of these as a formula: the
 # export puts a ' before it (shown as text), and the import takes it off.
 _FORMULA_STARTS = ("=", "+", "-", "@", "\t", "\r")
+# A year in a date: four digits on their own ("1991-05-12", "12/05/1991").
+_DATE_YEAR = re.compile(r"(?<!\d)\d{4}(?!\d)")
 
 
 class CsvFileError(ValueError):
@@ -212,6 +215,22 @@ def _number(text: str | None, low: int, high: int) -> int | None:
     return int(text)
 
 
+def _year(text: str | None) -> int | None:
+    """
+    The publication year: a whole number, or the year of a date (its only
+    four-digit number); _RowError when there is no single year in it.
+    """
+    if text is None:
+        return None
+    years = [text] if text.isdigit() else _DATE_YEAR.findall(text)
+    year = _number(years[0], 1, 9999) if len(years) == 1 else None
+    if year is None:
+        raise _RowError(
+            "the year must be a whole number from 1 to 9999, or a date with it."
+        )
+    return year
+
+
 def _authors(text: str | None) -> tuple[Author, ...]:
     """
     "Name Surname" authors separated by commas: the last word is the surname
@@ -253,10 +272,7 @@ def _parse_row(row: dict[str, str]) -> _Row:
     if title is None:
         raise _RowError("the title is required.")
     isbn = _isbn(_text(row, "isbn"))
-    year_text = _text(row, "year")
-    year = _number(year_text, 1, 9999)
-    if year_text is not None and year is None:
-        raise _RowError("the year must be a whole number from 1 to 9999.")
+    year = _year(_text(row, "year"))
     copies = _number(_text(row, "copies") or "1", 1, _MAX_COPIES)
     if copies is None:
         raise _RowError(f"copies must be a whole number from 1 to {_MAX_COPIES}.")
