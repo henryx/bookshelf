@@ -188,7 +188,7 @@ class CopiesForm(FlaskForm):
 class EditBookForm(FlaskForm):
     """
     A book's editable fields: authors as rows of name and surname, ISBN
-    (while it has none, or for admins), publisher, year, volume, notes and
+    (while it has none, or for admins), publisher, year, series, volume, plot and
     tags separated by commas. BookForm adds a new book's title and copies.
     """
 
@@ -198,10 +198,11 @@ class EditBookForm(FlaskForm):
     publication_year = IntegerField(
         "Year", validators=[Optional(), NumberRange(min=1, max=9999)]
     )
+    series = _optional_text("Series", _NAME_MAX_LENGTH)
     volume = _optional_text("Volume", 32)
     tags = StringField("Tags")
-    notes = TextAreaField(
-        "Notes", filters=[_strip_or_none], validators=[Optional(), Length(max=4000)]
+    plot = TextAreaField(
+        "Plot", filters=[_strip_or_none], validators=[Optional(), Length(max=4000)]
     )
 
     def add_author_row(self) -> None:
@@ -273,8 +274,9 @@ class BookForm(EditBookForm):
             isbn=self.isbn.data,
             publisher=self.publisher.data,
             publication_year=self.publication_year.data,
+            series=self.series.data,
             volume=self.volume.data,
-            notes=self.notes.data,
+            plot=self.plot.data,
             tags=self.tag_names(),
         )
 

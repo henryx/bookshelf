@@ -125,8 +125,9 @@ def _assert_complete_schema(conn: Connection) -> None:
         "ISBN",
         "PUBLISHER",
         "PUBLICATION_YEAR",
+        "SERIES",
         "VOLUME",
-        "NOTES",
+        "PLOT",
         "CREATED_AT",
     ]
     assert _domain(conn, "BOOKS", "ID") == "UUID"

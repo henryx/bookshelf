@@ -246,8 +246,9 @@ def _edited_fields(
             ),
             ("publisher", book.publisher, form.publisher.data),
             ("year", book.publication_year, form.publication_year.data),
+            ("series", book.series, form.series.data),
             ("volume", book.volume, form.volume.data),
-            ("notes", book.notes, form.notes.data),
+            ("plot", book.plot, form.plot.data),
             ("tags", sorted(book.tags), sorted(unique_tags(form.tag_names()))),
         )
         if old != new
@@ -278,8 +279,9 @@ def book(book_id: UUID) -> BaseResponse | str:
             ],
             "publisher": details.publisher,
             "publication_year": details.publication_year,
+            "series": details.series,
             "volume": details.volume,
-            "notes": details.notes,
+            "plot": details.plot,
             "tags": ", ".join(details.tags),
             "isbn": details.isbn,
         }
@@ -308,8 +310,9 @@ def book(book_id: UUID) -> BaseResponse | str:
             authors=form.author_list(),
             publisher=form.publisher.data,
             publication_year=form.publication_year.data,
+            series=form.series.data,
             volume=form.volume.data,
-            notes=form.notes.data,
+            plot=form.plot.data,
             tags=form.tag_names(),
             isbn=isbn,
             replace_isbn=replace_isbn,

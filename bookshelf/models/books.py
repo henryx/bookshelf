@@ -167,8 +167,9 @@ class NewBook:
     isbn: str | None = None
     publisher: str | None = None
     publication_year: int | None = None
+    series: str | None = None
     volume: str | None = None
-    notes: str | None = None
+    plot: str | None = None
     tags: tuple[str, ...] = ()
 
 
@@ -185,8 +186,9 @@ class BookDetails:
     isbn: str | None = None
     publisher: str | None = None
     publication_year: int | None = None
+    series: str | None = None
     volume: str | None = None
-    notes: str | None = None
+    plot: str | None = None
     tags: tuple[str, ...] = ()
     collections: int = 0
 
@@ -539,15 +541,16 @@ def find_book_details(conn: Connection, book_id: UUID) -> BookDetails | None:
     """Every field of the catalogue book `book_id`; None if unknown."""
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT b.TITLE, b.ISBN, b.PUBLISHER, b.PUBLICATION_YEAR, b.VOLUME, "
-            "b.NOTES, (SELECT COUNT(*) FROM COLLECTION_BOOKS cb WHERE cb.BOOK_ID = b.ID) "
+            "SELECT b.TITLE, b.ISBN, b.PUBLISHER, b.PUBLICATION_YEAR, b.SERIES, "
+            "b.VOLUME, b.PLOT, "
+            "(SELECT COUNT(*) FROM COLLECTION_BOOKS cb WHERE cb.BOOK_ID = b.ID) "
             "FROM BOOKS b WHERE b.ID = ?",
             (book_id.bytes,),
         )
         row = cur.fetchone()
         if row is None:
             return None
-        title, isbn, publisher, year, volume, notes, collections = row
+        title, isbn, publisher, year, series, volume, plot, collections = row
         cur.execute(
             "SELECT a.NAME, a.SURNAME FROM BOOK_AUTHORS ba "
             "JOIN AUTHORS a ON a.ID = ba.AUTHOR_ID "
@@ -567,8 +570,9 @@ def find_book_details(conn: Connection, book_id: UUID) -> BookDetails | None:
         isbn=isbn,
         publisher=publisher,
         publication_year=year,
+        series=series,
         volume=volume,
-        notes=notes,
+        plot=plot,
         tags=tags,
         collections=collections,
     )
@@ -756,15 +760,16 @@ def _insert_book(
     try:
         cur.execute(
             "INSERT INTO BOOKS (ID, TITLE, ISBN, PUBLISHER, PUBLICATION_YEAR, "
-            "VOLUME, NOTES) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "SERIES, VOLUME, PLOT) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 book_id.bytes,
                 book.title.strip(),
                 isbn,
                 book.publisher,
                 book.publication_year,
+                book.series,
                 book.volume,
-                book.notes,
+                book.plot,
             ),
         )
     except DatabaseError as e:
@@ -847,14 +852,15 @@ def update_book(
     authors: tuple[Author, ...],
     publisher: str | None,
     publication_year: int | None,
+    series: str | None,
     volume: str | None,
-    notes: str | None,
+    plot: str | None,
     tags: tuple[str, ...],
     isbn: str | None = None,
     replace_isbn: bool = False,
 ) -> None:
     """
-    Save a book's publisher, year, volume and notes (None empties them) and
+    Save a book's publisher, year, series, volume and plot (None empties them) and
     replace its authors and tags (picked or created as when adding a book),
     in one transaction; the title never changes, and an author no book uses
     any more is deleted. With `isbn`, also give the book that ISBN, stored
@@ -875,9 +881,9 @@ def update_book(
         transaction.cursor() as cur,
     ):
         cur.execute(
-            "UPDATE BOOKS SET PUBLISHER = ?, PUBLICATION_YEAR = ?, VOLUME = ?, "
-            "NOTES = ? WHERE ID = ?",
-            (publisher, publication_year, volume, notes, book_id.bytes),
+            "UPDATE BOOKS SET PUBLISHER = ?, PUBLICATION_YEAR = ?, SERIES = ?, "
+            "VOLUME = ?, PLOT = ? WHERE ID = ?",
+            (publisher, publication_year, series, volume, plot, book_id.bytes),
         )
         if cur.affected_rows == 0:
             raise UnknownBookError(book_id)

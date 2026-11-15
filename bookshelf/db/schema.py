@@ -37,9 +37,10 @@ TABLES: dict[str, str] = {
         )
     """,
     # The shared catalogue: one row per title, however many copies users own.
-    # TITLE and PUBLISHER ignore case (UNICODE_CI) when compared and sorted. ISBN is 13
-    # digits, ISBN-10 converted by the app. VOLUME is free text ("2", "II",
-    # "3/4"). CREATED_AT is the date added.
+    # TITLE, PUBLISHER and SERIES ignore case (UNICODE_CI) when compared and sorted. ISBN
+    # is 13 digits, ISBN-10 converted by the app. SERIES is free text, the series
+    # the book belongs to; VOLUME is free text too ("2", "II", "3/4"), its place
+    # in the series. CREATED_AT is the date added.
     "BOOKS": """
         CREATE TABLE BOOKS (
             ID UUID NOT NULL,
@@ -47,8 +48,9 @@ TABLES: dict[str, str] = {
             ISBN CHAR(13),
             PUBLISHER VARCHAR(255) COLLATE UNICODE_CI,
             PUBLICATION_YEAR SMALLINT,
+            SERIES VARCHAR(255) COLLATE UNICODE_CI,
             VOLUME VARCHAR(32),
-            NOTES VARCHAR(4000),
+            PLOT VARCHAR(4000),
             CREATED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
         )
     """,

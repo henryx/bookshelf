@@ -100,9 +100,10 @@ def test_add_book_saves_it_in_the_catalogue_and_collection(db_app, client, user)
         isbn="0-552-13703-0",
         publisher="Gollancz",
         publication_year="1990",
+        series=" Discworld ",
         volume=" II ",
         tags="fantasy, Humour,  , FANTASY",
-        notes="Signed copy",
+        plot="Signed copy",
         copies="2",
     )
 
@@ -110,7 +111,8 @@ def test_add_book_saves_it_in_the_catalogue_and_collection(db_app, client, user)
     assert rv.headers["HX-Redirect"] == "/"
     row = _rows(
         db_app,
-        "SELECT ID, TITLE, ISBN, PUBLISHER, PUBLICATION_YEAR, VOLUME, NOTES FROM BOOKS",
+        "SELECT ID, TITLE, ISBN, PUBLISHER, PUBLICATION_YEAR, SERIES, VOLUME, PLOT "
+        "FROM BOOKS",
     )
     assert len(row) == 1
     book_id, *details = row[0]
@@ -119,6 +121,7 @@ def test_add_book_saves_it_in_the_catalogue_and_collection(db_app, client, user)
         "9780552137034",
         "Gollancz",
         1990,
+        "Discworld",
         "II",
         "Signed copy",
     ]
@@ -156,9 +159,9 @@ def test_add_book_with_title_only_leaves_the_rest_empty(db_app, client):
 
     row = _rows(
         db_app,
-        "SELECT ISBN, PUBLISHER, PUBLICATION_YEAR, VOLUME, NOTES FROM BOOKS",
+        "SELECT ISBN, PUBLISHER, PUBLICATION_YEAR, SERIES, VOLUME, PLOT FROM BOOKS",
     )
-    assert row == [(None, None, None, None, None)]
+    assert row == [(None, None, None, None, None, None)]
 
 
 def test_add_book_reuses_existing_author_ignoring_case(db_app, client):
@@ -260,7 +263,8 @@ def test_add_book_without_htmx_redirects(client):
         ({"copies": "0"}, "Number must be between 1 and 999."),
         ({"copies": ""}, "This field is required."),
         ({"volume": "x" * 33}, "Field cannot be longer than 32 characters."),
-        ({"notes": "x" * 4001}, "Field cannot be longer than 4000 characters."),
+        ({"series": "x" * 256}, "Field cannot be longer than 255 characters."),
+        ({"plot": "x" * 4001}, "Field cannot be longer than 4000 characters."),
     ],
 )
 def test_add_book_rejects_invalid_input(db_app, client, fields, message):
@@ -625,3 +629,12 @@ def test_publisher_input_asks_for_suggestions(client):
     assert 'hx-get="/publishers/suggestions"' in input_tag[0]
     assert 'hx-swap="innerHTML"' in input_tag[0]
     assert '<datalist id="book-publisher-suggestions">' in html
+
+
+def test_series_and_volume_share_a_row_and_plot_is_labelled(client):
+    html = client.get("/books/new").get_data(as_text=True)
+
+    # One field-row holding the series, then the volume (no other row between).
+    one_row = r'<div class="field-row">(?:(?!field-row).)*name="series"(?:(?!field-row).)*name="volume"'
+    assert re.search(one_row, html, re.DOTALL)
+    assert '<label for="book-plot">Plot</label>' in html

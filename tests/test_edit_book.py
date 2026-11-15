@@ -58,8 +58,9 @@ def _update(
     authors: tuple[Author, ...] = (),
     publisher: str | None = None,
     publication_year: int | None = None,
+    series: str | None = None,
     volume: str | None = None,
-    notes: str | None = None,
+    plot: str | None = None,
     tags: tuple[str, ...] = (),
     isbn: str | None = None,
     replace_isbn: bool = False,
@@ -71,8 +72,9 @@ def _update(
             authors=authors,
             publisher=publisher,
             publication_year=publication_year,
+            series=series,
             volume=volume,
-            notes=notes,
+            plot=plot,
             tags=tags,
             isbn=isbn,
             replace_isbn=replace_isbn,
@@ -81,11 +83,12 @@ def _update(
 
 DUNE = NewBook(
     "Dune",
+    series="Dune Chronicles",
     authors=(Author("Frank", "Herbert"), Author("", "Anonymous")),
     publisher="Ace",
     publication_year=1965,
     volume="1",
-    notes="First of six.",
+    plot="First of six.",
     tags=("sf", "Classic"),
 )
 
@@ -103,8 +106,9 @@ def test_find_book_details_has_every_field(db_app, user):
         isbn=DUNE_ISBN,
         publisher="Ace",
         publication_year=1965,
+        series="Dune Chronicles",
         volume="1",
-        notes="First of six.",
+        plot="First of six.",
         tags=("Classic", "sf"),
         collections=1,
     )
@@ -115,15 +119,15 @@ def test_find_book_details_of_an_unknown_book(db_app):
         assert find_book_details(get_db(), uuid4()) is None
 
 
-def test_update_book_saves_volume_notes_and_tags(db_app, user):
+def test_update_book_saves_volume_plot_and_tags(db_app, user):
     book_id = _book(db_app, user, DUNE)
 
     _update(
-        db_app, book_id, volume="II", notes="Signed.", tags=(" new ", "", "NEW", "x")
+        db_app, book_id, volume="II", plot="Signed.", tags=(" new ", "", "NEW", "x")
     )
 
     details = _details(db_app, book_id)
-    assert (details.volume, details.notes, details.tags) == (
+    assert (details.volume, details.plot, details.tags) == (
         "II",
         "Signed.",
         ("new", "x"),
@@ -137,7 +141,7 @@ def test_update_book_empties_fields(db_app, user):
     _update(db_app, book_id)
 
     details = _details(db_app, book_id)
-    assert (details.volume, details.notes, details.tags) == (None, None, ())
+    assert (details.volume, details.plot, details.tags) == (None, None, ())
     assert (details.authors, details.publisher, details.publication_year) == (
         (),
         None,
@@ -296,8 +300,9 @@ def _form(**fields: str) -> dict[str, str]:
         "authors-1-surname": "Anonymous",
         "publisher": "Ace",
         "publication_year": "1965",
+        "series": "Dune Chronicles",
         "volume": "1",
-        "notes": "First of six.",
+        "plot": "First of six.",
         "tags": "Classic, sf",
         **fields,
     }
@@ -343,14 +348,14 @@ def test_isbn_is_shown_not_editable_once_set(db_app, client, user):
 
 def test_save_redirects_to_the_list_it_came_from(db_app, client, user):
     book_id = _book(db_app, user, DUNE)
-    data = {"volume": "2", "tags": "a, b", "notes": "", "q": "dune", "page": "1"}
+    data = {"volume": "2", "tags": "a, b", "plot": "", "q": "dune", "page": "1"}
 
     rv = client.post(_url(book_id), data=data, headers=HTMX)
 
     assert rv.status_code == 204
     assert rv.headers["HX-Redirect"] == "/?q=dune"
     details = _details(db_app, book_id)
-    assert (details.volume, details.notes, details.tags) == ("2", None, ("a", "b"))
+    assert (details.volume, details.plot, details.tags) == ("2", None, ("a", "b"))
     assert "Book “Dune” saved." in client.get("/").get_data(as_text=True)
 
 
@@ -622,3 +627,32 @@ def test_admin_isbn_is_validated(db_app, admin_client, user):
 
     assert "Not a valid ISBN." in rv.get_data(as_text=True)
     assert _details(db_app, book_id).isbn == DUNE_ISBN
+
+
+def test_update_book_saves_and_empties_the_series(db_app, user):
+    book_id = _book(db_app, user, DUNE)
+
+    _update(db_app, book_id, series="Children of Dune")
+    assert _details(db_app, book_id).series == "Children of Dune"
+
+    _update(db_app, book_id)
+    assert _details(db_app, book_id).series is None
+
+
+def test_edit_form_has_series_beside_volume_and_plot(db_app, client, user):
+    book_id = _book(db_app, user, DUNE)
+
+    html = client.get(_url(book_id), headers=HTMX).get_data(as_text=True)
+
+    one_row = r'<div class="field-row">(?:(?!field-row).)*name="series"[^>]*value="Dune Chronicles"(?:(?!field-row).)*name="volume"'
+    assert re.search(one_row, html, re.DOTALL)
+    assert '<label for="edit-book-plot">Plot</label>' in html
+
+
+def test_series_change_is_logged(db_app, client, user, caplog):
+    book_id = _book(db_app, user, DUNE)
+
+    with caplog.at_level(logging.INFO):
+        client.post(_url(book_id), data=_form(series="Dune Saga"))
+
+    assert f"Book 'Dune' edited by {user.email}: series" in caplog.text

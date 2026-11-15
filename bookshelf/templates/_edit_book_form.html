@@ -45,9 +45,13 @@
     </div>
     <div class="field">{{ field(form.publication_year, min=1, max=9999) }}</div>
   </div>
-  {{ field(form.volume, "E.g. 2, II or 3/4.", maxlength=32) }}
+  {# Series and the book's volume in it side by side, as when adding a book. #}
+  <div class="field-row">
+    <div class="field">{{ field(form.series, maxlength=255, autocomplete="off") }}</div>
+    <div class="field">{{ field(form.volume, "E.g. 2, II or 3/4.", maxlength=32) }}</div>
+  </div>
   {{ field(form.tags, "Separated by commas.", autocomplete="off") }}
-  {{ field(form.notes, rows=3, maxlength=4000) }}
+  {{ field(form.plot, rows=3, maxlength=4000) }}
 
   <button type="submit">Save</button>
   <span id="edit-book-indicator" class="htmx-indicator">Saving…</span>

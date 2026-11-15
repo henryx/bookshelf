@@ -56,9 +56,13 @@
     </div>
     <div class="field">{{ field("publication_year", min=1, max=9999) }}</div>
   </div>
-  {{ field("volume", "E.g. 2, II or 3/4.", maxlength=32) }}
+  {# Series and the book's volume in it side by side; the volume needs only a few characters. #}
+  <div class="field-row">
+    <div class="field">{{ field("series", maxlength=255, autocomplete="off") }}</div>
+    <div class="field">{{ field("volume", "E.g. 2, II or 3/4.", maxlength=32) }}</div>
+  </div>
   {{ field("tags", "Separated by commas.", autocomplete="off") }}
-  {{ field("notes", rows=3, maxlength=4000) }}
+  {{ field("plot", rows=3, maxlength=4000) }}
   {{ field("copies", "Added to your collection with this many copies.", min=1, max=999, required=True) }}
 
   <button type="submit">Add book</button>
