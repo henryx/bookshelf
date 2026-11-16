@@ -46,3 +46,23 @@ def test_invalid_workers_is_rejected(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("APP_WORKERS", "0")
     with pytest.raises(RuntimeError, match="APP_WORKERS"):
         runpy.run_path(str(CONF))
+
+
+def test_log_level_defaults_to_info(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.delenv("APP_LOG_LEVEL", raising=False)
+    conf = runpy.run_path(str(CONF))
+    assert conf["loglevel"] == "info"
+
+
+def test_port_defaults_to_8000(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.delenv("APP_HOST", raising=False)
+    monkeypatch.delenv("APP_PORT", raising=False)
+    conf = runpy.run_path(str(CONF))
+    assert conf["bind"] == "localhost:8000"
+
+
+@pytest.mark.parametrize("value", ["abc", "0", "-1", "65536", ""])
+def test_invalid_port_is_rejected(monkeypatch: pytest.MonkeyPatch, value: str):
+    monkeypatch.setenv("APP_PORT", value)
+    with pytest.raises(RuntimeError, match="APP_PORT"):
+        runpy.run_path(str(CONF))

@@ -4,6 +4,8 @@ __all__ = ["MIN_PASSWORD_LENGTH", "Config"]
 
 # Lowest minimum length APP_MIN_PASSWORD_LENGTH may set, and its default.
 MIN_PASSWORD_LENGTH = 12
+# Highest TCP port number.
+MAX_PORT = 65535
 
 
 class Config:
@@ -75,7 +77,7 @@ class Config:
 
     @property
     def log_level(self) -> str:
-        return os.environ.get("APP_LOG_LEVEL", "debug")
+        return os.environ.get("APP_LOG_LEVEL", "info")
 
     @property
     def host(self) -> str:
@@ -83,7 +85,10 @@ class Config:
 
     @property
     def port(self) -> int:
-        return int(os.environ.get("APP_PORT", default="8000"))
+        port = _positive_int("APP_PORT", 8000)
+        if port > MAX_PORT:
+            raise RuntimeError(f"APP_PORT must be at most {MAX_PORT}, got {port}")
+        return port
 
 
 def _positive_int(name: str, default: int) -> int:

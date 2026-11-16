@@ -71,7 +71,7 @@ All settings come from environment variables:
 | `APP_LOGIN_MAX_IP_FAILURES` | no | `20` | Failed logins from one IP, across all emails, before that IP's logins are refused |
 | `APP_LOGIN_BLOCK_MINUTES` | no | `15` | Window in which failed logins are counted, and so how long logins stay refused |
 | `APP_MIN_PASSWORD_LENGTH` | no | `12` | Characters a new password needs; values below 12 stop the app from starting |
-| `APP_LOG_LEVEL` | no | `debug` | Log level (does not turn on Flask's debug mode) |
+| `APP_LOG_LEVEL` | no | `info` | Log level (does not turn on Flask's debug mode) |
 | `APP_HOST` / `APP_PORT` | no | `localhost` / `8000` | Bind address (Docker image: `0.0.0.0` / `8080`) |
 | `APP_DB_POOL_SIZE` | no | `5` | Idle database connections kept for reuse, per process |
 | `APP_TRUSTED_PROXIES` | no | `0` | Reverse proxies in front of the app; set it (usually `1`) behind a proxy so client IP and HTTPS come from `X-Forwarded-*`. Required behind a proxy: login limits are per IP. Leave `0` when exposed directly, or clients can fake their IP |
