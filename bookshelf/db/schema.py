@@ -234,7 +234,7 @@ INDEXES: dict[str, str] = {
 FUNCTIONS: dict[str, str] = {
     # The book lists' search: the title, an ISBN text or any author's
     # "name surname" contains the text, ignoring case (CONTAINING always does).
-    # ISBNs are searched for two texts: see _isbn_searches in models/books.py.
+    # ISBNs are searched for two texts: see isbn_searches in models/books/isbn.py.
     # CONTAINING '' is true, so an empty search matches every book. NULL
     # (no ISBN, no author) counts as no match. With AUTHOR_FILTER, only that
     # author's books match.
