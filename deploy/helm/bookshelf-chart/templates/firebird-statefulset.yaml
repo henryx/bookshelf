@@ -1,0 +1,78 @@
+{{- if .Values.firebird.enabled }}
+{{- $fb := .Values.firebird }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "bookshelf.firebird.fullname" . }}
+  labels:
+    {{- include "bookshelf.labels" . | nindent 4 }}
+    {{- include "bookshelf.firebird.selectorLabels" . | nindent 4 }}
+spec:
+  serviceName: {{ include "bookshelf.firebird.fullname" . }}
+  # Firebird has no replication: one server, one volume.
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "bookshelf.firebird.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "bookshelf.labels" . | nindent 8 }}
+        {{- include "bookshelf.firebird.selectorLabels" . | nindent 8 }}
+    spec:
+      # Lets the server shut down cleanly and flush the database.
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: firebird
+          image: {{ printf "%s:%s" $fb.image.repository $fb.image.tag }}
+          imagePullPolicy: {{ $fb.image.pullPolicy }}
+          ports:
+            - name: firebird
+              containerPort: 3050
+          # The user and database are created on the first start only.
+          env:
+            - name: FIREBIRD_DATABASE
+              value: bookshelf.fdb
+            - name: FIREBIRD_DATABASE_DEFAULT_CHARSET
+              value: UTF8
+            - name: FIREBIRD_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "bookshelf.secretName" . }}
+                  key: FIREBIRD_ROOT_PASSWORD
+            - name: FIREBIRD_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "bookshelf.secretName" . }}
+                  key: APP_DB_USER
+            - name: FIREBIRD_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "bookshelf.secretName" . }}
+                  key: APP_DB_PASSWORD
+          readinessProbe:
+            tcpSocket:
+              port: firebird
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: firebird
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          resources:
+            {{- toYaml $fb.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/firebird/data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        {{- with $fb.persistence.storageClass }}
+        storageClassName: {{ . }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ $fb.persistence.size }}
+{{- end }}

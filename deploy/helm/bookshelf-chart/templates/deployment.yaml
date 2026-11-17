@@ -1,0 +1,76 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "bookshelf.fullname" . }}
+  labels:
+    {{- include "bookshelf.labels" . | nindent 4 }}
+    {{- include "bookshelf.selectorLabels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "bookshelf.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "bookshelf.labels" . | nindent 8 }}
+        {{- include "bookshelf.selectorLabels" . | nindent 8 }}
+      annotations:
+        # Restart the pods when the settings change.
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- include "bookshelf.podSecurityContext" . | nindent 8 }}
+      containers:
+        - name: bookshelf
+          image: {{ include "bookshelf.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8080
+          {{- include "bookshelf.env" . | nindent 10 }}
+          # No database: a database outage does not restart the pods.
+          livenessProbe:
+            httpGet:
+              path: /sw.js
+              port: http
+            periodSeconds: 20
+            timeoutSeconds: 5
+          # Queries the database (the first-run setup check): no traffic
+          # while it is unreachable. A redirect (to /setup) counts as ready.
+          readinessProbe:
+            httpGet:
+              path: /login
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+          securityContext:
+            {{- include "bookshelf.containerSecurityContext" . | nindent 12 }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            # gunicorn's worker heartbeat files
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Mi
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

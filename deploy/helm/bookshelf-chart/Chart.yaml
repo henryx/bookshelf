@@ -1,0 +1,9 @@
+apiVersion: v2
+name: bookshelf-chart
+description: Bookshelf, a self-hosted book library web app (Flask, HTMX, Firebird)
+type: application
+# Released with the app: both versions match the vX.Y.Z tag (.github/workflows/helm.yml).
+version: 1.0.1
+appVersion: "1.0.1"
+sources:
+  - https://github.com/henryx/bookshelf

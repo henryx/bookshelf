@@ -1,0 +1,22 @@
+{{- if .Values.pruneLoginFailures.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "bookshelf.fullname" . }}-prune-login-failures
+  labels:
+    {{- include "bookshelf.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.pruneLoginFailures.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        metadata:
+          labels:
+            {{- include "bookshelf.labels" . | nindent 12 }}
+        spec:
+          {{- include "bookshelf.cliPodSpec" (dict "root" . "command" "prune-login-failures") | nindent 10 }}
+{{- end }}

@@ -135,6 +135,45 @@ delete their own account, and demoting or deleting the only admin left is refuse
 `create-admin` and `create-user` only accept valid email addresses (no reserved or LAN-style
 domains such as `.local`), the same rule as the login form.
 
+## Kubernetes
+
+A Helm chart is published with each release at `oci://quay.io/enricobianchi/bookshelf-chart` (chart version =
+app version); its source is [deploy/helm/bookshelf-chart](deploy/helm/bookshelf-chart) and its settings are in
+[values.yaml](deploy/helm/bookshelf-chart/values.yaml). It deploys the app (2 replicas), its Service, an optional
+HTTPS Ingress, an hourly CronJob running `prune-login-failures` and, with `firebird.enabled`, a Firebird 3
+StatefulSet with a 5 GiB volume. A hook Job runs `init-db` after install and before each upgrade, so a release's
+schema additions are created before its pods serve; if it fails, the upgrade fails and the old pods keep serving.
+
+With Firebird in the cluster:
+
+```sh
+helm install bookshelf oci://quay.io/enricobianchi/bookshelf-chart --version 1.0.1 \
+  -n bookshelf --create-namespace \
+  --set firebird.enabled=true \
+  --set ingress.enabled=true,ingress.host=books.example.com \
+  --set secretKey=... --set database.password=... --set firebird.rootPassword=...
+```
+
+With an existing Firebird server, set `database.dsn` (e.g. `db.example.com:/var/lib/firebird/data/bookshelf.fdb`)
+instead of `firebird.*`. `helm upgrade bookshelf oci://quay.io/enricobianchi/bookshelf-chart --version <new>
+--reuse-values` moves to a new release; `helm show values oci://quay.io/enricobianchi/bookshelf-chart` lists
+every setting. From a checkout, use `deploy/helm/bookshelf-chart` in place of the `oci://` reference. Rather than passing secrets on the command line, a values file kept out of git or an
+existing Secret (`existingSecret`, with the keys `APP_SECRET_KEY`, `APP_DB_USER`, `APP_DB_PASSWORD`, and
+`FIREBIRD_ROOT_PASSWORD` with `firebird.enabled`) works too.
+
+The setup wizard is open to whoever reaches it first, so create the first admin before the Ingress is reachable
+by anyone else (the chart's install notes show the command):
+
+```sh
+kubectl -n bookshelf exec -it deploy/bookshelf -- /app/venv/bin/flask --app bookshelf create-admin admin@example.com
+```
+
+Liveness is checked on `/sw.js` (no database), so a database outage does not restart the pods. Readiness is
+checked on `/login` (it queries the database), so pods get no traffic while the database is unreachable.
+`APP_TRUSTED_PROXIES` is `1` (`config` in the values): the ingress controller must set `X-Forwarded-For` and
+`X-Forwarded-Proto`, as most do. Firebird has no replication, so the in-cluster database is a single pod: back
+up its volume.
+
 ## Tests and checks
 
 ```sh

@@ -1,0 +1,91 @@
+image:
+  repository: quay.io/enricobianchi/bookshelf
+  # Defaults to the chart's appVersion.
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+replicaCount: 2
+
+# Non-secret settings, as environment variables (see README.md,
+# "Configuration"). APP_DB_DSN is set from `database` below.
+config:
+  APP_LOG_LEVEL: info
+  # Behind the ingress controller: client IP and HTTPS come from
+  # X-Forwarded-*. Set "0" if the Service is exposed directly.
+  APP_TRUSTED_PROXIES: "1"
+  # The container sees the node's CPUs, not its limit: set workers explicitly.
+  APP_WORKERS: "2"
+
+# The app's secrets. Either name an existing Secret with the keys
+# APP_SECRET_KEY, APP_DB_USER, APP_DB_PASSWORD (and FIREBIRD_ROOT_PASSWORD
+# with firebird.enabled), or set the values below and the chart creates it.
+existingSecret: ""
+# Signs session and login cookies, e.g.:
+# python3 -c 'import secrets; print(secrets.token_urlsafe(48))'
+secretKey: ""
+
+database:
+  # Firebird user: allowed to create the tables (e.g. the database owner).
+  # With firebird.enabled, Firebird creates it on its first start.
+  user: bookshelf
+  password: ""
+  # An existing Firebird server and database; ignored with firebird.enabled.
+  dsn: ""  # e.g. firebird.example.com:/var/lib/firebird/data/bookshelf.fdb
+
+service:
+  type: ClusterIP
+  port: 80
+
+# HTTPS is required: session cookies are Secure.
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  host: bookshelf.example.com
+  # TLS certificate Secret for the host (e.g. created by cert-manager).
+  tlsSecretName: bookshelf-tls
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    memory: 512Mi
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# Runs init-db (creates missing tables, indexes and functions) after
+# install and before each upgrade, so a release's schema additions are in
+# place before its pods serve.
+initDb:
+  enabled: true
+
+# Deletes failed logins older than APP_LOGIN_BLOCK_MINUTES.
+pruneLoginFailures:
+  enabled: true
+  schedule: "17 * * * *"
+
+# Firebird 3 in the cluster: one pod with its own volume (Firebird has no
+# replication: back the volume up).
+firebird:
+  enabled: false
+  image:
+    repository: firebirdsql/firebird
+    tag: "3.0.14"
+    pullPolicy: IfNotPresent
+  # SYSDBA password (the app does not use it).
+  rootPassword: ""
+  persistence:
+    size: 5Gi
+    # Empty: the cluster's default storage class.
+    storageClass: ""
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 1Gi

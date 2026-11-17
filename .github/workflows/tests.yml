@@ -64,3 +64,16 @@ jobs:
     secrets:
       QUAY_USERNAME: ${{ secrets.QUAY_USERNAME }}
       QUAY_PASSWORD: ${{ secrets.QUAY_PASSWORD }}
+
+  # The Helm chart, linted on every run; pushed to
+  # oci://quay.io/enricobianchi/bookshelf-chart for version tags, once their
+  # image is published.
+  chart:
+    name: chart
+    needs: image
+    permissions:
+      contents: read
+    uses: ./.github/workflows/helm.yml
+    secrets:
+      QUAY_USERNAME: ${{ secrets.QUAY_USERNAME }}
+      QUAY_PASSWORD: ${{ secrets.QUAY_PASSWORD }}

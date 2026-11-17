@@ -1,0 +1,22 @@
+Bookshelf {{ .Chart.AppVersion }} is installed as {{ include "bookshelf.fullname" . }} in {{ .Release.Namespace }}.
+
+The setup wizard (/setup) is open to whoever reaches it first: create the
+first admin now, before anyone else can reach the app:
+
+  kubectl -n {{ .Release.Namespace }} exec -it deploy/{{ include "bookshelf.fullname" . }} -- \
+    /app/venv/bin/flask --app bookshelf create-admin admin@example.com
+{{- if .Values.ingress.enabled }}
+
+Then open https://{{ .Values.ingress.host }}/
+{{- else }}
+
+No Ingress is enabled (ingress.enabled). To try it locally:
+
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "bookshelf.fullname" . }} 8080:{{ .Values.service.port }}
+
+and open http://localhost:8080/
+{{- end }}
+{{- if .Values.firebird.enabled }}
+
+The database runs in {{ include "bookshelf.firebird.fullname" . }}-0 with no replication: back up its volume.
+{{- end }}
