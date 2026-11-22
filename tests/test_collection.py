@@ -8,8 +8,10 @@ import pytest
 from flask import Flask
 from flask.testing import FlaskClient
 
+from bookshelf import create_app
 from bookshelf.db import get_db
 from bookshelf.models.books import (
+    SEARCH_MAX_LENGTH,
     Author,
     Book,
     NewBook,
@@ -138,6 +140,15 @@ def test_list_collection_out_of_range_gives_the_last_page(db_app, user, other):
         3,
     )
     assert (empty.books, empty.page, empty.total) == ([], 1, 0)
+
+
+def test_list_collection_with_too_long_a_search_is_empty(db_app, user):
+    _book(db_app, user, "Dune")
+
+    with db_app.app_context():
+        page = list_collection(get_db(), user.id, "d" * (SEARCH_MAX_LENGTH + 1))
+
+    assert (page.books, page.page, page.total) == ([], 1, 0)
 
 
 def test_add_to_collection(db_app, user, other):
@@ -579,6 +590,14 @@ def test_mark_read_a_book_not_in_the_collection_says_so(db_app, client, user, ot
 
 def test_mark_read_an_unknown_book_is_not_found(client):
     assert client.post(f"/collection/books/{uuid4()}/read").status_code == 404
+
+
+def test_mark_read_requires_csrf_token(db_app, user):
+    client = create_app({"TESTING": True}).test_client()
+
+    rv = client.post(f"/collection/books/{uuid4()}/read", data={"read": "y"})
+
+    assert rv.status_code == 400
 
 
 def test_top_bar_leads_to_the_collection_and_the_catalogue(client):

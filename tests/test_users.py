@@ -20,6 +20,7 @@ from bookshelf.models.users import (
     create_user,
     delete_user,
     find_by_email,
+    find_by_session_id,
     list_users,
     set_locked,
     set_password,
@@ -489,3 +490,11 @@ def test_update_account_rejects_short_password_and_changes_nothing(
         unchanged = find_by_email(get_db(), user.email)
     assert unchanged is not None
     assert unchanged.name is None
+
+
+@pytest.mark.parametrize(
+    "session_id", ["", "not-a-uuid", "not-a-uuid:0123456789abcdef"]
+)
+def test_malformed_session_id_finds_nobody(db_app: Flask, user: User, session_id: str):
+    with db_app.app_context():
+        assert find_by_session_id(get_db(), session_id) is None

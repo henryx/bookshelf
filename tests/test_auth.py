@@ -68,6 +68,17 @@ def test_login_success_sets_persistent_cookie(
     assert db_client.get("/").status_code == 200
 
 
+def test_login_page_when_logged_in_goes_to_the_collection(
+    db_client: FlaskClient, user: User, password: str
+):
+    _login(db_client, user.email, password)
+
+    rv = db_client.get("/login")
+
+    assert rv.status_code == 302
+    assert rv.headers["Location"] == "/"
+
+
 def test_login_failure_shows_error(db_client: FlaskClient, user: User, password: str):
     rv = _login(db_client, user.email, "wrong")
 

@@ -1,10 +1,13 @@
+import logging
+from typing import cast
 from uuid import uuid4
 
-from firebird.driver import Connection, connect
+import pytest
+from firebird.driver import Connection, DatabaseError, connect
 from flask import Flask
 
 from bookshelf import create_app
-from bookshelf.db import close_pool, get_db
+from bookshelf.db import ConnectionPool, close_pool, get_db
 
 
 def _attachment_id(conn: Connection) -> int:
@@ -86,3 +89,50 @@ def test_idle_connections_are_capped_at_pool_size():
 
     assert reused in {outer, inner}
     assert fresh not in {outer, inner}
+
+
+class _BrokenConnection:
+    """A connection whose transaction cannot be rolled back."""
+
+    def __init__(self, *, close_fails: bool = False) -> None:
+        self.close_fails = close_fails
+        self.closed = False
+
+    def is_closed(self) -> bool:
+        return self.closed
+
+    def is_active(self) -> bool:
+        return True
+
+    def rollback(self) -> None:
+        raise DatabaseError("rollback failed")
+
+    def close(self) -> None:
+        if self.close_fails:
+            raise DatabaseError("close failed")
+        self.closed = True
+
+
+def test_connection_that_fails_rollback_is_closed_not_reused():
+    broken = _BrokenConnection()
+    fresh = cast(Connection, object())
+    pool = ConnectionPool(lambda: fresh, size=1)
+
+    pool.release(cast(Connection, broken))
+
+    assert broken.closed
+    assert pool.acquire() is fresh
+
+
+def test_error_closing_a_discarded_connection_is_logged(
+    caplog: pytest.LogCaptureFixture,
+):
+    pool = ConnectionPool(lambda: cast(Connection, object()), size=1)
+
+    with caplog.at_level(logging.WARNING, logger="bookshelf.db"):
+        pool.release(cast(Connection, _BrokenConnection(close_fails=True)))
+
+    assert caplog.messages == [
+        "Discarding connection that failed rollback",
+        "Error closing database connection",
+    ]

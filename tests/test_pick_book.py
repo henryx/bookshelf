@@ -116,6 +116,12 @@ def test_no_isbn_suggestions_for_other_text(client, dune, q):
     assert _options(_suggest(client, "isbn", q).get_data(as_text=True)) == []
 
 
+def test_no_isbn_suggestions_for_text_too_long_for_an_isbn(client, dune):
+    q = "978-0-441-17271-9" + "-" * 20
+
+    assert _options(_suggest(client, "isbn", q).get_data(as_text=True)) == []
+
+
 def test_book_suggestions_reject_unknown_field(client):
     assert _suggest(client, "publisher", "d").status_code == 400
 

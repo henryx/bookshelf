@@ -530,6 +530,23 @@ def test_remove_author_row_without_javascript(db_app, client):
     assert _scalar(db_app, "SELECT COUNT(*) FROM BOOKS") == 0
 
 
+def test_remove_the_only_author_row_leaves_an_empty_one(db_app, client):
+    rv = client.post(
+        "/books/new",
+        data={
+            "title": "Dune",
+            "copies": "1",
+            "remove_author": "0",
+            **_authors(("Frank", "Herbert")),
+        },
+    )
+    html = rv.get_data(as_text=True)
+
+    assert 'value="Herbert"' not in html
+    assert len(re.findall(r'name="authors-\d+-surname"', html)) == 1
+    assert _scalar(db_app, "SELECT COUNT(*) FROM BOOKS") == 0
+
+
 # Author suggestions
 
 

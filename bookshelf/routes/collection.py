@@ -149,10 +149,9 @@ def _collection_response(message: str, *, error: bool = False) -> BaseResponse |
 def read(book_id: UUID) -> BaseResponse | str:
     """Mark a book in the user's collection as read, or not (the checkbox unticked)."""
     book = _book_or_404(book_id)
-    form = ReadForm()
-    if not form.validate_on_submit():
-        abort(400, description="The request could not be read. Please try again.")
-    is_read = bool(form.read.data)
+    # The app-wide CSRFProtect has already checked the token; the checkbox
+    # itself cannot be invalid.
+    is_read = bool(ReadForm().read.data)
     if not set_read(get_db(), current_user.id, book.id, read=is_read):
         return _collection_response(
             f"“{book.title}” is not in your collection.", error=True

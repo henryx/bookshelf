@@ -352,6 +352,8 @@ def test_import_strips_the_formula_guard(db_app, user):
         ("", "The file is empty."),
         ("authors\nHerbert\n", "The file has no title column."),
         ("title,title\nDune,Dune\n", "Column title is repeated."),
+        # A field longer than the csv module's limit (131072 characters).
+        (f"title\n{'x' * 200_000}\n", "The file is not valid CSV: "),
     ],
 )
 def test_import_refuses_a_file_it_cannot_read(db_app, user, text, message):
