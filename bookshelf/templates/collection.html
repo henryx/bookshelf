@@ -25,7 +25,8 @@
   <a class="fab" href="{{ url_for('main.new_book', list='collection') }}" data-dialog-open="add-book-dialog"
      aria-label="Add book" title="Add book"><span aria-hidden="true">+</span></a>
 
-  <dialog id="add-book-dialog" aria-labelledby="add-book-title">
+  {# Closing it empties it again (data-dialog-reset, app.js), e.g. after a book was picked. #}
+  <dialog id="add-book-dialog" aria-labelledby="add-book-title" data-dialog-reset>
     <div class="section-header">
       <h2 id="add-book-title">Add book</h2>
       <button type="button" class="secondary" data-dialog-close aria-label="Close">✕</button>

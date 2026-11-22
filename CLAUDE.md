@@ -127,7 +127,7 @@ Avoid generic AI aesthetics. Make creative, distinctive choices.
 - Use template inheritance (`{% extends %}`, `{% block %}`)
 - No inline `<script>`, `<style>`, `style=""` or `on*=` handlers: the Content-Security-Policy (`SECURITY_HEADERS` in `bookshelf/__init__.py`) blocks them. Put JS in `app.js` and CSS in `style.css`; `tests/e2e/test_csp.py` fails on any violation
 - Create partial templates for HTMX responses (`_partial.html` naming)
-- Modal dialogs use `<dialog>` with `app.js`: `data-dialog-open="<id>"` opens one, `data-dialog-close` closes it, and content swapped by htmx into a closed dialog opens it. Keep a no-JS fallback (a page or a dialog rendered `open`)
+- Modal dialogs use `<dialog>` with `app.js`: `data-dialog-open="<id>"` opens one, `data-dialog-close` closes it, content swapped by htmx into a closed dialog opens it, and `data-dialog-reset` on a dialog brings back the content it first opened with when the user closes it. Keep a no-JS fallback (a page or a dialog rendered `open`)
 - When two forms can share a page (e.g. two dialogs), give their element ids a prefix (`_new_password_fields.html` takes `id_prefix`)
 - Always include `hx-indicator` for loading states
 - Handle `HX-Request` header for partial vs full page responses

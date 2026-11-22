@@ -85,18 +85,74 @@ def test_author_suggestions_keep_the_error(reader_page: Page, herbert_book):
 
 
 def test_late_suggestions_do_not_reopen_a_closed_dialog(
+    herbert_book, reader_page: Page
+):
+    """The edit-book dialog keeps its content when closed: suggestions still land."""
+    held: list[Route] = []
+
+    def hold(route: Route) -> None:
+        held.append(route)
+
+    reader_page.route("**/publishers/suggestions*", hold)
+    # herbert_book first: the book exists before the page loads.
+    reader_page.get_by_role("link", name="Dune").click()
+    dialog = reader_page.locator("#book-dialog")
+    expect(dialog).to_be_visible()
+    # The dialog opens on the swap; htmx sets up the new fields as it settles.
+    reader_page.wait_for_function(
+        "() => !document.querySelector('.htmx-swapping, .htmx-settling')"
+    )
+    with reader_page.expect_request("**/publishers/suggestions*"):
+        dialog.get_by_label("Publisher").fill("Pen")
+
+    # Closed while the suggestions are on their way.
+    reader_page.keyboard.press("Escape")
+    expect(dialog).to_be_hidden()
+    held[0].continue_()
+
+    expect(
+        reader_page.locator("#edit-book-publisher-suggestions option")
+    ).to_have_count(1)
+    expect(dialog).to_be_hidden()
+
+
+def test_closing_the_add_book_dialog_cancels_its_pending_suggestions(
     reader_page: Page, herbert_book
 ):
     _open_add_book(reader_page)
-    dialog = reader_page.locator("#add-book-dialog")
+    suggestions: list[str] = []
+    reader_page.on(
+        "request",
+        lambda request: (
+            suggestions.append(request.url) if "/suggestions" in request.url else None
+        ),
+    )
 
-    with reader_page.expect_response("**/books/suggestions*"):
-        reader_page.get_by_role("combobox", name="Title").fill("Du")
-        reader_page.keyboard.press("Escape")
-        expect(dialog).to_be_hidden()
+    reader_page.get_by_role("combobox", name="Title").fill("Du")
+    reader_page.keyboard.press("Escape")
+    # Longer than the suggestions' 200ms delay.
+    reader_page.wait_for_timeout(500)
 
-    expect(reader_page.locator("#book-title-suggestions option")).to_have_count(1)
-    expect(dialog).to_be_hidden()
+    assert suggestions == []
+    expect(reader_page.locator("#add-book-dialog")).to_be_hidden()
+
+
+def test_dialog_closed_by_an_error_keeps_what_was_typed(reader_page: Page):
+    _show_unreachable_error(reader_page)
+
+    _open_add_book(reader_page)
+
+    expect(reader_page.get_by_role("combobox", name="Title")).to_have_value("Dune")
+
+
+def test_closing_the_add_book_dialog_empties_it(reader_page: Page):
+    _open_add_book(reader_page)
+    reader_page.get_by_role("combobox", name="Title").fill("Dune")
+    reader_page.locator("#add-book-dialog").get_by_role("button", name="Close").click()
+
+    _open_add_book(reader_page)
+
+    expect(reader_page.get_by_role("combobox", name="Title")).to_have_value("")
 
 
 def test_add_button_opens_dialog_without_leaving_the_page(reader_page: Page):

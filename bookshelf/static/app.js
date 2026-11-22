@@ -20,6 +20,36 @@
     }
   });
 
+  // A <dialog data-dialog-reset> goes back to the content it was first
+  // opened with when the user closes it (its close button or Escape), so it
+  // opens empty again: e.g. the add-book form after a book was picked into
+  // it. Closed by an error (closeDialogs), it keeps its content, to try
+  // again. Saved on first opening, not on page load: by then a saved
+  // offline page has disabled its forms.
+  var pristine = new Map();
+
+  function saveDialog(dialog) {
+    if (dialog.hasAttribute("data-dialog-reset") && !pristine.has(dialog)) {
+      pristine.set(dialog, dialog.innerHTML);
+    }
+  }
+
+  function resetDialog(dialog) {
+    if (!pristine.has(dialog)) {
+      return;
+    }
+    dialog.innerHTML = pristine.get(dialog);
+    // The copy has hx-* attributes (the form, suggestions): let htmx see them.
+    htmx.process(dialog);
+  }
+
+  // Escape closes a modal dialog after a "cancel" event, which does not bubble.
+  document.addEventListener("cancel", function (event) {
+    if (event.target instanceof HTMLDialogElement) {
+      resetDialog(event.target);
+    }
+  }, true);
+
   // Dialogs: [data-dialog-open="<id>"] opens that <dialog> as a modal (a
   // link opener is not followed: its href is the no-JavaScript fallback);
   // [data-dialog-close] closes the dialog it is in. Escape also closes it.
@@ -30,6 +60,7 @@
       if (dialog) {
         event.preventDefault();
         if (!dialog.open) {
+          saveDialog(dialog);
           dialog.showModal();
         }
       }
@@ -40,6 +71,7 @@
       var parent = closer.closest("dialog");
       if (parent) {
         parent.close();
+        resetDialog(parent);
       }
     }
   });

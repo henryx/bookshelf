@@ -106,3 +106,25 @@ def test_typing_a_whole_title_does_not_pick_it(reader_page: Page, dune):
     expect(dialog.locator("#book-title-suggestions option")).to_have_count(1)
     expect(title).to_be_editable()
     expect(dialog.get_by_role("button", name="Add book")).to_be_visible()
+
+
+@pytest.mark.parametrize("close", ["button", "escape"])
+def test_closing_the_dialog_empties_a_picked_book(reader_page: Page, dune, close):
+    dialog = _open_add_book(reader_page)
+    _pick(dialog.get_by_role("combobox", name="Title"), "du", "Dune")
+    expect(dialog.get_by_role("button", name="Add to my collection")).to_be_visible()
+
+    if close == "button":
+        dialog.get_by_role("button", name="Close").click()
+    else:
+        reader_page.keyboard.press("Escape")
+    expect(dialog).to_be_hidden()
+    dialog = _open_add_book(reader_page)
+
+    title = dialog.get_by_role("combobox", name="Title")
+    expect(title).to_have_value("")
+    expect(title).to_be_editable()
+    expect(dialog.get_by_role("button", name="Add book")).to_be_visible()
+    # Picking still works in the emptied form.
+    _pick(dialog.get_by_role("combobox", name="ISBN"), "978044", DUNE_ISBN)
+    expect(dialog.get_by_role("button", name="Add to my collection")).to_be_visible()
