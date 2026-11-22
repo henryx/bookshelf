@@ -179,6 +179,7 @@ up its volume.
 ```sh
 uv run tox -e py3                     # tests (starts Firebird via testcontainers: Docker must be running)
 uv run tox -e e2e                     # browser tests of app.js (Playwright; installs Chromium, Docker too)
+uv run tox -e e2e-firefox             # the same in Firefox
 uv run tox -e lint                    # ruff check
 uv run tox -e format                  # ruff format (use `-- --check .` to only check)
 uv run tox -e type                    # ty
@@ -302,8 +303,8 @@ would add a Java runtime to the deployment.
 
 ## CI and releases
 
-GitHub Actions (`tests.yml`) run lint, format check, type check, audit, tests and browser tests on
-every push to `main`, on version tags and on pull requests. Only once all of them pass is the image
+GitHub Actions (`tests.yml`) run lint, format check, type check, audit, tests and browser tests (in
+Chromium and in Firefox) on every push to `main`, on version tags and on pull requests. Only once all of them pass is the image
 built (`docker.yml`, called by `tests.yml`): pushes to `main` publish `quay.io/enricobianchi/bookshelf:latest`,
 version tags their version tags, and pull requests just build it. A commit or tag whose checks fail
 publishes no image. Pushing to quay.io needs the repository secrets `QUAY_USERNAME` and `QUAY_PASSWORD`

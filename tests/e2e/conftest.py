@@ -1,6 +1,7 @@
 """
 Browser tests of app.js: the app is served on a free local port by a
-werkzeug server in a thread, and driven with Playwright's Chromium.
+werkzeug server in a thread, and driven with Playwright: Chromium (tox -e e2e) or
+Firefox (tox -e e2e-firefox).
 """
 
 from collections.abc import Iterator

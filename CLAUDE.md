@@ -19,6 +19,7 @@ Bookshelf library webapp is a webapp to manage a book library built with Flask u
 - `uv run dotenv -f dev.env run flask --app bookshelf <command>`: Run a CLI command (`init-db`, `create-admin`, `list-users`, …)
 - `uv run tox -e py3`: Run the test suite (Docker must be running: tests start Firebird via testcontainers)
 - `uv run tox -e e2e`: Run the browser tests of `app.js` (Playwright with Chromium, installed by the env; Docker must be running). Passing posargs replaces the default path: `uv run tox -e e2e -- tests/e2e -k banner`
+- `uv run tox -e e2e-firefox`: The same browser tests in Firefox (the offline tests skip it: `skip_browser("firefox")`); run both for browser behaviour (e.g. events, `<dialog>`, suggestions)
 - `uv run tox -e lint`: Run linter
 - `uv run tox -e format`: Run formatter (`-- --check .` to only check, as CI does)
 - `uv run tox -e type`: Run type check

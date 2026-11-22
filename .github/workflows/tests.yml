@@ -27,9 +27,11 @@ jobs:
           # check only: fail on unformatted files instead of rewriting them
           - env: format
             args: -- --check .
-          # browser tests: Chromium also needs its system libraries on the runner
+          # browser tests: each browser also needs its system libraries on the runner
           - env: e2e
             playwright_install_args: --with-deps chromium
+          - env: e2e-firefox
+            playwright_install_args: --with-deps firefox
     steps:
       - name: Check out
         uses: actions/checkout@v7
@@ -50,7 +52,7 @@ jobs:
       - name: Run tox -e ${{ matrix.env }}
         run: uv run tox -e ${{ matrix.env }} ${{ matrix.args }}
         env:
-          PLAYWRIGHT_INSTALL_ARGS: ${{ matrix.playwright_install_args || 'chromium' }}
+          PLAYWRIGHT_INSTALL_ARGS: ${{ matrix.playwright_install_args || '' }}
 
   # The Docker image, built only once every check above has passed; pushed to
   # quay.io/enricobianchi/bookshelf for main and version tags (pull requests
