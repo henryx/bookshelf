@@ -4,7 +4,7 @@ from flask_login import login_user
 from werkzeug.wrappers import Response as BaseResponse
 
 from bookshelf.db import get_db
-from bookshelf.db.schema import init_db, table_exists
+from bookshelf.db.schema import init_db, schema_behind, table_exists
 from bookshelf.models.users import (
     Role,
     UserExistsError,
@@ -20,6 +20,8 @@ setup_route = Blueprint("setup", __name__)
 
 # Set once this process has seen an admin; setup never needs to run again.
 _DONE_KEY = "bookshelf.setup_done"
+# Set once this process has seen the schema up to date.
+_SCHEMA_CURRENT_KEY = "bookshelf.schema_current"
 
 
 def setup_needed(conn: Connection) -> bool:
@@ -37,6 +39,25 @@ def setup_done() -> bool:
     return True
 
 
+def _serves_without_database() -> bool:
+    """Static files, the service worker and its offline page."""
+    return request.endpoint == "static" or request.blueprint == "pwa"
+
+
+@setup_route.before_app_request
+def require_current_schema() -> None:
+    """
+    Answer 503 while the database schema is older than this release's, until
+    init-db upgrades it. Checked until this process has seen it up to date.
+    """
+    if current_app.extensions.get(_SCHEMA_CURRENT_KEY) or _serves_without_database():
+        return
+    if schema_behind(get_db()):
+        current_app.logger.error("Database schema is behind the code: run init-db")
+        abort(503, description="The database needs upgrading: run init-db.")
+    current_app.extensions[_SCHEMA_CURRENT_KEY] = True
+
+
 @setup_route.before_app_request
 def require_setup() -> BaseResponse | None:
     """
@@ -44,7 +65,7 @@ def require_setup() -> BaseResponse | None:
     hide the wizard afterwards. Static files, the service worker and its
     offline page are served either way.
     """
-    if request.endpoint == "static" or request.blueprint == "pwa":
+    if _serves_without_database():
         return None
     done = setup_done()
     if request.endpoint == "setup.wizard":

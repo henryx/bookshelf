@@ -1,6 +1,19 @@
-from firebird.driver import Connection
+import logging
+from collections.abc import Callable
+from dataclasses import dataclass
 
-__all__ = ["init_db", "table_exists"]
+from firebird.driver import Connection, DefaultAction
+
+__all__ = [
+    "UPGRADES",
+    "SchemaTooNewError",
+    "UpgradeStep",
+    "init_db",
+    "schema_behind",
+    "table_exists",
+]
+
+logger = logging.getLogger(__name__)
 
 # Frozen since 1.0.0: never edit a released definition in place. New ones are
 # created by init_db; changes to released ones need their own upgrade steps.
@@ -88,6 +101,17 @@ TABLES: dict[str, str] = {
             BOOK_ID UUID NOT NULL,
             COPIES SMALLINT DEFAULT 1 NOT NULL,
             IS_READ BOOLEAN DEFAULT FALSE NOT NULL
+        )
+    """,
+    # The app's own settings, by name, each value as text. VALUE is a reserved
+    # word: always write it quoted. init_db keeps SCHEMA_VERSION (the last
+    # upgrade step applied), SCHEMA_UPGRADE_STEP (the step in progress; only
+    # while one runs, or was left halfway) and SCHEMA_UPGRADE_LOCK (locked
+    # while init_db runs).
+    "SETTINGS": """
+        CREATE TABLE SETTINGS (
+            NAME VARCHAR(64) NOT NULL,
+            "VALUE" VARCHAR(255) NOT NULL
         )
     """,
 }
@@ -203,6 +227,7 @@ CONSTRAINTS: dict[str, str] = {
         "ALTER TABLE COLLECTION_BOOKS ADD CONSTRAINT FK_COLLECTION_BOOKS_BOOK "
         "FOREIGN KEY (BOOK_ID) REFERENCES BOOKS (ID)"
     ),
+    "PK_SETTINGS": "ALTER TABLE SETTINGS ADD CONSTRAINT PK_SETTINGS PRIMARY KEY (NAME)",
 }
 
 # Created after TABLES and CONSTRAINTS.
@@ -278,11 +303,72 @@ def table_exists(conn: Connection, name: str) -> bool:
         return cur.fetchone() is not None
 
 
+@dataclass(frozen=True)
+class UpgradeStep:
+    """
+    A change to released schema objects. `upgrade` applies it; `rollback`
+    undoes it, from wherever a failed `upgrade` stopped. Both check each
+    change before making it, so either can run again after failing halfway.
+    Both commit their own work; what `upgrade` leaves uncommitted is
+    committed with its version.
+    """
+
+    upgrade: Callable[[Connection], None]
+    rollback: Callable[[Connection], None]
+
+
+# Step n takes the schema from version n - 1 to n; version 0 is the frozen
+# 1.0.0 schema. Append only: never change or remove a released step.
+UPGRADES: list[UpgradeStep] = []
+
+
+class SchemaTooNewError(RuntimeError):
+    """The database has steps this release does not know: it is newer."""
+
+    def __init__(self, version: int, known: int) -> None:
+        super().__init__(
+            f"The database schema is at version {version}, but this release knows up "
+            f"to {known}: run init-db from a release at least as new"
+        )
+
+
 def init_db(conn: Connection) -> None:
     """
-    Create missing domains, tables, constraints and indexes, and create or
-    replace the functions. Safe to run more than once.
+    Create missing domains, tables, constraints and indexes, apply pending
+    upgrade steps, and create or replace the functions. Safe to run more
+    than once; a second run waits for one running meanwhile.
+
+    A step that fails is rolled back and its error raised; one left halfway
+    (by a crash, or a failed rollback) is rolled back, then applied again.
     """
+    _create_missing(conn)
+    _add_settings(conn)
+    with conn.transaction_manager(default_action=DefaultAction.ROLLBACK) as lock:
+        try:
+            with lock.cursor() as cur:
+                # Written nowhere else: holding it keeps other runs waiting
+                # until this one ends.
+                cur.execute(
+                    'UPDATE SETTINGS SET "VALUE" = "VALUE" '
+                    "WHERE NAME = 'SCHEMA_UPGRADE_LOCK'"
+                )
+            _upgrade(conn)
+            _create_functions(conn)
+        finally:
+            lock.rollback()
+
+
+def schema_behind(conn: Connection) -> bool:
+    """
+    True when the database has a schema, but older than this release's: it
+    needs init-db. No schema at all is not behind: setup creates it.
+    """
+    if not table_exists(conn, "USERS"):
+        return False
+    return _version(conn) < len(UPGRADES)
+
+
+def _create_missing(conn: Connection) -> None:
     with conn.cursor() as cur:
         for name, ddl in DOMAINS.items():
             cur.execute("SELECT 1 FROM RDB$FIELDS WHERE RDB$FIELD_NAME = ?", (name,))
@@ -302,6 +388,97 @@ def init_db(conn: Connection) -> None:
             cur.execute("SELECT 1 FROM RDB$INDICES WHERE RDB$INDEX_NAME = ?", (name,))
             if cur.fetchone() is None:
                 cur.execute(ddl)
+    conn.commit()
+
+
+def _add_settings(conn: Connection) -> None:
+    """
+    Add the settings init_db needs, unless already there: SCHEMA_VERSION
+    starts at 0, the 1.0.0 schema.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            "MERGE INTO SETTINGS s USING RDB$DATABASE ON s.NAME = 'SCHEMA_VERSION' "
+            "WHEN NOT MATCHED THEN INSERT (NAME, \"VALUE\") VALUES ('SCHEMA_VERSION', '0')"
+        )
+        cur.execute(
+            "MERGE INTO SETTINGS s USING RDB$DATABASE ON s.NAME = 'SCHEMA_UPGRADE_LOCK' "
+            'WHEN NOT MATCHED THEN INSERT (NAME, "VALUE") '
+            "VALUES ('SCHEMA_UPGRADE_LOCK', 'init-db')"
+        )
+    conn.commit()
+
+
+def _upgrade(conn: Connection) -> None:
+    _finish_interrupted(conn)
+    version = _version(conn)
+    if version > len(UPGRADES):
+        raise SchemaTooNewError(version, len(UPGRADES))
+    for number in range(version + 1, len(UPGRADES) + 1):
+        _apply(conn, number, UPGRADES[number - 1])
+
+
+def _version(conn: Connection) -> int:
+    """The last step applied; 0 for a database from before versions."""
+    if not table_exists(conn, "SETTINGS"):
+        return 0
+    with conn.cursor() as cur:
+        cur.execute("SELECT \"VALUE\" FROM SETTINGS WHERE NAME = 'SCHEMA_VERSION'")
+        row = cur.fetchone()
+    return int(row[0]) if row else 0
+
+
+def _finish_interrupted(conn: Connection) -> None:
+    """Roll back the step a crash or a failed rollback left halfway, if any."""
+    with conn.cursor() as cur:
+        cur.execute("SELECT \"VALUE\" FROM SETTINGS WHERE NAME = 'SCHEMA_UPGRADE_STEP'")
+        row = cur.fetchone()
+    if row is None:
+        return
+    number = int(row[0])
+    if number > len(UPGRADES):
+        raise SchemaTooNewError(number, len(UPGRADES))
+    logger.warning("Upgrade step %d was left halfway: rolling it back", number)
+    _roll_back(conn, number, UPGRADES[number - 1])
+
+
+def _apply(conn: Connection, number: int, step: UpgradeStep) -> None:
+    with conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO SETTINGS (NAME, \"VALUE\") VALUES ('SCHEMA_UPGRADE_STEP', ?)",
+            (str(number),),
+        )
+    conn.commit()
+    logger.info("Applying upgrade step %d", number)
+    try:
+        step.upgrade(conn)
+    except Exception:
+        logger.exception("Upgrade step %d failed: rolling it back", number)
+        if conn.is_active():
+            conn.rollback()
+        _roll_back(conn, number, step)
+        raise
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE SETTINGS SET \"VALUE\" = ? WHERE NAME = 'SCHEMA_VERSION'",
+            (str(number),),
+        )
+        cur.execute("DELETE FROM SETTINGS WHERE NAME = 'SCHEMA_UPGRADE_STEP'")
+    conn.commit()
+    logger.info("Upgrade step %d applied", number)
+
+
+def _roll_back(conn: Connection, number: int, step: UpgradeStep) -> None:
+    """Undo a step; if this fails, it stays marked and the next run tries again."""
+    step.rollback(conn)
+    with conn.cursor() as cur:
+        cur.execute("DELETE FROM SETTINGS WHERE NAME = 'SCHEMA_UPGRADE_STEP'")
+    conn.commit()
+    logger.info("Upgrade step %d rolled back", number)
+
+
+def _create_functions(conn: Connection) -> None:
+    with conn.cursor() as cur:
         for ddl in FUNCTIONS.values():
             cur.execute(ddl)
     conn.commit()

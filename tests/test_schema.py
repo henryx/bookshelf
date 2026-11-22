@@ -77,6 +77,10 @@ def _index_columns(conn: Connection, index: str) -> list[str]:
 
 
 def _assert_complete_schema(conn: Connection) -> None:
+    assert _columns(conn, "SETTINGS") == ["NAME", "VALUE"]
+    assert not _nullable(conn, "SETTINGS", "VALUE")
+    assert _constraints(conn, "SETTINGS") == {"PK_SETTINGS": "PRIMARY KEY"}
+
     assert _columns(conn, "USERS") == [
         "ID",
         "EMAIL",

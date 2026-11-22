@@ -110,16 +110,14 @@ def other_conn(app: Flask) -> Iterator[Connection]:
                 conn.rollback()
 
 
-type Race = Callable[[Callable[[Connection], object], str], object]
-
-
 @pytest.fixture
-def race(app: Flask, other_conn: Connection) -> Race:
+def race(app: Flask, other_conn: Connection) -> Callable[..., object]:
     """
     Run `change(conn)` on the app's connection, in another thread, until its
     statement containing `waits_on` waits for other_conn's uncommitted work;
-    then commit that work and return what `change` returns (or raise what it
-    raises). other_conn's work is done by the test before calling it.
+    then commit that work (roll it back with commit=False) and return what
+    `change` returns (or raise what it raises). other_conn's work is done by
+    the test before calling it.
     """
 
     def blocked(waits_on: str) -> bool:
@@ -142,7 +140,9 @@ def race(app: Flask, other_conn: Connection) -> Race:
             time.sleep(0.05)
         pytest.fail(f"No statement containing {waits_on!r} started waiting")
 
-    def run(change: Callable[[Connection], object], waits_on: str) -> object:
+    def run(
+        change: Callable[[Connection], object], waits_on: str, *, commit: bool = True
+    ) -> object:
         def in_app() -> object:
             with app.app_context():
                 return change(get_db())
@@ -153,7 +153,10 @@ def race(app: Flask, other_conn: Connection) -> Race:
                 wait_until_blocked(waits_on)
             finally:
                 # Always release the lock, or the executor would wait forever.
-                other_conn.commit()
+                if commit:
+                    other_conn.commit()
+                else:
+                    other_conn.rollback()
             return result.result(timeout=10)
 
     return run
