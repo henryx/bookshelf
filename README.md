@@ -77,6 +77,7 @@ All settings come from environment variables:
 | `APP_TRUSTED_PROXIES` | no | `0` | Reverse proxies in front of the app; set it (usually `1`) behind a proxy so client IP and HTTPS come from `X-Forwarded-*`. Required behind a proxy: login limits are per IP. Leave `0` when exposed directly, or clients can fake their IP |
 | `APP_WORKERS` | no | 2 × CPUs + 1 | gunicorn worker processes; set it in containers with a CPU limit |
 | `APP_TIMEOUT` | no | `30` | Seconds before gunicorn restarts a worker stuck on a request |
+| `APP_GOOGLE_CLIENT_ID` / `APP_GOOGLE_CLIENT_SECRET` | no | — | Google OAuth client for logging in with Google (see "Logging in with Google"); both or neither, or the app does not start |
 
 ## Books
 
@@ -107,8 +108,26 @@ under any book, opens their books: in the catalogue (`/catalogue?author=<id>`), 
 
 Admins manage users in the web app: the "Admin" link in the account menu (top right) opens the users list.
 "Create user" opens a dialog to add a regular user, and clicking a user's email opens a dialog to change their
-role, lock state or password, or to delete them. The same operations are available from the CLI. Deleting or
-demoting an admin is refused when no other admin would remain.
+role, lock state, how they log in or password, or to delete them. The same operations are available from the CLI.
+Deleting or demoting an admin is refused when no other admin would remain.
+
+### Logging in with Google
+
+Each user logs in either locally, with a password (the default), or with their Google account, with no password.
+An admin chooses which when creating the user, and can switch it later (from the admin area or the CLI); switching
+ends the user's open sessions, and switching to local needs a new password. An admin cannot switch their own
+account from the admin area. Nobody can sign up with Google: only a user an admin created for Google can log in
+with it. Their first Google login matches their email (which Google must have verified) and binds the user to that
+Google account; later logins use the account, so another Google account that later gets the same email cannot log
+in as them. Switching a user to Google again unbinds them, for their next login to bind again.
+
+To turn it on, create an OAuth client in the Google Cloud console (APIs & Services → Credentials → OAuth client ID,
+type "Web application") with the authorised redirect URI `https://<your host>/login/google/callback`, and set
+`APP_GOOGLE_CLIENT_ID` and `APP_GOOGLE_CLIENT_SECRET`. The login page then shows "Log in with Google". The app asks
+Google only for the account's ID and email. Behind a reverse proxy, `APP_TRUSTED_PROXIES` must be set so the
+redirect URI the app sends is `https://` (see "Configuration").
+
+The CLI's admin operations check an admin's password, so they need a local admin: keep at least one.
 
 ### CLI
 
@@ -122,9 +141,10 @@ characters long (12 by default).
 | `init-db` | Create missing tables, columns, constraints and indexes, and create or replace the functions (safe to rerun) |
 | `prune-login-failures` | Delete failed logins older than `APP_LOGIN_BLOCK_MINUTES` (run periodically, e.g. hourly from cron) |
 | `create-admin EMAIL` | Create the first admin (refused once any admin exists) |
-| `create-user EMAIL` | Create a regular user |
-| `list-users` | Show all users with role and lock status |
-| `reset-user-password EMAIL` | Set a new password for a user |
+| `create-user EMAIL [--auth local\|google]` | Create a regular user, logging in with a password (`local`, the default: asked for) or with Google (no password) |
+| `set-auth-method EMAIL local\|google` | Switch how a user logs in (a new password is asked for `local`); ends their open sessions |
+| `list-users` | Show all users with role, how they log in, and lock status |
+| `reset-user-password EMAIL` | Set a new password for a user (refused for a Google user: `set-auth-method` first) |
 | `promote-user EMAIL` / `demote-user EMAIL` | Give or remove the admin role |
 | `lock-user EMAIL` / `unlock-user EMAIL` | Block or allow a user's login; locking ends open sessions |
 | `delete-user EMAIL [--yes]` | Permanently delete a user (asks for confirmation) |
@@ -158,8 +178,9 @@ With an existing Firebird server, set `database.dsn` (e.g. `db.example.com:/var/
 instead of `firebird.*`. `helm upgrade bookshelf oci://quay.io/enricobianchi/bookshelf-chart --version <new>
 --reuse-values` moves to a new release; `helm show values oci://quay.io/enricobianchi/bookshelf-chart` lists
 every setting. From a checkout, use `deploy/helm/bookshelf-chart` in place of the `oci://` reference. Rather than passing secrets on the command line, a values file kept out of git or an
-existing Secret (`existingSecret`, with the keys `APP_SECRET_KEY`, `APP_DB_USER`, `APP_DB_PASSWORD`, and
-`FIREBIRD_ROOT_PASSWORD` with `firebird.enabled`) works too.
+existing Secret (`existingSecret`, with the keys `APP_SECRET_KEY`, `APP_DB_USER`, `APP_DB_PASSWORD`,
+`FIREBIRD_ROOT_PASSWORD` with `firebird.enabled`, and `APP_GOOGLE_CLIENT_SECRET` with `google.clientId`) works too.
+Logging in with Google is turned on with `google.clientId` and `google.clientSecret`.
 
 The setup wizard is open to whoever reaches it first, so create the first admin before the Ingress is reachable
 by anyone else (the chart's install notes show the command):

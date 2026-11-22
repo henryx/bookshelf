@@ -46,6 +46,16 @@ hash string, so no separate salt column is needed. Users can be two roles: regul
 (column `ROLE`, values `REGULAR` and `ADMIN`, enforced by a `CHECK` constraint). Admin role permit to user
 to made admin operations such add or delete new users.
 
+A user logs in either locally, with their password (`AUTH_METHOD` `LOCAL`, the default), or with their Google
+account (`GOOGLE`), and then has no password (`PASSWORD_HASH` NULL; `CHK_USERS_CREDENTIALS` keeps the two
+consistent). Google login uses OpenID Connect (Authlib), asking only for the `openid email` scope. There is no
+sign-up: a Google account logs in only as a Google user an admin created. Its first login matches the user's email,
+which Google must have verified, and stores the Google account's ID (`GOOGLE_SUBJECT`, Google's `sub`, unique);
+later logins match that ID, so a different Google account that later gets the same email (e.g. a recreated
+Workspace account) cannot take the user over. Switching a user's way of logging in (admins only, from the admin area
+or the CLI) clears that ID, and ends the user's sessions: the session ID is built from the password hash, or for a
+Google user from their Google ID. Added by upgrade step 1 (1.2.0); users from before log in locally, as they did.
+
 A user also has an optional name and surname (columns `NAME` and `SURNAME`), shown in the top bar and the admin
 area. Either may be missing; empty fields are stored as NULL, and the database keeps given ones trimmed and non-blank
 (`CHK_USERS_NAME`, `CHK_USERS_SURNAME`). Each is up to 127 characters, like an author's.
@@ -146,6 +156,8 @@ not logged in is sent to the login page, and a regular user is refused. An admin
  - Make a user an admin, or an admin a regular user again.
  - Lock a user, so they can no longer log in, and unlock them.
  - Set a new password for a user. There is no email, so the admin chooses it and tells the user.
+ - Choose whether a user logs in with a password or with Google, when creating them or later (not for their own
+   account: a Google login that is not set up would lock them out).
  - Delete a user for good.
 
 **Opening it.** When an admin is logged in, the account menu in the top bar (see "Account menu") has an "Admin" link;

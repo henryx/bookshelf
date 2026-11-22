@@ -5,6 +5,7 @@ from flask import Flask
 
 from bookshelf.db import get_db
 from bookshelf.models.users import (
+    AuthMethod,
     LastAdminError,
     Role,
     User,
@@ -255,13 +256,15 @@ def test_list_users(
     assert rv.exit_code == 0, rv.output
     lines = rv.output.splitlines()
     assert any(
-        all(column in line for column in ("Email", "Role", "Status")) for line in lines
+        all(column in line for column in ("Email", "Role", "Login", "Status"))
+        for line in lines
     )
     admin_line = next(line for line in lines if ADMIN_EMAIL in line)
     user_line = next(line for line in lines if user.email in line)
     assert "ADMIN" in admin_line
     assert "active" in admin_line
     assert "REGULAR" in user_line
+    assert "local" in user_line
     assert "locked" in user_line
     assert lines.index(admin_line) < lines.index(user_line)
 
@@ -680,3 +683,103 @@ def test_removing_the_only_admin_left_is_refused(
 
     assert rv.exit_code != 0
     assert "only admin left" in rv.output
+
+
+# Google authentication
+
+
+def _google_user(db_app: Flask, email: str = "gina@example.com") -> User:
+    with db_app.app_context():
+        return create_user(get_db(), email, None, auth_method=AuthMethod.GOOGLE)
+
+
+def _find(db_app: Flask, email: str) -> User:
+    with db_app.app_context():
+        user = find_by_email(get_db(), email)
+    assert user is not None
+    return user
+
+
+def test_create_user_with_google_asks_no_password(db_app: Flask, admin: User):
+    rv = db_app.test_cli_runner().invoke(
+        args=["create-user", "Gina@Example.com", "--auth", "google"],
+        input=f"{ADMIN_EMAIL}\n{ADMIN_PASSWORD}\n",
+    )
+
+    assert rv.exit_code == 0, rv.output
+    assert "Password" not in rv.output.replace("Admin password", "")
+    assert "logs in with Google" in rv.output
+    created = _find(db_app, "gina@example.com")
+    assert (created.auth_method, created.password_hash) == (AuthMethod.GOOGLE, None)
+
+
+def test_create_user_is_local_by_default(db_app: Flask, admin: User):
+    _create(db_app, "new@example.com", ADMIN_PASSWORD)
+
+    assert _find(db_app, "new@example.com").auth_method is AuthMethod.LOCAL
+
+
+def test_create_user_rejects_an_unknown_auth_method(db_app: Flask, admin: User):
+    rv = db_app.test_cli_runner().invoke(
+        args=["create-user", "new@example.com", "--auth", "github"]
+    )
+
+    assert rv.exit_code != 0
+    assert "Invalid value for '--auth'" in rv.output
+
+
+def test_set_auth_method_to_google(db_app: Flask, admin: User, user: User):
+    rv = db_app.test_cli_runner().invoke(
+        args=["set-auth-method", user.email, "google", "--admin-email", ADMIN_EMAIL],
+        input=f"{ADMIN_PASSWORD}\n",
+    )
+
+    assert rv.exit_code == 0, rv.output
+    assert f"{user.email} now logs in with Google" in rv.output
+    assert _find(db_app, user.email).auth_method is AuthMethod.GOOGLE
+
+
+def test_set_auth_method_to_local_asks_for_a_password(db_app: Flask, admin: User):
+    google = _google_user(db_app)
+
+    rv = db_app.test_cli_runner().invoke(
+        args=["set-auth-method", google.email, "local", "--admin-email", ADMIN_EMAIL],
+        input=f"{ADMIN_PASSWORD}\n{NEW_PASSWORD}\n{NEW_PASSWORD}\n",
+    )
+
+    assert rv.exit_code == 0, rv.output
+    assert f"{google.email} now logs in with a password" in rv.output
+    with db_app.app_context():
+        assert authenticate(get_db(), google.email, NEW_PASSWORD) is not None
+
+
+def test_set_auth_method_requires_admin(db_app: Flask, user: User, password: str):
+    rv = db_app.test_cli_runner().invoke(
+        args=["set-auth-method", user.email, "google", "--admin-email", user.email],
+        input=f"{password}\n",
+    )
+
+    assert rv.exit_code != 0
+    assert "Invalid admin credentials" in rv.output
+    assert _find(db_app, user.email).auth_method is AuthMethod.LOCAL
+
+
+def test_reset_password_of_a_google_user_is_refused(db_app: Flask, admin: User):
+    google = _google_user(db_app)
+
+    rv = _reset(db_app, google.email, ADMIN_PASSWORD)
+
+    assert rv.exit_code != 0
+    assert "logs in with Google" in rv.output
+    assert "set-auth-method" in rv.output
+
+
+def test_list_users_shows_google_users(db_app: Flask, admin: User):
+    _google_user(db_app)
+
+    rv = db_app.test_cli_runner().invoke(
+        args=["list-users", "--admin-email", ADMIN_EMAIL], input=f"{ADMIN_PASSWORD}\n"
+    )
+
+    line = next(line for line in rv.output.splitlines() if "gina@example.com" in line)
+    assert "google" in line

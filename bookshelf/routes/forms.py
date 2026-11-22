@@ -33,7 +33,12 @@ from bookshelf.models.books import (
     NewBook,
     normalise_isbn,
 )
-from bookshelf.models.users import PasswordTooShortError, Role, validate_new_password
+from bookshelf.models.users import (
+    AuthMethod,
+    PasswordTooShortError,
+    Role,
+    validate_new_password,
+)
 
 __all__ = [
     "AccountForm",
@@ -107,11 +112,42 @@ class NewAccountForm(FlaskForm):
         _check_new_password(field.data or "")
 
 
+NO_GOOGLE_PASSWORD = "A user logging in with Google has no password: leave it empty."
+
+
+def _auth_method_field() -> SelectField:
+    return SelectField(
+        "Logs in",
+        choices=[
+            SelectChoice(AuthMethod.LOCAL.value, "With a password"),
+            SelectChoice(AuthMethod.GOOGLE.value, "With Google"),
+        ],
+        default=AuthMethod.LOCAL.value,
+    )
+
+
 class NewUserForm(NewAccountForm):
-    """A user created by an admin: a new account, with optional name and surname."""
+    """
+    A user created by an admin: a new account, with optional name and
+    surname, logging in with a password (required) or with Google (none).
+    """
 
     name = _optional_text("Name", _PERSON_NAME_MAX_LENGTH)
     surname = _optional_text("Surname", _PERSON_NAME_MAX_LENGTH)
+    auth_method = _auth_method_field()
+    password = PasswordField("Password")
+    confirm = PasswordField(
+        "Confirm password", validators=[EqualTo("password", "Passwords must match")]
+    )
+
+    def validate_password(self, field: PasswordField) -> None:
+        if self.auth_method.data == AuthMethod.GOOGLE.value:
+            if field.data:
+                raise ValidationError(NO_GOOGLE_PASSWORD)
+            return
+        if not field.data:
+            raise ValidationError("This field is required.")
+        _check_new_password(field.data)
 
 
 class UserForm(FlaskForm):
@@ -127,6 +163,8 @@ class UserForm(FlaskForm):
         ],
     )
     locked = BooleanField("Locked (cannot log in)")
+    # A user switched from Google to a password needs one: update_user says so.
+    auth_method = _auth_method_field()
     # Optional stops validation of an empty password, so validate_password
     # only checks a password that was typed.
     password = PasswordField("New password", validators=[Optional()])
@@ -136,6 +174,8 @@ class UserForm(FlaskForm):
     )
 
     def validate_password(self, field: PasswordField) -> None:
+        if self.auth_method.data == AuthMethod.GOOGLE.value:
+            raise ValidationError(NO_GOOGLE_PASSWORD)
         _check_new_password(field.data or "")
 
 

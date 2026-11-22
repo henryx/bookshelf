@@ -1,0 +1,9 @@
+{# How a user logs in, in the admin's create and edit user forms. Takes id_prefix. #}
+{% set p = id_prefix | default("") %}
+<label for="{{ p }}auth_method">{{ form.auth_method.label.text }}</label>
+{{ form.auth_method(id=p ~ "auth_method", aria_describedby=p ~ "auth_method-hint") }}
+<p id="{{ p }}auth_method-hint" class="hint">
+  With Google: no password; their first Google login with this email binds them to that Google account.
+  {%- if not config.GOOGLE_CLIENT_ID %} Logging in with Google is not set up (APP_GOOGLE_CLIENT_ID), so they cannot log in yet.{% endif %}
+</p>
+{% for error in form.auth_method.errors %}<p class="error">{{ error }}</p>{% endfor %}

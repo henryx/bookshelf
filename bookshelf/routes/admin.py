@@ -14,7 +14,10 @@ from werkzeug.wrappers import Response as BaseResponse
 
 from bookshelf.db import get_db
 from bookshelf.models.users import (
+    AuthMethod,
     LastAdminError,
+    NoPasswordError,
+    PasswordTooShortError,
     Role,
     User,
     UserExistsError,
@@ -32,6 +35,7 @@ __all__ = ["admin_route"]
 admin_route = Blueprint("admin", __name__, url_prefix="/admin")
 
 CANNOT_DEMOTE_OR_LOCK_SELF = "You cannot demote or lock your own account."
+CANNOT_SWITCH_OWN_LOGIN = "You cannot change how your own account logs in."
 
 
 @admin_route.before_request
@@ -68,7 +72,7 @@ def _render_users(form: NewUserForm) -> str:
 
 @admin_route.route("/users", methods=("GET", "POST"))
 def users() -> BaseResponse | str:
-    """List the users and create regular users."""
+    """List the users and create regular users, logging in locally or with Google."""
     form = NewUserForm()
     if not form.validate_on_submit():
         return _render_users(form)
@@ -76,9 +80,10 @@ def users() -> BaseResponse | str:
         user = create_user(
             get_db(),
             form.email.data or "",
-            form.password.data or "",
+            form.password.data or None,
             name=form.name.data,
             surname=form.surname.data,
+            auth_method=AuthMethod(form.auth_method.data),
             min_password_length=_min_password_length(),
         )
     except UserExistsError as e:
@@ -113,8 +118,11 @@ def _changes(
     role: Role,
     locked: bool,
     password: str | None,
+    auth_method: AuthMethod,
 ) -> str:
     changes = []
+    if auth_method is not user.auth_method:
+        changes.append(f"login {auth_method.value.lower()}")
     if (name, surname) != (user.name, user.surname):
         changes.append("name")
     if role is not user.role:
@@ -129,8 +137,9 @@ def _changes(
 @admin_route.route("/users/<uuid:user_id>", methods=("GET", "POST"))
 def user_details(user_id: UUID) -> BaseResponse | str:
     """
-    Show a user and save changes to their role, lock state and password.
-    Changing the password or locking ends the user's open sessions.
+    Show a user and save changes to their role, lock state, how they log in
+    and password. Changing the password or how they log in, or locking, ends
+    the user's open sessions.
     """
     user = _user_or_404(user_id)
     form = UserForm(
@@ -139,6 +148,7 @@ def user_details(user_id: UUID) -> BaseResponse | str:
             "surname": user.surname,
             "role": user.role.value,
             "locked": user.is_locked,
+            "auth_method": user.auth_method.value,
         }
     )
     if not form.validate_on_submit():
@@ -149,10 +159,15 @@ def user_details(user_id: UUID) -> BaseResponse | str:
     role = Role(form.role.data)
     locked = bool(form.locked.data)
     password = form.password.data or None
+    auth_method = AuthMethod(form.auth_method.data)
     # The CLI's rule: no admin can demote or lock themselves, so an active
     # admin always remains.
     if _is_self(user) and (role is not Role.ADMIN or locked):
         form.form_errors.append(CANNOT_DEMOTE_OR_LOCK_SELF)
+        return _render_user(form, user)
+    # Nor switch their own login: a Google login not set up would lock them out.
+    if _is_self(user) and auth_method is not user.auth_method:
+        form.form_errors.append(CANNOT_SWITCH_OWN_LOGIN)
         return _render_user(form, user)
 
     try:
@@ -164,17 +179,22 @@ def user_details(user_id: UUID) -> BaseResponse | str:
             role=role,
             locked=locked,
             password=password,
+            auth_method=auth_method,
             min_password_length=_min_password_length(),
         )
     except LastAdminError as e:
         current_app.logger.warning("Refused to demote %s: %s", user.email, e)
         form.form_errors.append(f"{e}: it cannot be demoted.")
         return _render_user(form, user)
+    except (PasswordTooShortError, NoPasswordError) as e:
+        # A user switched from Google to a password, without one.
+        form.form_errors.append(str(e))
+        return _render_user(form, user)
     current_app.logger.info(
         "User %s updated by admin %s: %s",
         user.email,
         current_user.email,
-        _changes(user, name, surname, role, locked, password),
+        _changes(user, name, surname, role, locked, password, auth_method),
     )
     if password is not None and _is_self(user):
         # The new password invalidates this session too; issue a fresh one.

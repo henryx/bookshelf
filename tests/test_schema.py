@@ -89,10 +89,14 @@ def _assert_complete_schema(conn: Connection) -> None:
         "IS_LOCKED",
         "NAME",
         "SURNAME",
+        "AUTH_METHOD",
+        "GOOGLE_SUBJECT",
     ]
     assert _domain(conn, "USERS", "ID") == "UUID"
+    assert _nullable(conn, "USERS", "PASSWORD_HASH")
     assert _nullable(conn, "USERS", "NAME")
     assert _nullable(conn, "USERS", "SURNAME")
+    assert _nullable(conn, "USERS", "GOOGLE_SUBJECT")
     assert _constraints(conn, "USERS") == {
         "PK_USERS": "PRIMARY KEY",
         "UQ_USERS_EMAIL": "UNIQUE",
@@ -100,6 +104,9 @@ def _assert_complete_schema(conn: Connection) -> None:
         "CHK_USERS_EMAIL_NORMALISED": "CHECK",
         "CHK_USERS_NAME": "CHECK",
         "CHK_USERS_SURNAME": "CHECK",
+        "CHK_USERS_AUTH_METHOD": "CHECK",
+        "CHK_USERS_CREDENTIALS": "CHECK",
+        "UQ_USERS_GOOGLE_SUBJECT": "UNIQUE",
     }
 
     assert _columns(conn, "LOGIN_FAILURES") == [

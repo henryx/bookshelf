@@ -13,7 +13,7 @@ from bookshelf.logging_config import logging_config
 from bookshelf.routes import is_htmx
 from bookshelf.routes.account import account_route
 from bookshelf.routes.admin import admin_route
-from bookshelf.routes.auth import auth_route, login_manager
+from bookshelf.routes.auth import auth_route, init_google, login_manager
 from bookshelf.routes.authors import authors_route
 from bookshelf.routes.collection import collection_route
 from bookshelf.routes.main import main_route
@@ -36,6 +36,7 @@ def create_app(overrides: Mapping[str, object] | None = None) -> Flask:
     :param overrides: config values applied after the environment (e.g. in tests)
     """
     cfg = Config()
+    google_id, google_secret = cfg.google_client or (None, None)
     app = Flask("bookshelf")
     app.config.update(
         SECRET_KEY=cfg.secret_key,
@@ -52,6 +53,9 @@ def create_app(overrides: Mapping[str, object] | None = None) -> Flask:
         LOGIN_MAX_IP_FAILURES=cfg.login_max_ip_failures,
         LOGIN_BLOCK_MINUTES=cfg.login_block_minutes,
         MIN_PASSWORD_LENGTH=cfg.min_password_length,
+        # Logging in with Google, when both are set.
+        GOOGLE_CLIENT_ID=google_id,
+        GOOGLE_CLIENT_SECRET=google_secret,
         # Largest request body (413 above it): room for a collection CSV import.
         MAX_CONTENT_LENGTH=1024 * 1024,
     )
@@ -72,6 +76,7 @@ def create_app(overrides: Mapping[str, object] | None = None) -> Flask:
     db.init_app(app)
     cli.init_app(app)
     login_manager.init_app(app)
+    init_google(app)
     CSRFProtect(app)
     app.register_blueprint(setup_route)
     app.register_blueprint(pwa_route)

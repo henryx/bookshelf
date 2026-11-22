@@ -14,7 +14,9 @@ from bookshelf.config import MIN_PASSWORD_LENGTH
 
 __all__ = [
     "MIN_PASSWORD_LENGTH",
+    "AuthMethod",
     "LastAdminError",
+    "NoPasswordError",
     "PasswordTooShortError",
     "Role",
     "User",
@@ -27,8 +29,10 @@ __all__ = [
     "find_by_email",
     "find_by_id",
     "find_by_session_id",
+    "google_login",
     "list_users",
     "prune_login_failures",
+    "set_auth_method",
     "set_locked",
     "set_password",
     "set_role",
@@ -57,6 +61,21 @@ class Role(StrEnum):
 
     ADMIN = "ADMIN"
     REGULAR = "REGULAR"
+
+
+class AuthMethod(StrEnum):
+    """How a user logs in: CHK_USERS_AUTH_METHOD's values for USERS.AUTH_METHOD."""
+
+    LOCAL = "LOCAL"  # with their password
+    GOOGLE = "GOOGLE"  # with their Google account; no password
+
+
+class NoPasswordError(ValueError):
+    """A password given for a user who logs in with Google, and has none."""
+
+    def __init__(self, email: str) -> None:
+        super().__init__(f"{email} logs in with Google and has no password")
+        self.email = email
 
 
 class PasswordTooShortError(ValueError):
@@ -99,11 +118,14 @@ class UserExistsError(Exception):
 class User:
     id: UUID
     email: str
-    password_hash: str
+    # None for a Google user; google_subject is their Google account, once bound.
+    password_hash: str | None
     role: Role
     is_locked: bool
     name: str | None = None
     surname: str | None = None
+    auth_method: AuthMethod = AuthMethod.LOCAL
+    google_subject: str | None = None
 
     # Flask-Login user protocol
     is_authenticated = True
@@ -130,10 +152,13 @@ class User:
 
     def get_id(self) -> str:
         """
-        Session ID: the user ID plus a fingerprint of the password hash, so
-        changing the password invalidates every open session and remember cookie.
+        Session ID: the user ID plus a fingerprint of how they log in (the
+        password hash, or the Google account), so changing the password or
+        the way of logging in invalidates every open session and remember
+        cookie.
         """
-        fingerprint = hashlib.sha256(self.password_hash.encode()).hexdigest()[:16]
+        secret = self.password_hash or f"google:{self.google_subject}"
+        fingerprint = hashlib.sha256(secret.encode()).hexdigest()[:16]
         return f"{self.id}:{fingerprint}"
 
 
@@ -141,11 +166,23 @@ def _normalise(email: str) -> str:
     return email.strip().lower()
 
 
-type _UserRow = tuple[bytes, str, str, str, bool, str | None, str | None]
+type _UserRow = tuple[
+    bytes, str, str | None, str, bool, str | None, str | None, str, str | None
+]
 
 
 def _row_to_user(row: _UserRow) -> User:
-    user_id, email, password_hash, role, is_locked, name, surname = row
+    (
+        user_id,
+        email,
+        password_hash,
+        role,
+        is_locked,
+        name,
+        surname,
+        auth_method,
+        google_subject,
+    ) = row
     return User(
         id=UUID(bytes=user_id),
         email=email,
@@ -154,6 +191,8 @@ def _row_to_user(row: _UserRow) -> User:
         is_locked=is_locked,
         name=name,
         surname=surname,
+        auth_method=AuthMethod(auth_method),
+        google_subject=google_subject,
     )
 
 
@@ -169,7 +208,8 @@ def _fetch_user(
 def find_by_id(conn: Connection, user_id: UUID) -> User | None:
     return _fetch_user(
         conn,
-        "SELECT ID, EMAIL, PASSWORD_HASH, ROLE, IS_LOCKED, NAME, SURNAME "
+        "SELECT ID, EMAIL, PASSWORD_HASH, ROLE, IS_LOCKED, NAME, SURNAME, "
+        "AUTH_METHOD, GOOGLE_SUBJECT "
         "FROM USERS WHERE ID = ?",
         (user_id.bytes,),
     )
@@ -194,7 +234,8 @@ def find_by_session_id(conn: Connection, session_id: str) -> User | None:
 def find_by_email(conn: Connection, email: str) -> User | None:
     return _fetch_user(
         conn,
-        "SELECT ID, EMAIL, PASSWORD_HASH, ROLE, IS_LOCKED, NAME, SURNAME "
+        "SELECT ID, EMAIL, PASSWORD_HASH, ROLE, IS_LOCKED, NAME, SURNAME, "
+        "AUTH_METHOD, GOOGLE_SUBJECT "
         "FROM USERS WHERE EMAIL = ?",
         (_normalise(email),),
     )
@@ -212,42 +253,66 @@ def admin_exists(conn: Connection) -> bool:
 def list_users(conn: Connection) -> list[User]:
     with conn.cursor() as cur:
         cur.execute(
-            "SELECT ID, EMAIL, PASSWORD_HASH, ROLE, IS_LOCKED, NAME, SURNAME "
+            "SELECT ID, EMAIL, PASSWORD_HASH, ROLE, IS_LOCKED, NAME, SURNAME, "
+            "AUTH_METHOD, GOOGLE_SUBJECT "
             "FROM USERS ORDER BY EMAIL"
         )
         return [_row_to_user(row) for row in cur.fetchall()]
 
 
+def _credentials(
+    email: str, auth_method: AuthMethod, password: str | None, min_length: int
+) -> str | None:
+    """
+    The password hash for a user logging in by auth_method: one of
+    `password` for a local user (PasswordTooShortError when short or
+    missing), None for a Google user (NoPasswordError if one is given).
+    """
+    if auth_method is AuthMethod.GOOGLE:
+        if password is not None:
+            raise NoPasswordError(email)
+        return None
+    validate_new_password(password or "", min_length=min_length)
+    return _hasher.hash(password or "")
+
+
 def create_user(
     conn: Connection,
     email: str,
-    password: str,
+    password: str | None,
     *,
     role: Role = Role.REGULAR,
     name: str | None = None,
     surname: str | None = None,
+    auth_method: AuthMethod = AuthMethod.LOCAL,
     min_password_length: int = MIN_PASSWORD_LENGTH,
 ) -> User:
     """
     Raises UserExistsError if the email is taken, even by a user created
-    after the caller checked, and PasswordTooShortError for a short password.
-    Name and surname are optional (None), trimmed and non-blank when given.
+    after the caller checked. A local user needs a password
+    (PasswordTooShortError when short or missing); a Google user has none
+    (password None, else NoPasswordError) and is bound to their Google
+    account on their first login (google_login). Name and surname are
+    optional (None), trimmed and non-blank when given.
     """
-    validate_new_password(password, min_length=min_password_length)
     email = _normalise(email)
+    password_hash = _credentials(email, auth_method, password, min_password_length)
     with conn.cursor() as cur:
         try:
             cur.execute(
-                "INSERT INTO USERS (ID, EMAIL, PASSWORD_HASH, ROLE, NAME, SURNAME) "
-                "VALUES (?, ?, ?, ?, ?, ?) "
-                "RETURNING ID, EMAIL, PASSWORD_HASH, ROLE, IS_LOCKED, NAME, SURNAME",
+                "INSERT INTO USERS "
+                "(ID, EMAIL, PASSWORD_HASH, ROLE, NAME, SURNAME, AUTH_METHOD) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?) "
+                "RETURNING ID, EMAIL, PASSWORD_HASH, ROLE, IS_LOCKED, NAME, SURNAME, "
+                "AUTH_METHOD, GOOGLE_SUBJECT",
                 (
                     uuid4().bytes,
                     email,
-                    _hasher.hash(password),
+                    password_hash,
                     role.value,
                     name,
                     surname,
+                    auth_method.value,
                 ),
             )
         except DatabaseError as e:
@@ -266,12 +331,76 @@ def set_password(
     *,
     min_password_length: int = MIN_PASSWORD_LENGTH,
 ) -> None:
-    """Raises PasswordTooShortError for a short password."""
+    """
+    Raises PasswordTooShortError for a short password, and NoPasswordError
+    for a Google user (set_auth_method makes them local, with a password).
+    """
+    if user.auth_method is AuthMethod.GOOGLE:
+        raise NoPasswordError(user.email)
     validate_new_password(password, min_length=min_password_length)
     with conn.cursor() as cur:
         cur.execute(
             "UPDATE USERS SET PASSWORD_HASH = ? WHERE ID = ?",
             (_hasher.hash(password), user.id.bytes),
+        )
+    conn.commit()
+
+
+def google_login(conn: Connection, subject: str, email: str) -> User | None:
+    """
+    The user a Google account logs in as: the Google user bound to `subject`
+    (Google's ID for the account), else the Google user with this email not
+    yet bound to any account, which this binds to it. None otherwise: no
+    such user, a local one, or one bound to another Google account. The
+    caller makes sure Google verified the email. Locked users are returned:
+    the caller refuses them.
+    """
+    user = _fetch_user(
+        conn,
+        "SELECT ID, EMAIL, PASSWORD_HASH, ROLE, IS_LOCKED, NAME, SURNAME, "
+        "AUTH_METHOD, GOOGLE_SUBJECT FROM USERS WHERE GOOGLE_SUBJECT = ?",
+        (subject,),
+    )
+    if user is not None:
+        return user
+    user = find_by_email(conn, email)
+    if user is None or user.auth_method is not AuthMethod.GOOGLE:
+        return None
+    with conn.cursor() as cur:
+        # Only while unbound: another login may have bound it meanwhile.
+        cur.execute(
+            "UPDATE USERS SET GOOGLE_SUBJECT = ? "
+            "WHERE ID = ? AND AUTH_METHOD = 'GOOGLE' AND GOOGLE_SUBJECT IS NULL",
+            (subject, user.id.bytes),
+        )
+        bound = cur.affected_rows > 0
+    conn.commit()
+    if not bound:
+        return None
+    logger.info("User %s bound to their Google account", user.email)
+    return find_by_id(conn, user.id)
+
+
+def set_auth_method(
+    conn: Connection,
+    user: User,
+    auth_method: AuthMethod,
+    *,
+    password: str | None = None,
+    min_password_length: int = MIN_PASSWORD_LENGTH,
+) -> None:
+    """
+    Make the user log in by auth_method, ending their open sessions. Google:
+    no password (NoPasswordError if one is given), bound again on their next
+    login. Local: with `password` (PasswordTooShortError when short or
+    missing).
+    """
+    password_hash = _credentials(user.email, auth_method, password, min_password_length)
+    with conn.cursor() as cur:
+        cur.execute(
+            "UPDATE USERS SET AUTH_METHOD = ?, PASSWORD_HASH = ?, GOOGLE_SUBJECT = NULL "
+            "WHERE ID = ?",
+            (auth_method.value, password_hash, user.id.bytes),
         )
     conn.commit()
 
@@ -330,37 +459,38 @@ def update_user(
     role: Role,
     locked: bool,
     password: str | None,
+    auth_method: AuthMethod | None = None,
     min_password_length: int = MIN_PASSWORD_LENGTH,
 ) -> None:
     """
-    An admin's changes: set name, surname, role, lock state and, unless
-    password is None, a new password, all in one transaction. Raises
-    PasswordTooShortError before changing anything, and LastAdminError when
-    demoting the only admin.
+    An admin's changes, all in one transaction: name, surname, role, lock
+    state and how the user logs in (auth_method; None keeps it). A local
+    user gets a new password unless password is None; one switching from
+    Google needs one. Switching to Google drops the password. Raises
+    PasswordTooShortError or NoPasswordError before changing anything, and
+    LastAdminError when demoting the only admin.
     """
-    if password is not None:
-        validate_new_password(password, min_length=min_password_length)
+    auth_method = auth_method or user.auth_method
+    switching = auth_method is not user.auth_method
+    new_credentials = switching or password is not None
+    password_hash = (
+        _credentials(user.email, auth_method, password, min_password_length)
+        if new_credentials
+        else None
+    )
     with conn.cursor() as cur:
         if user.is_admin and role is not Role.ADMIN:
             _keep_another_admin(conn, cur, user)
-        if password is None:
+        cur.execute(
+            "UPDATE USERS SET NAME = ?, SURNAME = ?, ROLE = ?, IS_LOCKED = ? "
+            "WHERE ID = ?",
+            (name, surname, role.value, locked, user.id.bytes),
+        )
+        if new_credentials:
             cur.execute(
-                "UPDATE USERS SET NAME = ?, SURNAME = ?, ROLE = ?, IS_LOCKED = ? "
-                "WHERE ID = ?",
-                (name, surname, role.value, locked, user.id.bytes),
-            )
-        else:
-            cur.execute(
-                "UPDATE USERS SET NAME = ?, SURNAME = ?, ROLE = ?, IS_LOCKED = ?, "
-                "PASSWORD_HASH = ? WHERE ID = ?",
-                (
-                    name,
-                    surname,
-                    role.value,
-                    locked,
-                    _hasher.hash(password),
-                    user.id.bytes,
-                ),
+                "UPDATE USERS SET AUTH_METHOD = ?, PASSWORD_HASH = ?, "
+                "GOOGLE_SUBJECT = NULL WHERE ID = ?",
+                (auth_method.value, password_hash, user.id.bytes),
             )
     conn.commit()
 
@@ -378,8 +508,11 @@ def update_account(
     A user's changes to their own account: set name, surname and, unless
     password is None, a new password, in one transaction. Role and lock state
     are left alone, so an admin's lock made meanwhile stays. Raises
-    PasswordTooShortError before changing anything.
+    PasswordTooShortError, or NoPasswordError for a Google user's password,
+    before changing anything.
     """
+    if password is not None and user.auth_method is AuthMethod.GOOGLE:
+        raise NoPasswordError(user.email)
     if password is None:
         with conn.cursor() as cur:
             cur.execute(
@@ -407,10 +540,11 @@ def _password_matches(password_hash: str, password: str) -> bool:
 
 def authenticate(conn: Connection, email: str, password: str) -> User | None:
     """
-    Return the user if the credentials are valid and the account is not locked.
+    Return the user if the credentials are valid and the account is not
+    locked. A Google user never matches: they have no password.
     """
     user = find_by_email(conn, email)
-    if user is None:
+    if user is None or user.password_hash is None:
         _password_matches(_DUMMY_HASH, password)
         return None
     if not _password_matches(user.password_hash, password):

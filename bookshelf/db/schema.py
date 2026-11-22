@@ -6,6 +6,8 @@ from firebird.driver import Connection, DefaultAction
 
 __all__ = [
     "UPGRADES",
+    "USERS_AUTH_METHOD",
+    "SchemaChange",
     "SchemaTooNewError",
     "UpgradeStep",
     "init_db",
@@ -317,9 +319,122 @@ class UpgradeStep:
     rollback: Callable[[Connection], None]
 
 
+@dataclass(frozen=True)
+class SchemaChange:
+    """
+    One change of an upgrade step, rerunnable both ways: apply_sql runs
+    unless `applied` says it is already made, undo_sql only if it is.
+    Each commits on its own (Firebird makes DDL usable only once committed).
+    """
+
+    applied: Callable[[Connection], bool]
+    apply_sql: str
+    undo_sql: str
+
+    def apply(self, conn: Connection) -> None:
+        if not self.applied(conn):
+            with conn.cursor() as cur:
+                cur.execute(self.apply_sql)
+            conn.commit()
+
+    def undo(self, conn: Connection) -> None:
+        if self.applied(conn):
+            with conn.cursor() as cur:
+                cur.execute(self.undo_sql)
+            conn.commit()
+
+
+def _column_exists(conn: Connection, table: str, column: str) -> bool:
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT 1 FROM RDB$RELATION_FIELDS "
+            "WHERE RDB$RELATION_NAME = ? AND RDB$FIELD_NAME = ?",
+            (table, column),
+        )
+        return cur.fetchone() is not None
+
+
+def _column_nullable(conn: Connection, table: str, column: str) -> bool:
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT RDB$NULL_FLAG FROM RDB$RELATION_FIELDS "
+            "WHERE RDB$RELATION_NAME = ? AND RDB$FIELD_NAME = ?",
+            (table, column),
+        )
+        (null_flag,) = cur.fetchone()
+    return not null_flag
+
+
+def _constraint_exists(conn: Connection, name: str) -> bool:
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT 1 FROM RDB$RELATION_CONSTRAINTS WHERE RDB$CONSTRAINT_NAME = ?",
+            (name,),
+        )
+        return cur.fetchone() is not None
+
+
+# Step 1 (1.2.0): how each user logs in. AUTH_METHOD is LOCAL (a password,
+# the default, so existing users keep theirs) or GOOGLE (no password:
+# PASSWORD_HASH becomes nullable). GOOGLE_SUBJECT is the Google account a
+# Google user is bound to on their first login (Google's "sub", at most 255
+# characters), NULL until then; unique, ignoring NULLs. Applied in order,
+# undone in reverse.
+USERS_AUTH_METHOD: list[SchemaChange] = [
+    SchemaChange(
+        lambda conn: _column_exists(conn, "USERS", "AUTH_METHOD"),
+        "ALTER TABLE USERS ADD AUTH_METHOD VARCHAR(16) DEFAULT 'LOCAL' NOT NULL",
+        "ALTER TABLE USERS DROP AUTH_METHOD",
+    ),
+    SchemaChange(
+        lambda conn: _column_exists(conn, "USERS", "GOOGLE_SUBJECT"),
+        "ALTER TABLE USERS ADD GOOGLE_SUBJECT VARCHAR(255)",
+        "ALTER TABLE USERS DROP GOOGLE_SUBJECT",
+    ),
+    # Undone only while no user lacks a password: before any Google user,
+    # which is when a failed step 1 is rolled back.
+    SchemaChange(
+        lambda conn: _column_nullable(conn, "USERS", "PASSWORD_HASH"),
+        "ALTER TABLE USERS ALTER PASSWORD_HASH DROP NOT NULL",
+        "ALTER TABLE USERS ALTER PASSWORD_HASH SET NOT NULL",
+    ),
+    SchemaChange(
+        lambda conn: _constraint_exists(conn, "CHK_USERS_AUTH_METHOD"),
+        "ALTER TABLE USERS ADD CONSTRAINT CHK_USERS_AUTH_METHOD "
+        "CHECK (AUTH_METHOD IN ('LOCAL', 'GOOGLE'))",
+        "ALTER TABLE USERS DROP CONSTRAINT CHK_USERS_AUTH_METHOD",
+    ),
+    # A local user has a password and no Google account; a Google user no password.
+    SchemaChange(
+        lambda conn: _constraint_exists(conn, "CHK_USERS_CREDENTIALS"),
+        "ALTER TABLE USERS ADD CONSTRAINT CHK_USERS_CREDENTIALS CHECK ("
+        "(AUTH_METHOD = 'LOCAL' AND PASSWORD_HASH IS NOT NULL AND GOOGLE_SUBJECT IS NULL) "
+        "OR (AUTH_METHOD = 'GOOGLE' AND PASSWORD_HASH IS NULL))",
+        "ALTER TABLE USERS DROP CONSTRAINT CHK_USERS_CREDENTIALS",
+    ),
+    SchemaChange(
+        lambda conn: _constraint_exists(conn, "UQ_USERS_GOOGLE_SUBJECT"),
+        "ALTER TABLE USERS ADD CONSTRAINT UQ_USERS_GOOGLE_SUBJECT UNIQUE (GOOGLE_SUBJECT)",
+        "ALTER TABLE USERS DROP CONSTRAINT UQ_USERS_GOOGLE_SUBJECT",
+    ),
+]
+
+
+def _upgrade_auth_method(conn: Connection) -> None:
+    for change in USERS_AUTH_METHOD:
+        change.apply(conn)
+
+
+def _rollback_auth_method(conn: Connection) -> None:
+    for change in reversed(USERS_AUTH_METHOD):
+        change.undo(conn)
+
+
 # Step n takes the schema from version n - 1 to n; version 0 is the frozen
 # 1.0.0 schema. Append only: never change or remove a released step.
-UPGRADES: list[UpgradeStep] = []
+UPGRADES: list[UpgradeStep] = [
+    UpgradeStep(upgrade=_upgrade_auth_method, rollback=_rollback_auth_method),
+]
 
 
 class SchemaTooNewError(RuntimeError):

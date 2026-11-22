@@ -12,14 +12,20 @@
 
   {% with autofill = true %}{% include "_name_fields.html" %}{% endwith %}
 
-  <fieldset class="password-change">
-    <legend>Change password</legend>
-    <label for="current_password">{{ form.current_password.label.text }}</label>
-    {{ form.current_password(id="current_password", autocomplete="current-password") }}
-    {% for error in form.current_password.errors %}<p class="error">{{ error }}</p>{% endfor %}
+  {% if current_user.auth_method.value == "GOOGLE" %}
+    {# No password: the account page cannot change how they log in (an admin can). #}
+    <span class="label">Log in</span>
+    <span>You log in with Google</span>
+  {% else %}
+    <fieldset class="password-change">
+      <legend>Change password</legend>
+      <label for="current_password">{{ form.current_password.label.text }}</label>
+      {{ form.current_password(id="current_password", autocomplete="current-password") }}
+      {% for error in form.current_password.errors %}<p class="error">{{ error }}</p>{% endfor %}
 
-    {% with password_optional = true %}{% include "_new_password_fields.html" %}{% endwith %}
-  </fieldset>
+      {% with password_optional = true %}{% include "_new_password_fields.html" %}{% endwith %}
+    </fieldset>
+  {% endif %}
 
   <button type="submit">Save</button>
   <span id="account-indicator" class="htmx-indicator">Saving…</span>

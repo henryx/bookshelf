@@ -8,6 +8,7 @@ from flask.testing import FlaskClient
 
 from bookshelf.db import get_db
 from bookshelf.models.users import (
+    AuthMethod,
     LastAdminError,
     Role,
     User,
@@ -555,3 +556,128 @@ def test_demotion_refused_when_no_other_admin_would_remain(
 
     assert rv.status_code == 200
     assert "only admin left" in rv.get_data(as_text=True)
+
+
+# Google authentication
+
+
+def _google_user(app: Flask, email: str = "gina@example.com") -> User:
+    with app.app_context():
+        return create_user(get_db(), email, None, auth_method=AuthMethod.GOOGLE)
+
+
+def test_create_user_form_offers_google(admin_client: FlaskClient):
+    html = admin_client.get("/admin/users").get_data(as_text=True)
+    dialog = html[html.index('<dialog id="create-user-dialog"') :]
+
+    assert re.search(r'<select [^>]*name="auth_method"', dialog)
+    assert '<option selected value="LOCAL">' in dialog
+    assert 'value="GOOGLE"' in dialog
+    # Not required in the page: a Google user has none.
+    assert not re.search(r'<input [^>]*name="password"[^>]*required', dialog)
+
+
+def test_create_a_google_user(admin_client: FlaskClient, db_app: Flask):
+    rv = admin_client.post(
+        "/admin/users", data={"email": "gina@example.com", "auth_method": "GOOGLE"}
+    )
+
+    assert rv.status_code == 302
+    created = _existing(db_app, "gina@example.com")
+    assert (created.auth_method, created.password_hash) == (AuthMethod.GOOGLE, None)
+
+
+def test_a_google_user_gets_no_password(admin_client: FlaskClient, db_app: Flask):
+    data = {
+        "email": "gina@example.com",
+        "auth_method": "GOOGLE",
+        "password": NEW_PASSWORD,
+        "confirm": NEW_PASSWORD,
+    }
+    html = admin_client.post("/admin/users", data=data).get_data(as_text=True)
+
+    assert "A user logging in with Google has no password" in html
+    assert _user(db_app, "gina@example.com") is None
+
+
+def test_a_local_user_needs_a_password(admin_client: FlaskClient, db_app: Flask):
+    data = {"email": "new@example.com", "auth_method": "LOCAL"}
+    html = admin_client.post("/admin/users", data=data).get_data(as_text=True)
+
+    assert "This field is required." in html
+    assert _user(db_app, "new@example.com") is None
+
+
+def test_users_page_shows_how_users_log_in(admin_client: FlaskClient, db_app: Flask):
+    _google_user(db_app)
+
+    html = admin_client.get("/admin/users").get_data(as_text=True)
+
+    assert "<th>Login</th>" in html
+    row = re.search(r"<tr>(?:(?!</tr>).)*gina@example\.com.*?</tr>", html, re.DOTALL)
+    assert row and "<td>Google</td>" in row[0]
+
+
+def test_switch_a_user_to_google(admin_client: FlaskClient, db_app: Flask, user: User):
+    rv = _save(admin_client, user, auth_method="GOOGLE")
+
+    assert rv.status_code == 302
+    saved = _existing(db_app, user.email)
+    assert (saved.auth_method, saved.password_hash) == (AuthMethod.GOOGLE, None)
+
+
+def test_switch_a_google_user_to_local_needs_a_password(
+    admin_client: FlaskClient, db_app: Flask
+):
+    google = _google_user(db_app)
+
+    html = _save(admin_client, google, auth_method="LOCAL").get_data(as_text=True)
+
+    assert "Password must be at least" in html
+    assert _existing(db_app, google.email).auth_method is AuthMethod.GOOGLE
+
+    rv = _save(
+        admin_client,
+        google,
+        auth_method="LOCAL",
+        password=NEW_PASSWORD,
+        confirm=NEW_PASSWORD,
+    )
+    assert rv.status_code == 302
+    with db_app.app_context():
+        assert authenticate(get_db(), google.email, NEW_PASSWORD) is not None
+
+
+def test_editing_a_google_user_keeps_them_google(
+    admin_client: FlaskClient, db_app: Flask
+):
+    google = _google_user(db_app)
+
+    rv = _save(admin_client, google, name="Gina")
+
+    assert rv.status_code == 302
+    saved = _existing(db_app, google.email)
+    assert (saved.name, saved.auth_method) == ("Gina", AuthMethod.GOOGLE)
+
+
+def test_details_of_a_google_user(admin_client: FlaskClient, db_app: Flask):
+    google = _google_user(db_app)
+
+    html = admin_client.get(_detail(google)).get_data(as_text=True)
+
+    assert '<option selected value="GOOGLE">' in html
+
+
+def test_admin_cannot_switch_own_login(
+    admin_client: FlaskClient, db_app: Flask, admin: User
+):
+    """A Google login not set up would lock them out."""
+    html = admin_client.get(_detail(admin)).get_data(as_text=True)
+    assert 'type="hidden" name="auth_method" value="LOCAL"' in html
+
+    rv = _save(admin_client, admin, auth_method="GOOGLE")
+
+    assert "You cannot change how your own account logs in." in rv.get_data(
+        as_text=True
+    )
+    assert _existing(db_app, ADMIN_EMAIL).auth_method is AuthMethod.LOCAL

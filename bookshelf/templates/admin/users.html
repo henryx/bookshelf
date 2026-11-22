@@ -11,7 +11,7 @@
   </div>
   <table class="users">
     <thead>
-      <tr><th>Email</th><th>Name</th><th>Role</th><th>Status</th></tr>
+      <tr><th>Email</th><th>Name</th><th>Role</th><th>Login</th><th>Status</th></tr>
     </thead>
     <tbody>
       {% for user in users %}
@@ -25,6 +25,7 @@
           </td>
           <td>{{ user.full_name or "" }}</td>
           <td>{{ "Admin" if user.is_admin else "Regular" }}</td>
+          <td>{{ "Google" if user.auth_method.value == "GOOGLE" else "Password" }}</td>
           <td>{{ "Locked" if user.is_locked else "Active" }}</td>
         </tr>
       {% endfor %}

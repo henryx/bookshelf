@@ -7,7 +7,14 @@ from flask import Flask
 from flask.testing import FlaskClient
 
 from bookshelf.db import get_db
-from bookshelf.models.users import Role, User, authenticate, create_user, find_by_email
+from bookshelf.models.users import (
+    AuthMethod,
+    Role,
+    User,
+    authenticate,
+    create_user,
+    find_by_email,
+)
 
 HTMX = {"HX-Request": "true"}
 NEW_PASSWORD = "a-new-password"
@@ -203,3 +210,38 @@ def test_avatar_menu_links_to_account_and_logs_out(client: FlaskClient):
     assert 'href="/account"' in avatar
     assert 'action="/logout"' in avatar
     assert 'href="/admin/users"' not in avatar
+
+
+# A user logging in with Google
+
+
+@pytest.fixture
+def google_client(db_app: Flask, db_client: FlaskClient) -> FlaskClient:
+    """Logged in as a Google user: their session, as a Google login leaves it."""
+    with db_app.app_context():
+        google = create_user(
+            get_db(), "gina@example.com", None, auth_method=AuthMethod.GOOGLE
+        )
+    with db_client.session_transaction() as session:
+        session["_user_id"] = google.get_id()
+        session["_fresh"] = True
+    return db_client
+
+
+def test_google_user_has_no_password_to_change(google_client: FlaskClient):
+    html = google_client.get("/account").get_data(as_text=True)
+
+    assert "You log in with Google" in html
+    assert "Change password" not in html
+    assert 'name="current_password"' not in html
+
+
+def test_google_user_saves_their_name(google_client: FlaskClient, db_app: Flask):
+    rv = google_client.post("/account", data={"name": "Gina", "surname": "Rossi"})
+
+    assert rv.status_code == 302
+    with db_app.app_context():
+        saved = find_by_email(get_db(), "gina@example.com")
+    assert saved is not None
+    assert (saved.name, saved.surname) == ("Gina", "Rossi")
+    assert google_client.get("/account").status_code == 200  # still logged in

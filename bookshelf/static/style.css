@@ -1064,6 +1064,18 @@ dialog .card {
   margin-top: 0.5rem;
 }
 
+/* Between the login form's button and "Log in with Google", lined up with them. */
+.login-or {
+  margin: 0;
+  color: var(--ink-muted);
+  font-size: 0.875rem;
+  font-weight: 200;
+}
+
+.login-google {
+  justify-self: start;
+}
+
 /* Author rows of the add-book form: name, surname and a +/- button. */
 .author-rows,
 .category-rows {

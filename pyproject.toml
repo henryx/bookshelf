@@ -15,6 +15,7 @@ classifiers = [
 requires-python = ">=3.14"
 dependencies = [
     "argon2-cffi>=25.1.0,<26",
+    "authlib>=1.6,<2",
     "click>=8.5.0,<9",
     "email-validator>=2,<3",
     "firebird-driver>=2.1.2,<3",
@@ -24,6 +25,7 @@ dependencies = [
     "gunicorn>=26.0.0,<27",
     "prettytable>=3.18.0,<4",
     "python-json-logger>=4.2.0,<5",
+    "requests>=2.32,<3",
     "wtforms>=3.3.1,<4",
 ]
 

@@ -20,15 +20,24 @@
     <span>Admin <span class="hint">(your own account)</span></span>
     <span class="label">Status</span>
     <span>Active</span>
+    {# Nor change how they log in: a Google login not set up would lock them out. #}
+    <input type="hidden" name="auth_method" value="{{ user.auth_method.value }}">
+    <span class="label">{{ form.auth_method.label.text }}</span>
+    <span>{{ "With Google" if user.auth_method.value == "GOOGLE" else "With a password" }}</span>
   {% else %}
     <label for="edit-role">{{ form.role.label.text }}</label>
     {{ form.role(id="edit-role") }}
     {% for error in form.role.errors %}<p class="error">{{ error }}</p>{% endfor %}
 
     <label class="checkbox">{{ form.locked(id="edit-locked") }} {{ form.locked.label.text }}</label>
+
+    {% with id_prefix = "edit-" %}{% include "admin/_auth_method_field.html" %}{% endwith %}
   {% endif %}
 
-  {% with password_optional = true, id_prefix = "edit-" %}{% include "_new_password_fields.html" %}{% endwith %}
+  {% with password_optional = true, id_prefix = "edit-",
+          password_hint = "Leave empty to keep the current password; needed when switching from Google, not for Google." %}
+    {% include "_new_password_fields.html" %}
+  {% endwith %}
 
   <button type="submit">Save</button>
   <span id="user-indicator" class="htmx-indicator">Saving…</span>

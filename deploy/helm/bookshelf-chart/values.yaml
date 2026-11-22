@@ -26,6 +26,15 @@ existingSecret: ""
 # python3 -c 'import secrets; print(secrets.token_urlsafe(48))'
 secretKey: ""
 
+# Logging in with Google (README.md, "Logging in with Google"): a Google OAuth
+# client for a web application, whose authorised redirect URI is
+# https://<host>/login/google/callback. Empty clientId: no Google login.
+# The secret goes in the chart's Secret, or in existingSecret under the key
+# APP_GOOGLE_CLIENT_SECRET.
+google:
+  clientId: ""
+  clientSecret: ""
+
 database:
   # Firebird user: allowed to create the tables (e.g. the database owner).
   # With firebird.enabled, Firebird creates it on its first start.

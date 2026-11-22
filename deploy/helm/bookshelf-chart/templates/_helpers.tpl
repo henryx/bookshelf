@@ -55,7 +55,11 @@ envFrom:
   - configMapRef:
       name: {{ include "bookshelf.fullname" . }}
 env:
-  {{- range list "APP_SECRET_KEY" "APP_DB_USER" "APP_DB_PASSWORD" }}
+  {{- $keys := list "APP_SECRET_KEY" "APP_DB_USER" "APP_DB_PASSWORD" }}
+  {{- if .Values.google.clientId }}
+  {{- $keys = append $keys "APP_GOOGLE_CLIENT_SECRET" }}
+  {{- end }}
+  {{- range $keys }}
   - name: {{ . }}
     valueFrom:
       secretKeyRef:

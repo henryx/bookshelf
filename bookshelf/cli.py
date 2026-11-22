@@ -8,6 +8,7 @@ from prettytable import PrettyTable
 from bookshelf.db import get_db
 from bookshelf.db.schema import init_db
 from bookshelf.models.users import (
+    AuthMethod,
     LastAdminError,
     PasswordTooShortError,
     Role,
@@ -20,6 +21,7 @@ from bookshelf.models.users import (
     find_by_email,
     list_users,
     prune_login_failures,
+    set_auth_method,
     set_locked,
     set_password,
     set_role,
@@ -121,27 +123,92 @@ admin_email_option = click.option(
     "--admin-email", prompt="Admin email", help="Admin authorising the operation."
 )
 
+# local: with a password; google: with their Google account (see google_login).
+_AUTH_METHODS = click.Choice(
+    [m.value.lower() for m in AuthMethod], case_sensitive=False
+)
+
+
+def _how_they_log_in(auth_method: AuthMethod) -> str:
+    return "with Google" if auth_method is AuthMethod.GOOGLE else "with a password"
+
 
 @click.command("create-user")
 @click.argument("email", callback=_valid_email)
+@click.option(
+    "--auth",
+    "auth",
+    type=_AUTH_METHODS,
+    default="local",
+    show_default=True,
+    help="How the user logs in: local (a password, asked for) or google.",
+)
 @admin_email_option
 @with_appcontext
-def create_user_command(email: str, admin_email: str) -> None:
+def create_user_command(email: str, auth: str, admin_email: str) -> None:
     """Create a regular user. Requires admin credentials."""
     conn = get_db()
     admin = _require_admin(conn, admin_email, "Create user")
     if find_by_email(conn, email) is not None:
         raise click.ClickException(f"User {email} already exists")
 
-    password = _prompt_new_password("Password")
+    auth_method = AuthMethod(auth.upper())
+    password = (
+        _prompt_new_password("Password") if auth_method is AuthMethod.LOCAL else None
+    )
     try:
         user = create_user(
-            conn, email, password, min_password_length=_min_password_length()
+            conn,
+            email,
+            password,
+            auth_method=auth_method,
+            min_password_length=_min_password_length(),
         )
     except UserExistsError as e:
         raise click.ClickException(str(e)) from e
-    current_app.logger.info("User %s created by admin %s", user.email, admin.email)
-    click.echo(f"User {user.email} created.")
+    current_app.logger.info(
+        "User %s created by admin %s, logging in %s",
+        user.email,
+        admin.email,
+        _how_they_log_in(auth_method),
+    )
+    click.echo(f"User {user.email} created: logs in {_how_they_log_in(auth_method)}.")
+
+
+@click.command("set-auth-method")
+@click.argument("email")
+@click.argument("auth", type=_AUTH_METHODS)
+@admin_email_option
+@with_appcontext
+def set_auth_method_command(email: str, auth: str, admin_email: str) -> None:
+    """
+    Make a user log in locally (a new password, asked for) or with Google.
+    Ends their open sessions. Requires admin credentials.
+    """
+    conn = get_db()
+    admin = _require_admin(conn, admin_email, "Set auth method")
+    user = _require_user(conn, email)
+
+    auth_method = AuthMethod(auth.upper())
+    password = (
+        _prompt_new_password("New password")
+        if auth_method is AuthMethod.LOCAL
+        else None
+    )
+    set_auth_method(
+        conn,
+        user,
+        auth_method,
+        password=password,
+        min_password_length=_min_password_length(),
+    )
+    current_app.logger.info(
+        "User %s set to log in %s by admin %s",
+        user.email,
+        _how_they_log_in(auth_method),
+        admin.email,
+    )
+    click.echo(f"{user.email} now logs in {_how_they_log_in(auth_method)}.")
 
 
 @click.command("reset-user-password")
@@ -153,6 +220,11 @@ def reset_user_password_command(email: str, admin_email: str) -> None:
     conn = get_db()
     admin = _require_admin(conn, admin_email, "Password reset")
     user = _require_user(conn, email)
+    if user.auth_method is AuthMethod.GOOGLE:
+        raise click.ClickException(
+            f"{user.email} logs in with Google and has no password: "
+            "set-auth-method makes them local, with a new password"
+        )
 
     password = _prompt_new_password("New password")
     set_password(conn, user, password, min_password_length=_min_password_length())
@@ -266,10 +338,12 @@ def list_users_command(admin_email: str) -> None:
     conn = get_db()
     _require_admin(conn, admin_email, "List users")
 
-    table = PrettyTable(["Email", "Role", "Status"], align="l")
+    table = PrettyTable(["Email", "Role", "Login", "Status"], align="l")
     for user in list_users(conn):
         status = "locked" if user.is_locked else "active"
-        table.add_row([user.email, user.role.value, status])
+        table.add_row(
+            [user.email, user.role.value, user.auth_method.value.lower(), status]
+        )
     click.echo(table)
 
 
@@ -279,6 +353,7 @@ def init_app(app: Flask) -> None:
     app.cli.add_command(create_admin_command)
     app.cli.add_command(create_user_command)
     app.cli.add_command(reset_user_password_command)
+    app.cli.add_command(set_auth_method_command)
     app.cli.add_command(promote_user_command)
     app.cli.add_command(demote_user_command)
     app.cli.add_command(lock_user_command)

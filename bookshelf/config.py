@@ -76,6 +76,22 @@ class Config:
         return _non_negative_int("APP_TRUSTED_PROXIES", 0)
 
     @property
+    def google_client(self) -> tuple[str, str] | None:
+        """
+        Google OAuth client ID and secret, for logging in with Google; None
+        without them. Both or neither: half of them stops the app.
+        """
+        client_id = os.environ.get("APP_GOOGLE_CLIENT_ID") or None
+        secret = os.environ.get("APP_GOOGLE_CLIENT_SECRET") or None
+        if client_id is None and secret is None:
+            return None
+        if client_id is None or secret is None:
+            raise RuntimeError(
+                "APP_GOOGLE_CLIENT_ID and APP_GOOGLE_CLIENT_SECRET must be set together"
+            )
+        return client_id, secret
+
+    @property
     def log_level(self) -> str:
         return os.environ.get("APP_LOG_LEVEL", "info")
 

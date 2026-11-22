@@ -12,7 +12,12 @@
 
   {% include "_name_fields.html" %}
 
-  {% include "_new_password_fields.html" %}
+  {% include "admin/_auth_method_field.html" %}
+
+  {# Not required in the page: a user logging in with Google has none. #}
+  {% with password_optional = true, password_hint = "Not for a user logging in with Google." %}
+    {% include "_new_password_fields.html" %}
+  {% endwith %}
 
   <button type="submit">Create user</button>
   <span id="create-user-indicator" class="htmx-indicator">Creating…</span>

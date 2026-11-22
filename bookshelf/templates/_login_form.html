@@ -16,4 +16,9 @@
 
   <button type="submit">Log in</button>
   <span id="login-indicator" class="htmx-indicator">Logging in…</span>
+  {# A plain link: google_start sends the browser on to Google. #}
+  {% if config.GOOGLE_CLIENT_ID %}
+    <p class="login-or">or</p>
+    <a class="button secondary login-google" href="{{ url_for('auth.google_start') }}">Log in with Google</a>
+  {% endif %}
 </form>

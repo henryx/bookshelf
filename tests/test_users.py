@@ -13,7 +13,9 @@ from bookshelf.db import get_db
 from bookshelf.models import users as users_model
 from bookshelf.models.users import (
     MIN_PASSWORD_LENGTH,
+    AuthMethod,
     LastAdminError,
+    NoPasswordError,
     PasswordTooShortError,
     Role,
     User,
@@ -23,8 +25,11 @@ from bookshelf.models.users import (
     create_user,
     delete_user,
     find_by_email,
+    find_by_id,
     find_by_session_id,
+    google_login,
     list_users,
+    set_auth_method,
     set_locked,
     set_password,
     set_role,
@@ -35,6 +40,7 @@ from bookshelf.models.users import (
 
 
 def test_password_is_stored_as_argon2id_hash(user: User, password: str):
+    assert user.password_hash is not None
     assert user.password_hash.startswith("$argon2id$")
     assert password not in user.password_hash
 
@@ -560,3 +566,183 @@ def test_refused_login_removal_retries_after_a_conflict(
         f"Retrying removal of refused login for {user.email} from 192.0.2.1"
         in caplog.messages
     )
+
+
+# Google authentication
+
+
+def _google_user(db_app: Flask, email: str = "g@example.com") -> User:
+    with db_app.app_context():
+        return create_user(get_db(), email, None, auth_method=AuthMethod.GOOGLE)
+
+
+def test_users_log_in_locally_by_default(user: User):
+    assert user.auth_method is AuthMethod.LOCAL
+
+
+def test_google_user_has_no_password(db_app: Flask):
+    user = _google_user(db_app, "G@Example.com")
+
+    assert (user.email, user.auth_method) == ("g@example.com", AuthMethod.GOOGLE)
+    assert user.password_hash is None
+    assert user.google_subject is None
+
+
+def test_google_user_cannot_be_given_a_password(db_app: Flask, password: str):
+    with db_app.app_context(), pytest.raises(NoPasswordError):
+        create_user(get_db(), "g@example.com", password, auth_method=AuthMethod.GOOGLE)
+
+
+def test_local_user_needs_a_password(db_app: Flask):
+    with db_app.app_context(), pytest.raises(PasswordTooShortError):
+        create_user(get_db(), "l@example.com", None)
+
+
+def test_google_user_cannot_log_in_with_a_password(db_app: Flask):
+    _google_user(db_app)
+
+    with db_app.app_context():
+        assert authenticate(get_db(), "g@example.com", "") is None
+        assert authenticate(get_db(), "g@example.com", "anything at all") is None
+
+
+def test_first_google_login_binds_the_account_by_email(db_app: Flask):
+    created = _google_user(db_app)
+
+    with db_app.app_context():
+        user = google_login(get_db(), "sub-1", "G@example.com")
+
+    assert user is not None
+    assert (user.id, user.google_subject) == (created.id, "sub-1")
+
+
+def test_later_google_logins_use_the_bound_account(db_app: Flask):
+    created = _google_user(db_app)
+    with db_app.app_context():
+        conn = get_db()
+        google_login(conn, "sub-1", "g@example.com")
+
+        # Its Gmail address changed: still the same Google account.
+        user = google_login(conn, "sub-1", "renamed@example.com")
+
+    assert user is not None and user.id == created.id
+
+
+def test_another_google_account_with_the_email_is_refused(db_app: Flask):
+    _google_user(db_app)
+    with db_app.app_context():
+        conn = get_db()
+        google_login(conn, "sub-1", "g@example.com")
+
+        assert google_login(conn, "sub-2", "g@example.com") is None
+
+
+@pytest.mark.parametrize("email", ["reader@example.com", "nobody@example.com"])
+def test_google_login_needs_a_google_user(db_app: Flask, user: User, email: str):
+    """A local user, or no user at all, with the Google account's email."""
+    with db_app.app_context():
+        assert google_login(get_db(), "sub-1", email) is None
+        assert find_by_id(get_db(), user.id) == user  # not bound
+
+
+def test_switching_to_google_drops_the_password_and_ends_sessions(
+    db_app: Flask, user: User
+):
+    with db_app.app_context():
+        conn = get_db()
+        set_auth_method(conn, user, AuthMethod.GOOGLE)
+        switched = find_by_id(conn, user.id)
+
+        assert switched is not None
+        assert (switched.auth_method, switched.password_hash) == (
+            AuthMethod.GOOGLE,
+            None,
+        )
+        assert find_by_session_id(conn, user.get_id()) is None
+
+
+def test_switching_to_local_sets_a_password_and_unbinds(db_app: Flask, password: str):
+    google = _google_user(db_app)
+    with db_app.app_context():
+        conn = get_db()
+        bound = google_login(conn, "sub-1", "g@example.com")
+        assert bound is not None
+
+        set_auth_method(conn, bound, AuthMethod.LOCAL, password=password)
+
+        assert authenticate(conn, google.email, password) is not None
+        local = find_by_id(conn, google.id)
+        assert local is not None and local.google_subject is None
+        assert find_by_session_id(conn, bound.get_id()) is None
+
+
+def test_switching_to_local_needs_a_password(db_app: Flask):
+    google = _google_user(db_app)
+
+    with db_app.app_context(), pytest.raises(PasswordTooShortError):
+        set_auth_method(get_db(), google, AuthMethod.LOCAL)
+
+
+def test_a_google_user_has_no_password_to_set(db_app: Flask, password: str):
+    google = _google_user(db_app)
+
+    with db_app.app_context(), pytest.raises(NoPasswordError):
+        set_password(get_db(), google, password)
+
+
+def _admin_update(
+    conn: Connection, user: User, auth_method: AuthMethod, password: str | None
+) -> None:
+    update_user(
+        conn,
+        user,
+        name=None,
+        surname=None,
+        role=Role.REGULAR,
+        locked=False,
+        auth_method=auth_method,
+        password=password,
+    )
+
+
+def test_admin_update_switches_the_auth_method(db_app: Flask, user: User, password):
+    with db_app.app_context():
+        conn = get_db()
+        _admin_update(conn, user, AuthMethod.GOOGLE, None)
+        google = find_by_id(conn, user.id)
+        assert google is not None and google.password_hash is None
+
+        with pytest.raises(PasswordTooShortError):
+            _admin_update(conn, google, AuthMethod.LOCAL, None)
+        _admin_update(conn, google, AuthMethod.LOCAL, password)
+        assert authenticate(conn, user.email, password) is not None
+
+
+def test_admin_update_keeps_a_google_users_binding(db_app: Flask):
+    google = _google_user(db_app)
+    with db_app.app_context():
+        conn = get_db()
+        bound = google_login(conn, "sub-1", "g@example.com")
+        assert bound is not None
+
+        update_user(
+            conn,
+            bound,
+            name="Gina",
+            surname=None,
+            role=Role.REGULAR,
+            locked=False,
+            auth_method=AuthMethod.GOOGLE,
+            password=None,
+        )
+
+        saved = find_by_id(conn, google.id)
+        assert saved is not None
+        assert (saved.name, saved.google_subject) == ("Gina", "sub-1")
+
+
+def test_a_google_user_has_no_password_to_change(db_app: Flask, password: str):
+    google = _google_user(db_app)
+
+    with db_app.app_context(), pytest.raises(NoPasswordError):
+        update_account(get_db(), google, name="Gina", surname=None, password=password)

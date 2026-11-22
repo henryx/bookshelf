@@ -313,8 +313,7 @@ def test_a_newer_step_left_halfway_is_refused(empty_db_app: Flask, steps):
         assert _state(conn) == (0, 1)
 
 
-def test_a_second_init_db_waits_for_the_first(app: Flask, other_conn, race, steps):
-    steps()
+def test_a_second_init_db_waits_for_the_first(app: Flask, other_conn, race):
     with app.app_context():
         init_db(get_db())
     # Another init_db holds the lock; it always rolls back what holds it.
@@ -330,7 +329,8 @@ def test_a_second_init_db_waits_for_the_first(app: Flask, other_conn, race, step
 
 
 def test_requests_wait_while_the_schema_is_behind(app: Flask, steps, caplog):
-    steps(ADD_NOTE)
+    """The session database has every real step: one more puts it behind."""
+    steps(*schema.UPGRADES, ADD_NOTE)
     client = app.test_client()
 
     rv = client.get("/login")
