@@ -111,7 +111,7 @@ def test_late_suggestions_do_not_reopen_a_closed_dialog(
     held[0].continue_()
 
     expect(
-        reader_page.locator("#edit-book-publisher-suggestions option")
+        reader_page.locator('#edit-book-publisher-suggestions [role="option"]')
     ).to_have_count(1)
     expect(dialog).to_be_hidden()
 
@@ -245,8 +245,8 @@ def test_added_category_row_suggests_categories(reader_page: Page, herbert_book)
     reader_page.locator("#book-categories-1").fill("sci")
 
     expect(
-        reader_page.locator("#book-categories-1-suggestions option")
-    ).to_have_attribute("value", "Science fiction")
+        reader_page.locator('#book-categories-1-suggestions [role="option"]')
+    ).to_have_attribute("data-value", "Science fiction")
 
 
 def test_publisher_field_suggests_matching_publishers(reader_page: Page, herbert_book):
@@ -254,9 +254,9 @@ def test_publisher_field_suggests_matching_publishers(reader_page: Page, herbert
 
     reader_page.get_by_label("Publisher", exact=True).fill("pen")
 
-    options = reader_page.locator("#book-publisher-suggestions option")
+    options = reader_page.locator('#book-publisher-suggestions [role="option"]')
     expect(options).to_have_count(1)
-    expect(options).to_have_attribute("value", "Penguin")
+    expect(options).to_have_attribute("data-value", "Penguin")
 
 
 def test_added_author_row_suggests_authors(reader_page: Page, herbert_book):
@@ -266,19 +266,18 @@ def test_added_author_row_suggests_authors(reader_page: Page, herbert_book):
     reader_page.locator("#book-authors-1-surname").fill("her")
 
     expect(
-        reader_page.locator("#book-authors-1-surname-suggestions option")
-    ).to_have_attribute("value", "Frank Herbert")
+        reader_page.locator('#book-authors-1-surname-suggestions [role="option"]')
+    ).to_have_attribute("data-value", "Frank Herbert")
 
 
 def test_picking_an_author_fills_name_and_surname(reader_page: Page, herbert_book):
     _open_add_book(reader_page)
     name = reader_page.locator("#book-authors-0-name")
     name.fill("Fra")
-    expect(
-        reader_page.locator("#book-authors-0-name-suggestions option")
-    ).to_have_count(1)
 
-    name.fill("Frank Herbert")  # what picking the suggestion puts in the field
+    reader_page.locator("#book-authors-0-name-suggestions").get_by_role(
+        "option", name="Frank Herbert"
+    ).click()
 
     expect(name).to_have_value("Frank")
     expect(reader_page.locator("#book-authors-0-surname")).to_have_value("Herbert")

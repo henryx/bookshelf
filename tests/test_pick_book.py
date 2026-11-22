@@ -61,9 +61,11 @@ def _suggest(client: FlaskClient, field: str, q: str):
 
 
 def _options(html: str) -> list[tuple[str, str, str]]:
-    """(value, data-book-id, label) of each <option>."""
+    """(value, data-book-id, details) of each option."""
     return re.findall(
-        r'<option value="([^"]*)" data-book-id="([^"]*)" label="([^"]*)"', html
+        r'<li role="option" data-value="([^"]*)" data-book-id="([^"]*)">[^<]*'
+        r'<span class="suggestion-detail">([^<]*)</span>',
+        html,
     )
 
 
@@ -136,12 +138,15 @@ def test_title_and_isbn_inputs_ask_for_suggestions(client, field, name):
 
     input_tag = re.search(rf'<input [^>]*id="book-{name}"[^>]*>', html)
     assert input_tag
-    assert f'list="book-{name}-suggestions"' in input_tag[0]
+    assert 'role="combobox"' in input_tag[0]
+    assert f'aria-controls="book-{name}-suggestions"' in input_tag[0]
     assert 'hx-get="/books/suggestions"' in input_tag[0]
     assert f'hx-vals="{{&#34;field&#34;: &#34;{field}&#34;}}"' in input_tag[0]
     assert 'hx-swap="innerHTML"' in input_tag[0]
     assert "data-book-pick" in input_tag[0]
-    assert f'<datalist id="book-{name}-suggestions">' in html
+    assert (
+        f'<ul id="book-{name}-suggestions" class="suggestions" role="listbox"' in html
+    )
 
 
 def test_add_form_loads_a_picked_book_from_the_list_it_is_on(client):

@@ -1,4 +1,4 @@
-{# Options for the publisher's <datalist>. #}
+{# The options of the publisher field's suggestion list (app.js shows it and puts the one picked in the field). #}
 {% for publisher in publishers %}
-  <option value="{{ publisher }}"></option>
+  <li role="option" data-value="{{ publisher }}">{{ publisher }}</li>
 {% endfor %}

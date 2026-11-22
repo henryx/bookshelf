@@ -467,8 +467,8 @@ def delete(book_id: UUID) -> BaseResponse:
 @login_required
 def author_suggestions() -> str:
     """
-    <option>s for an author row's <datalist>: authors whose name (or
-    surname, by `field`) starts with `q`.
+    The options of an author row field's suggestion list: authors whose
+    name (or surname, by `field`) starts with `q`.
     """
     try:
         field = AuthorField(request.args.get("field"))
@@ -482,7 +482,7 @@ def author_suggestions() -> str:
 @login_required
 def book_suggestions() -> str:
     """
-    <option>s for the add-book form's title or ISBN <datalist> (by
+    The options of the add-book form's title or ISBN suggestion list (by
     `field`): catalogue books whose title or ISBN starts with `q`. Picking
     one loads it into the form (app.js).
     """
@@ -497,7 +497,7 @@ def book_suggestions() -> str:
 @main_route.route("/publishers/suggestions", methods=("GET",))
 @login_required
 def publisher_suggestions() -> str:
-    """<option>s for the publisher's <datalist>: publishers starting with `q`."""
+    """The options of the publisher's suggestion list: publishers starting with `q`."""
     publishers = suggest_publishers(get_db(), request.args.get("q", ""))
     return render_template("_publisher_suggestions.html", publishers=publishers)
 
@@ -505,6 +505,6 @@ def publisher_suggestions() -> str:
 @main_route.route("/categories/suggestions", methods=("GET",))
 @login_required
 def category_suggestions() -> str:
-    """<option>s for a category row's <datalist>: categories starting with `q`."""
+    """The options of a category row's suggestion list: categories starting with `q`."""
     categories = suggest_categories(get_db(), request.args.get("q", ""))
     return render_template("_category_suggestions.html", categories=categories)

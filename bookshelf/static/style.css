@@ -1105,6 +1105,61 @@ dialog .card {
   cursor: progress;
 }
 
+/* A suggestion field and the list of matches under it (app.js shows it while the field has the
+   focus). Not hidden by display: the list's hidden attribute does that. */
+.suggest {
+  position: relative;
+  display: grid;
+}
+
+.suggest input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.suggestions {
+  position: absolute;
+  top: calc(100% + 0.25rem);
+  right: 0;
+  left: 0;
+  z-index: 10;
+  max-height: 15rem;
+  margin: 0;
+  padding: 0.25rem;
+  overflow-y: auto;
+  list-style: none;
+  border: 2px solid var(--cloth-light);
+  border-radius: 0.5rem;
+  background: var(--paper-raised);
+  box-shadow: 0 0.75rem 1.5rem -0.5rem var(--shade);
+}
+
+.suggestions [role="option"] {
+  padding: 0.5rem 0.625rem;
+  border-radius: 0.375rem;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.suggestions [role="option"]:hover,
+.suggestions [role="option"][aria-selected="true"] {
+  background: var(--cloth);
+  color: var(--on-cloth);
+}
+
+/* What tells books with the same title apart: their authors and year. */
+.suggestion-detail {
+  display: block;
+  font-size: 0.8125rem;
+  font-weight: 200;
+  color: var(--ink-muted);
+}
+
+.suggestions [role="option"]:hover .suggestion-detail,
+.suggestions [role="option"][aria-selected="true"] .suggestion-detail {
+  color: var(--on-cloth-muted);
+}
+
 .row-button {
   padding: 0;
   font-size: 1.375rem;

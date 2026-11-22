@@ -230,7 +230,8 @@ def test_add_book_marks_only_the_repeated_row(client):
         client, **_authors(("Ann", "Leckie"), ("Neil", "Gaiman"), ("Ann", "Leckie"))
     ).get_data(as_text=True)
 
-    rows = re.findall(r'<div class="author-row".*?</div>', html, re.DOTALL)
+    # Each row runs to the next; the last, the <template>'s, is left out.
+    rows = html.split('<div class="author-row"')[1:]
     marked = ["already listed" in row for row in rows if "authors-__index__" not in row]
     assert marked == [False, False, True]
 
@@ -557,9 +558,11 @@ def _suggest(client: FlaskClient, field: str, q: str):
 
 
 def _options(html: str) -> list[tuple[str, str, str]]:
-    """(value, data-name, data-surname) of each <option>."""
+    """(value, data-name, data-surname) of each option."""
     return re.findall(
-        r'<option value="([^"]*)" data-name="([^"]*)" data-surname="([^"]*)"', html
+        r'<li role="option" data-value="([^"]*)" data-name="([^"]*)" '
+        r'data-surname="([^"]*)"',
+        html,
     )
 
 
@@ -625,12 +628,17 @@ def test_author_inputs_ask_for_suggestions(client):
     for field in ("name", "surname"):
         input_tag = re.search(rf'<input id="book-authors-0-{field}"[^>]*>', html)
         assert input_tag
-        assert f'list="book-authors-0-{field}-suggestions"' in input_tag[0]
+        assert 'role="combobox"' in input_tag[0]
+        assert f'aria-controls="book-authors-0-{field}-suggestions"' in input_tag[0]
         assert 'hx-get="/authors/suggestions"' in input_tag[0]
-        # Not the form's outerHTML (inherited): that would replace the <datalist>.
+        # Not the form's outerHTML (inherited): that would replace the list.
         assert 'hx-swap="innerHTML"' in input_tag[0]
-        assert f'<datalist id="book-authors-0-{field}-suggestions">' in html
-    assert '<datalist id="book-authors-__index__-name-suggestions">' in html
+        assert (
+            f'<ul id="book-authors-0-{field}-suggestions" class="suggestions"' in html
+        )
+    assert (
+        '<ul id="book-authors-__index__-name-suggestions" class="suggestions"' in html
+    )
 
 
 # Publisher suggestions
@@ -641,7 +649,7 @@ def _suggest_publisher(client: FlaskClient, q: str):
 
 
 def _values(html: str) -> list[str]:
-    return re.findall(r'<option value="([^"]*)"', html)
+    return re.findall(r'<li role="option" data-value="([^"]*)"', html)
 
 
 def test_publisher_suggestions_by_start_ignoring_case(client):
@@ -691,10 +699,11 @@ def test_publisher_input_asks_for_suggestions(client):
 
     input_tag = re.search(r'<input [^>]*id="book-publisher"[^>]*>', html)
     assert input_tag
-    assert 'list="book-publisher-suggestions"' in input_tag[0]
+    assert 'role="combobox"' in input_tag[0]
+    assert 'aria-controls="book-publisher-suggestions"' in input_tag[0]
     assert 'hx-get="/publishers/suggestions"' in input_tag[0]
     assert 'hx-swap="innerHTML"' in input_tag[0]
-    assert '<datalist id="book-publisher-suggestions">' in html
+    assert '<ul id="book-publisher-suggestions" class="suggestions"' in html
 
 
 def test_series_and_volume_share_a_row_and_plot_is_labelled(client):
@@ -756,10 +765,11 @@ def test_category_input_asks_for_suggestions(client):
 
     input_tag = re.search(r'<input [^>]*id="book-categories-0"[^>]*>', html)
     assert input_tag
-    assert 'list="book-categories-0-suggestions"' in input_tag[0]
+    assert 'role="combobox"' in input_tag[0]
+    assert 'aria-controls="book-categories-0-suggestions"' in input_tag[0]
     assert 'hx-get="/categories/suggestions"' in input_tag[0]
     assert "data-suggest" in input_tag[0]
-    assert '<datalist id="book-categories-0-suggestions">' in html
+    assert '<ul id="book-categories-0-suggestions" class="suggestions"' in html
 
 
 def test_add_category_row_without_javascript(db_app, client):

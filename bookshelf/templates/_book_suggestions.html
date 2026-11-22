@@ -1,6 +1,6 @@
-{# Options for the add-book form's title or ISBN <datalist> (field: title or isbn). The
-   value fills the field; the label tells books apart; data-book-id is the book app.js
-   loads into the form when one is picked. #}
+{# The options of the add-book form's title or ISBN suggestion list (field: title or isbn). The
+   value fills the field; the details tell books apart; data-book-id is the book app.js loads
+   into the form when one is picked. #}
 {% for book in books %}
   {% set authors = book.authors | join(", ") %}
   {% if field == "isbn" %}
@@ -8,5 +8,5 @@
   {% else %}
     {% set value, details = book.title, [authors, book.publication_year] %}
   {% endif %}
-  <option value="{{ value }}" data-book-id="{{ book.id }}" label="{{ details | select | join(' · ') }}"></option>
+  <li role="option" data-value="{{ value }}" data-book-id="{{ book.id }}">{{ value }} <span class="suggestion-detail">{{ details | select | join(' · ') }}</span></li>
 {% endfor %}

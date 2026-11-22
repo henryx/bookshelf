@@ -1,18 +1,21 @@
 {# One category row of a book form (see _category_rows.html). Takes id_prefix, index (a number, or
    "__index__" in the <template> that app.js copies), value, errors and first: the first row has the
    + button, the others a - button. Both submit the form when JavaScript is off, so the server adds
-   or removes the row. Typing fills the row's <datalist> with matching categories from the server
+   or removes the row. Typing fills the row's suggestion list with matching categories from the server
    (app.js sends the text as q). readonly (a picked book in the add-book form): a read-only field and
    no button. #}
 {% set id = id_prefix ~ "categories-" ~ index %}
 <div class="category-row" data-row data-index="{{ index }}">
-  <input id="{{ id }}" name="categories-{{ index }}" value="{{ value or '' }}"
-         maxlength="64" autocomplete="off" placeholder="Category" aria-label="Category"
-         list="{{ id }}-suggestions" data-suggest
-         hx-get="{{ url_for('main.category_suggestions') }}"
-         hx-trigger="input changed delay:200ms" hx-target="#{{ id }}-suggestions" hx-swap="innerHTML"
-         hx-sync="this:replace" hx-indicator="closest .category-row"{% if readonly %} readonly{% endif %}>
-  <datalist id="{{ id }}-suggestions"></datalist>
+  <div class="suggest">
+    <input id="{{ id }}" name="categories-{{ index }}" value="{{ value or '' }}"
+           maxlength="64" autocomplete="off" placeholder="Category" aria-label="Category"
+           role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="{{ id }}-suggestions"
+           data-suggest
+           hx-get="{{ url_for('main.category_suggestions') }}"
+           hx-trigger="input changed delay:200ms" hx-target="#{{ id }}-suggestions" hx-swap="innerHTML"
+           hx-sync="this:replace" hx-indicator="closest .category-row"{% if readonly %} readonly{% endif %}>
+    {% with id = id ~ "-suggestions" %}{% include "_suggestion_list.html" %}{% endwith %}
+  </div>
   {% if readonly %}
   {% elif first %}
     <button type="submit" class="row-button" name="add_category" value="1" formnovalidate

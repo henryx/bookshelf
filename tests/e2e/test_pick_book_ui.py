@@ -31,17 +31,10 @@ def _open_add_book(page: Page) -> Locator:
 
 
 def _pick(field: Locator, typed: str, value: str) -> None:
-    """Type `typed`, wait for the suggestions, then pick the one with `value`."""
+    """Type `typed`, wait for the suggestions, then click the one with `value`."""
     field.fill(typed)
-    datalist = field.page.locator(f"#{field.get_attribute('list')} option")
-    expect(datalist.first).to_have_attribute("value", value)
-    # A pick from a <datalist> fires a plain "input" Event (Chromium), not
-    # an InputEvent as typing does.
-    field.evaluate(
-        "(el, value) => { el.value = value;"
-        " el.dispatchEvent(new Event('input', {bubbles: true})); }",
-        value,
-    )
+    listbox = field.page.locator(f"#{field.get_attribute('aria-controls')}")
+    listbox.locator(f'[role="option"][data-value="{value}"]').click()
 
 
 @pytest.mark.parametrize(
@@ -99,11 +92,11 @@ def test_typing_a_whole_title_does_not_pick_it(reader_page: Page, dune):
     dialog = _open_add_book(reader_page)
     title = dialog.get_by_role("combobox", name="Title")
     title.fill("Du")
-    expect(dialog.locator("#book-title-suggestions option")).to_have_count(1)
+    expect(dialog.locator('#book-title-suggestions [role="option"]')).to_have_count(1)
 
     title.press_sequentially("ne")
 
-    expect(dialog.locator("#book-title-suggestions option")).to_have_count(1)
+    expect(dialog.locator('#book-title-suggestions [role="option"]')).to_have_count(1)
     expect(title).to_be_editable()
     expect(dialog.get_by_role("button", name="Add book")).to_be_visible()
 

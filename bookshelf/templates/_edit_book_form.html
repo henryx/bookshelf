@@ -10,15 +10,25 @@
     <p class="error" role="alert">{{ error }}</p>
   {% endfor %}
 
-  {% macro field(f, hint=None) %}
+  {% macro field(f, hint=None, suggest=false) %}
+    {# suggest=true gives it a suggestion list (_suggestion_list.html), filled by its hx-* attributes. #}
     {% set id = "edit-book-" ~ f.name %}
-    <label for="{{ id }}">{{ f.label.text }}</label>
-    {% if hint %}
-      {{ f(id=id, aria_describedby=id ~ "-hint", **kwargs) }}
-      <p id="{{ id }}-hint" class="hint">{{ hint }}</p>
-    {% else %}
-      {{ f(id=id, **kwargs) }}
+    {% set attrs = dict(kwargs, id=id) %}
+    {% if hint %}{% set attrs = dict(attrs, aria_describedby=id ~ "-hint") %}{% endif %}
+    {% if suggest %}
+      {% set attrs = dict(attrs, role="combobox", aria_autocomplete="list", aria_expanded="false",
+                          aria_controls=id ~ "-suggestions", data_suggest=True) %}
     {% endif %}
+    <label for="{{ id }}">{{ f.label.text }}</label>
+    {% if suggest %}
+      <div class="suggest">
+        {{ f(**attrs) }}
+        {% with id = id ~ "-suggestions" %}{% include "_suggestion_list.html" %}{% endwith %}
+      </div>
+    {% else %}
+      {{ f(**attrs) }}
+    {% endif %}
+    {% if hint %}<p id="{{ id }}-hint" class="hint">{{ hint }}</p>{% endif %}
     {% for error in f.errors %}<p class="error">{{ error }}</p>{% endfor %}
   {% endmacro %}
 
@@ -32,8 +42,7 @@
   {# Publisher and year side by side, as when adding a book. #}
   <div class="field-row">
     <div class="field">
-      {{ field(form.publisher, maxlength=255, autocomplete="off", list="edit-book-publisher-suggestions",
-               data_suggest=True, **{
+      {{ field(form.publisher, maxlength=255, autocomplete="off", suggest=True, **{
                  "hx-get": url_for("main.publisher_suggestions"),
                  "hx-trigger": "input changed delay:200ms",
                  "hx-target": "#edit-book-publisher-suggestions",
@@ -41,7 +50,6 @@
                  "hx-sync": "this:replace",
                  "hx-indicator": "closest .field",
                }) }}
-      <datalist id="edit-book-publisher-suggestions"></datalist>
     </div>
     <div class="field">{{ field(form.publication_year, min=1, max=9999) }}</div>
   </div>

@@ -1,4 +1,4 @@
-{# Options for a category row's <datalist>. #}
+{# The options of a category row's suggestion list (app.js shows it and puts the one picked in the field). #}
 {% for category in categories %}
-  <option value="{{ category }}"></option>
+  <li role="option" data-value="{{ category }}">{{ category }}</li>
 {% endfor %}

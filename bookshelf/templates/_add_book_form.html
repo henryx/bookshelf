@@ -50,23 +50,34 @@
           hx-target="#add-book-form" hx-swap="outerHTML" hx-indicator="#add-book-loading"></span>
   {% endif %}
 
-  {% macro field(name, hint=None, locked=true) %}
-    {# locked=false keeps a field editable for a picked book (the copies). #}
+  {% macro field(name, hint=None, locked=true, suggest=false) %}
+    {# locked=false keeps a field editable for a picked book (the copies). suggest=true gives
+       it a suggestion list (_suggestion_list.html), filled by its hx-* attributes. #}
     {% set f = form[name] %}
-    <label for="book-{{ name }}">{{ f.label.text }}</label>
-    {% if hint %}
-      {{ f(id="book-" ~ name, aria_describedby="book-" ~ name ~ "-hint", readonly=readonly and locked, **kwargs) }}
-      <p id="book-{{ name }}-hint" class="hint">{{ hint }}</p>
-    {% else %}
-      {{ f(id="book-" ~ name, readonly=readonly and locked, **kwargs) }}
+    {% set id = "book-" ~ name %}
+    {% set attrs = dict(kwargs, id=id, readonly=readonly and locked) %}
+    {% if hint %}{% set attrs = dict(attrs, aria_describedby=id ~ "-hint") %}{% endif %}
+    {% if suggest %}
+      {% set attrs = dict(attrs, role="combobox", aria_autocomplete="list", aria_expanded="false",
+                          aria_controls=id ~ "-suggestions", data_suggest=True) %}
     {% endif %}
+    <label for="{{ id }}">{{ f.label.text }}</label>
+    {% if suggest %}
+      <div class="suggest">
+        {{ f(**attrs) }}
+        {% with id = id ~ "-suggestions" %}{% include "_suggestion_list.html" %}{% endwith %}
+      </div>
+    {% else %}
+      {{ f(**attrs) }}
+    {% endif %}
+    {% if hint %}<p id="{{ id }}-hint" class="hint">{{ hint }}</p>{% endif %}
     {% for error in f.errors %}<p class="error">{{ error }}</p>{% endfor %}
   {% endmacro %}
 
-  {# Typing a title or an ISBN lists matching catalogue books in its <datalist> (app.js sends the
+  {# Typing a title or an ISBN lists matching catalogue books under it (app.js sends the
      text as q); picking one loads it into the form (data-book-pick). #}
-  {{ field("title", required=True, maxlength=255, autocomplete="off", list="book-title-suggestions",
-           data_suggest=True, data_book_pick=True, **{
+  {{ field("title", required=True, maxlength=255, autocomplete="off", suggest=True,
+           data_book_pick=True, **{
              "hx-get": url_for("main.book_suggestions"),
              "hx-vals": '{"field": "title"}',
              "hx-trigger": "input changed delay:200ms",
@@ -75,10 +86,9 @@
              "hx-sync": "this:replace",
              "hx-indicator": "this",
            }) }}
-  <datalist id="book-title-suggestions"></datalist>
   {% with id_prefix = "book-" %}{% include "_author_rows.html" %}{% endwith %}
   {{ field("isbn", "ISBN-10 or ISBN-13; hyphens and spaces are fine.", autocomplete="off",
-           list="book-isbn-suggestions", data_suggest=True, data_book_pick=True, **{
+           suggest=True, data_book_pick=True, **{
              "hx-get": url_for("main.book_suggestions"),
              "hx-vals": '{"field": "isbn"}',
              "hx-trigger": "input changed delay:200ms",
@@ -87,13 +97,11 @@
              "hx-sync": "this:replace",
              "hx-indicator": "this",
            }) }}
-  <datalist id="book-isbn-suggestions"></datalist>
   {# Publisher and year side by side; the year needs only a few digits. #}
   <div class="field-row">
-    {# Typing lists matching publishers in the <datalist> (app.js sends the text as q). #}
+    {# Typing lists matching publishers under it (app.js sends the text as q). #}
     <div class="field">
-      {{ field("publisher", maxlength=255, autocomplete="off", list="book-publisher-suggestions",
-               data_suggest=True, **{
+      {{ field("publisher", maxlength=255, autocomplete="off", suggest=True, **{
                  "hx-get": url_for("main.publisher_suggestions"),
                  "hx-trigger": "input changed delay:200ms",
                  "hx-target": "#book-publisher-suggestions",
@@ -101,7 +109,6 @@
                  "hx-sync": "this:replace",
                  "hx-indicator": "closest .field",
                }) }}
-      <datalist id="book-publisher-suggestions"></datalist>
     </div>
     <div class="field">{{ field("publication_year", min=1, max=9999) }}</div>
   </div>

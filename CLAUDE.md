@@ -133,7 +133,7 @@ Avoid generic AI aesthetics. Make creative, distinctive choices.
 - Handle `HX-Request` header for partial vs full page responses
 - Elements inside an htmx form inherit its `hx-*` attributes (e.g. `hx-swap="outerHTML"`): give inner htmx elements their own `hx-target` and `hx-swap`
 - Repeatable rows: a `[data-rows]` container with `[data-row]` rows, a `<template data-row-template>` (`__index__` placeholder), `[data-row-add]` / `[data-row-remove]` submit buttons (the server adds or removes the row without JavaScript)
-- Suggestions: an input with `data-suggest`, `list` and `hx-get` filling its `<datalist>`; `app.js` sends the text as `q`
+- Suggestions: an input with `data-suggest`, `role="combobox"`, `aria-controls` and `hx-get` filling its `_suggestion_list.html` listbox with `<li role="option" data-value>` options, inside a `.suggest` wrapper (the form macros' `suggest=True` does this); `app.js` sends the text as `q`, shows the list and handles the keys and the pick. Never a `<datalist>`: Firefox opens its dropdown only for the options there at the keystroke, not for those htmx adds after
 - WTForms renders `data_*` / `aria_*` keyword arguments with hyphens but not `hx_*`: pass htmx attributes as a dict (`**{"hx-get": ...}`)
 
 ### Forms

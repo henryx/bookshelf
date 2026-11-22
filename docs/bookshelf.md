@@ -402,9 +402,11 @@ Decisions:
  - The publisher field suggests the same way: up to 10 publishers already used in the catalogue that start
    with the text, ignoring case (spellings differing only in case are one publisher). Picking one fills the
    field.
- - Suggestions use the browser's own suggestion list (`<datalist>`): it needs little JavaScript and works with
-   the keyboard and screen readers, but its look is the browser's. Without JavaScript the fields are plain
-   inputs, with no suggestions.
+ - Suggestions are the app's own list under the field (an ARIA combobox and listbox), not the browser's
+   (`<datalist>`): Firefox opens a datalist's dropdown only for the options there when a key is pressed, so
+   options arriving from the server a moment later never showed. The list shows while the field has the
+   focus; Up and Down move through it, Enter or a click picks, Escape (closing the list, not the dialog) or
+   leaving the field closes it. Without JavaScript the fields are plain inputs, with no suggestions.
  - Publisher and year share a row, and so do series and volume; the year and volume fields are narrow.
  - Categories are rows of one field, like the authors: the first row has a "+" button that adds a row, the
    others a "−" button that removes theirs (without JavaScript both submit the form, and the server adds or
