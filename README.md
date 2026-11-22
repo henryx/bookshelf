@@ -234,7 +234,51 @@ that already exist, except functions: each is `CREATE OR ALTER`ed on every run, 
   - Adding a new domain, table or index needs no upgrade step: `init-db` creates whatever is missing.
   - Changing a released one (a column added, dropped, renamed or retyped, a constraint added to a released
     table or changed) needs an upgrade step that `init-db` applies to existing databases. That mechanism will
-    be added with the first change that needs it.
+    be added with the first change that needs it, following the design below.
+
+### Upgrade steps (design, not built yet)
+
+Written into `init-db` rather than taken from a migration tool: Alembic would bring in SQLAlchemy only for
+this and has no Firebird support of its own, yoyo-migrations has no Firebird backend, and Flyway or Liquibase
+would add a Java runtime to the deployment.
+
+- **Version.** A `SCHEMA_VERSION` table, created like any new table, holds one number. A database without it
+  is at version 0: the frozen 1.0.0 schema.
+- **Steps.** `schema.py` gets an ordered list of upgrade steps; step *n* takes a database from version *n − 1*
+  to *n*. Each has two Python functions, `upgrade` and `rollback`, running complete literal SQL strings, as
+  everywhere else. `rollback` undoes `upgrade`, taking the database back to version *n − 1*.
+- **Order.** `init-db` creates whatever is missing (version 0, plus any new objects), applies the pending steps
+  in order, then `CREATE OR ALTER`s the functions, which may use what the steps added. A new database takes the
+  same path as an old one, so the two cannot drift apart.
+- **Rollback on failure.** Firebird rolls back DDL with its transaction, but a column added in a transaction
+  cannot be used until that transaction commits. A step that adds a column and fills it therefore commits
+  twice and is not atomic: when it fails, what it committed stays. So when a step fails, `init-db` runs its
+  `rollback`, records nothing, and stops with the step's error; the database is back at version *n − 1*, still
+  working with the running release. The step records its version only in its last transaction.
+- **Rollback after a crash.** A step killed halfway (a pod evicted, the connection lost) gets no chance to
+  roll back. Before its first change, a step marks itself in progress in `SCHEMA_VERSION`; the next `init-db`
+  finds the mark, runs that step's `rollback`, then applies the step again from the start.
+- **Guarded changes.** Since `rollback` can run after a failure at any point of `upgrade`, it undoes only what
+  is there: every change in both functions first checks whether it is already applied or already undone (as
+  `init-db` does for tables, constraints and indexes), so a `rollback` that itself fails can simply be run
+  again.
+- **Compatible with the running release.** The Helm chart runs `init-db` as a pre-upgrade hook, while the old
+  pods keep serving (Firebird lets them go on using a table altered meanwhile). Each step must therefore work
+  with the previous release's code: add columns nullable or with a default, and drop or rename one only in a
+  later release, once no running code uses it. A step that drops a column a function uses (such as
+  `BOOK_MATCHES`) alters that function first: Firebird refuses to drop a column a function depends on.
+- **One run at a time.** `init-db` first updates the version row, holding its lock until it ends, so a second
+  run started meanwhile waits for it.
+- **Startup check.** The app refuses to start while the database is behind its code, saying to run `init-db`.
+  A database ahead of the code is fine: that is the old pods during an upgrade.
+- **What rollback cannot undo.** `rollback` restores the schema, not data a step destroyed: a dropped column's
+  values are gone. Keeping drops to the later, contract releases (above) means a failed step rarely has data to
+  lose, but back up the database with `gbak` before upgrading all the same. `rollback` is for a step that fails;
+  going back to an older release after a successful upgrade means restoring that backup.
+- **Tests.** Each step is tested on a database at the previous version holding data: `upgrade` alone, then
+  `rollback` after making `upgrade` fail at each of its changes in turn, checking that the database is back at
+  version *n − 1* with its data, and that `rollback` run twice changes nothing more. A database upgraded from
+  version 0 ends with the same metadata as a new one.
 
 ## CI and releases
 
