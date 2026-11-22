@@ -6,9 +6,18 @@ from queue import Empty, Full, Queue
 from firebird.driver import Connection, DatabaseError, connect
 from flask import Flask, current_app, g
 
-__all__ = ["ConnectionPool", "close_pool", "get_db", "init_app"]
+__all__ = [
+    "ConnectionPool",
+    "close_pool",
+    "get_db",
+    "init_app",
+    "retry_after_concurrent_delete",
+]
 
 _POOL_KEY = "bookshelf.db_pool"
+# Firebird GDS code for "cannot update erased record": a row the statement
+# changes was deleted by a transaction it waited for, which then committed.
+_ERASED_RECORD = 335544382
 
 logger = logging.getLogger(__name__)
 
@@ -111,3 +120,19 @@ def init_app(app: Flask) -> None:
         partial(_open, app.config), app.config["DATABASE_POOL_SIZE"]
     )
     app.teardown_appcontext(close_db)
+
+
+def retry_after_concurrent_delete[T](run: Callable[[], T]) -> T:
+    """
+    Return run(), running it once more if it changed a row that another
+    transaction was deleting meanwhile: that deletion is committed now, so run
+    again it sees the row gone. `run` uses its own read committed
+    transaction, rolled back when it raises.
+    """
+    try:
+        return run()
+    except DatabaseError as e:
+        if _ERASED_RECORD not in e.gds_codes:
+            raise
+        logger.info("Running again after a concurrent delete: %s", e)
+    return run()

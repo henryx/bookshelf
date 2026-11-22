@@ -1,5 +1,7 @@
 import os
+import time
 from collections.abc import Callable, Iterator
+from concurrent.futures import ThreadPoolExecutor
 from uuid import uuid4
 
 import pytest
@@ -106,6 +108,55 @@ def other_conn(app: Flask) -> Iterator[Connection]:
         finally:
             if conn.is_active():
                 conn.rollback()
+
+
+type Race = Callable[[Callable[[Connection], object], str], object]
+
+
+@pytest.fixture
+def race(app: Flask, other_conn: Connection) -> Race:
+    """
+    Run `change(conn)` on the app's connection, in another thread, until its
+    statement containing `waits_on` waits for other_conn's uncommitted work;
+    then commit that work and return what `change` returns (or raise what it
+    raises). other_conn's work is done by the test before calling it.
+    """
+
+    def blocked(waits_on: str) -> bool:
+        with app.app_context(), get_db().cursor() as cur:
+            # A new transaction each time, so it sees fresh monitoring data.
+            cur.execute(
+                "SELECT COUNT(*) FROM MON$STATEMENTS WHERE MON$STATE = 1 "
+                "AND MON$ATTACHMENT_ID <> CURRENT_CONNECTION "
+                "AND MON$SQL_TEXT CONTAINING ?",
+                (waits_on,),
+            )
+            (running,) = cur.fetchone()
+        return running > 0
+
+    def wait_until_blocked(waits_on: str) -> None:
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            if blocked(waits_on):
+                return
+            time.sleep(0.05)
+        pytest.fail(f"No statement containing {waits_on!r} started waiting")
+
+    def run(change: Callable[[Connection], object], waits_on: str) -> object:
+        def in_app() -> object:
+            with app.app_context():
+                return change(get_db())
+
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            result = executor.submit(in_app)
+            try:
+                wait_until_blocked(waits_on)
+            finally:
+                # Always release the lock, or the executor would wait forever.
+                other_conn.commit()
+            return result.result(timeout=10)
+
+    return run
 
 
 @pytest.fixture

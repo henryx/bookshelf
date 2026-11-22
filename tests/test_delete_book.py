@@ -103,6 +103,30 @@ def test_delete_an_unknown_book(db_app):
         delete_book(get_db(), uuid4())
 
 
+def test_delete_a_book_deleted_meanwhile_is_unknown(db_app, user, other_conn, race):
+    dune = _book(db_app, user, NewBook("Dune", authors=(FRANK,)))
+    # Another admin deletes it, not yet committed.
+    with other_conn.cursor() as cur:
+        cur.execute("DELETE FROM BOOKS WHERE ID = ?", (dune.bytes,))
+
+    with pytest.raises(UnknownBookError):
+        race(lambda conn: delete_book(conn, dune), "DELETE FROM BOOKS")
+
+
+def test_delete_a_book_whose_author_is_removed_meanwhile(
+    db_app, user, other_conn, race
+):
+    dune = _book(db_app, user, NewBook("Dune", authors=(FRANK,)))
+    # Someone editing it removes its author, not yet committed.
+    with other_conn.cursor() as cur:
+        cur.execute("DELETE FROM BOOK_AUTHORS WHERE BOOK_ID = ?", (dune.bytes,))
+
+    deleted = race(lambda conn: delete_book(conn, dune), "DELETE FROM BOOKS")
+
+    assert deleted == DeletedBook("Dune", ())
+    assert not _exists(db_app, dune)
+
+
 def test_book_details_count_the_collections_holding_it(db_app, user, admin):
     dune = _book(db_app, user, NewBook("Dune"), keep=True)
     with db_app.app_context():

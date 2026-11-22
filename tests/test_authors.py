@@ -198,6 +198,101 @@ def test_rename_to_a_name_created_meanwhile_merges(
     assert _all(db_app) == [(FRANK, 1)]
 
 
+def test_merge_keeps_an_author_a_book_being_saved_uses(
+    db_app, user, other_conn: Connection, caplog
+):
+    dune = _book(db_app, user, "Dune", FRNAK)
+    _book(db_app, user, "Dune Messiah", FRANK)
+    emma = _book(db_app, user, "Emma")
+    entry = _entry(db_app, FRNAK)
+    results: list[Renamed | Exception] = []
+
+    def rename() -> None:
+        try:
+            results.append(_rename(db_app, entry, FRANK))
+        except Exception as e:  # noqa: BLE001 - reported by the assertion below
+            results.append(e)
+
+    # Another request gives Frnak a book, not yet committed...
+    with other_conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO BOOK_AUTHORS (BOOK_ID, AUTHOR_ID, SORT_ORDER) "
+            "VALUES (?, ?, 1)",
+            (emma.bytes, entry.id.bytes),
+        )
+    # ...while this one merges Frnak into Frank Herbert.
+    thread = threading.Thread(target=rename)
+    with caplog.at_level(logging.INFO):
+        thread.start()
+        time.sleep(0.5)
+        other_conn.commit()
+        thread.join(timeout=30)
+
+    assert results == [Renamed(FRANK, merged=True)]
+    assert (
+        f"Author {entry.id} kept after merging: a book being saved at this moment "
+        "uses it" in caplog.text
+    )
+    assert _authors_of(db_app, dune) == (FRANK,)
+    assert _authors_of(db_app, emma) == (FRNAK,)
+    assert _all(db_app) == [(FRANK, 2), (FRNAK, 1)]
+
+
+def _delete_book(conn: Connection, book_id: UUID) -> None:
+    """Delete a book (out of its collection first), left uncommitted."""
+    with conn.cursor() as cur:
+        cur.execute("DELETE FROM COLLECTION_BOOKS WHERE BOOK_ID = ?", (book_id.bytes,))
+        cur.execute("DELETE FROM BOOKS WHERE ID = ?", (book_id.bytes,))
+
+
+def _delete_book_and_author(conn: Connection, book_id: UUID, entry: AuthorEntry):
+    """What deleting an author's last book does, left uncommitted."""
+    _delete_book(conn, book_id)
+    with conn.cursor() as cur:
+        cur.execute("DELETE FROM AUTHORS WHERE ID = ?", (entry.id.bytes,))
+
+
+def test_rename_an_author_deleted_meanwhile(db_app, user, other_conn, race):
+    dune = _book(db_app, user, "Dune", FRNAK)
+    entry = _entry(db_app, FRNAK)
+    _delete_book_and_author(other_conn, dune, entry)
+
+    with pytest.raises(UnknownAuthorError):
+        race(lambda conn: rename_author(conn, entry.id, FRANK), "UPDATE AUTHORS")
+
+    assert _all(db_app) == []
+
+
+def test_merge_an_author_deleted_meanwhile(db_app, user, other_conn, race):
+    dune = _book(db_app, user, "Dune", FRNAK)
+    _book(db_app, user, "Dune Messiah", FRANK)
+    entry = _entry(db_app, FRNAK)
+    _delete_book_and_author(other_conn, dune, entry)
+
+    with pytest.raises(UnknownAuthorError):
+        race(lambda conn: rename_author(conn, entry.id, FRANK), "UPDATE BOOK_AUTHORS")
+
+    assert _all(db_app) == [(FRANK, 1)]
+
+
+def test_merge_an_author_while_one_of_their_books_is_deleted(
+    db_app, user, other_conn, race
+):
+    dune = _book(db_app, user, "Dune", FRNAK)
+    emma = _book(db_app, user, "Emma", FRNAK)
+    _book(db_app, user, "Dune Messiah", FRANK)
+    entry = _entry(db_app, FRNAK)
+    _delete_book(other_conn, dune)
+
+    renamed = race(
+        lambda conn: rename_author(conn, entry.id, FRANK), "UPDATE BOOK_AUTHORS"
+    )
+
+    assert renamed == Renamed(FRANK, merged=True)
+    assert _authors_of(db_app, emma) == (FRANK,)
+    assert _all(db_app) == [(FRANK, 2)]
+
+
 def test_rename_an_unknown_author(db_app):
     with db_app.app_context(), pytest.raises(UnknownAuthorError):
         rename_author(get_db(), uuid4(), FRANK)

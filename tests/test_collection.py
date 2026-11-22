@@ -190,6 +190,52 @@ def test_set_copies_of_a_book_not_in_the_collection(db_app, user, other):
     assert _copies(db_app, user, book_id) is None
 
 
+# Changes to a book that leaves the collection at the same moment: False, as
+# for a book never in it.
+CHANGES = {
+    "copies": ("UPDATE COLLECTION_BOOKS", lambda c, u, b: set_copies(c, u, b, 3)),
+    "read": ("UPDATE COLLECTION_BOOKS", lambda c, u, b: set_read(c, u, b, read=True)),
+    "remove": ("DELETE FROM COLLECTION_BOOKS", remove_from_collection),
+}
+
+
+def _remove_uncommitted(conn, user: User, book_id: UUID) -> None:
+    with conn.cursor() as cur:
+        cur.execute(
+            "DELETE FROM COLLECTION_BOOKS WHERE USER_ID = ? AND BOOK_ID = ?",
+            (user.id.bytes, book_id.bytes),
+        )
+
+
+@pytest.mark.parametrize("change", CHANGES)
+def test_change_a_book_removed_from_the_collection_meanwhile(
+    db_app, user, other_conn, race, change
+):
+    dune = _book(db_app, user, "Dune")
+    waits_on, apply = CHANGES[change]
+    _remove_uncommitted(other_conn, user, dune)
+
+    assert race(lambda conn: apply(conn, user.id, dune), waits_on) is False
+    assert _copies(db_app, user, dune) is None
+
+
+@pytest.mark.parametrize("change", CHANGES)
+def test_change_a_book_removed_since_the_request_looked_it_up(
+    db_app, user, other_conn, change
+):
+    """The request's reads began before another request removed it."""
+    dune = _book(db_app, user, "Dune")
+    _, apply = CHANGES[change]
+
+    with db_app.app_context():
+        conn = get_db()
+        assert find_book(conn, user.id, dune) is not None
+        _remove_uncommitted(other_conn, user, dune)
+        other_conn.commit()
+
+        assert apply(conn, user.id, dune) is False
+
+
 def test_remove_from_collection_keeps_the_book_in_the_catalogue(db_app, user):
     book_id = _book(db_app, user, "Dune")
 

@@ -2,8 +2,15 @@
 
 from uuid import UUID
 
-from firebird.driver import Connection, DatabaseError
+from firebird.driver import (
+    Connection,
+    DatabaseError,
+    DefaultAction,
+    Isolation,
+    tpb,
+)
 
+from bookshelf.db import retry_after_concurrent_delete
 from bookshelf.models.books.model import (
     FOREIGN_KEY_VIOLATION,
     UNIQUE_KEY_VIOLATION,
@@ -44,26 +51,20 @@ def add_to_collection(
 
 def set_copies(conn: Connection, user_id: UUID, book_id: UUID, copies: int) -> bool:
     """Set how many copies of a book the user owns; False if it is not in their collection."""
-    with conn.cursor() as cur:
-        cur.execute(
-            "UPDATE COLLECTION_BOOKS SET COPIES = ? WHERE USER_ID = ? AND BOOK_ID = ?",
-            (copies, user_id.bytes, book_id.bytes),
-        )
-        updated = cur.affected_rows > 0
-    conn.commit()
-    return updated
+    return _change_entry(
+        conn,
+        "UPDATE COLLECTION_BOOKS SET COPIES = ? WHERE USER_ID = ? AND BOOK_ID = ?",
+        (copies, user_id.bytes, book_id.bytes),
+    )
 
 
 def set_read(conn: Connection, user_id: UUID, book_id: UUID, *, read: bool) -> bool:
     """Mark a book in the user's collection as read or not; False if it is not there."""
-    with conn.cursor() as cur:
-        cur.execute(
-            "UPDATE COLLECTION_BOOKS SET IS_READ = ? WHERE USER_ID = ? AND BOOK_ID = ?",
-            (read, user_id.bytes, book_id.bytes),
-        )
-        updated = cur.affected_rows > 0
-    conn.commit()
-    return updated
+    return _change_entry(
+        conn,
+        "UPDATE COLLECTION_BOOKS SET IS_READ = ? WHERE USER_ID = ? AND BOOK_ID = ?",
+        (read, user_id.bytes, book_id.bytes),
+    )
 
 
 def remove_from_collection(conn: Connection, user_id: UUID, book_id: UUID) -> bool:
@@ -71,11 +72,37 @@ def remove_from_collection(conn: Connection, user_id: UUID, book_id: UUID) -> bo
     Remove a book from the user's collection, leaving it in the catalogue.
     False if it was not there.
     """
-    with conn.cursor() as cur:
-        cur.execute(
-            "DELETE FROM COLLECTION_BOOKS WHERE USER_ID = ? AND BOOK_ID = ?",
-            (user_id.bytes, book_id.bytes),
-        )
-        removed = cur.affected_rows > 0
-    conn.commit()
-    return removed
+    return _change_entry(
+        conn,
+        "DELETE FROM COLLECTION_BOOKS WHERE USER_ID = ? AND BOOK_ID = ?",
+        (user_id.bytes, book_id.bytes),
+    )
+
+
+def _change_entry(conn: Connection, sql: str, params: tuple[object, ...]) -> bool:
+    """
+    Run `sql`, changing one user's collection entry; False if there is none,
+    even when it is being removed at this moment.
+
+    The transaction is its own and read committed, as in update_book, so it
+    sees an entry removed since the request's own transaction began. That one
+    ends too, so the request then reads the change.
+    """
+
+    def change() -> bool:
+        with (
+            conn.transaction_manager(
+                tpb(Isolation.READ_COMMITTED_RECORD_VERSION),
+                default_action=DefaultAction.ROLLBACK,
+            ) as transaction,
+            transaction.cursor() as cur,
+        ):
+            cur.execute(sql, params)
+            changed = cur.affected_rows > 0
+            transaction.commit()
+        return changed
+
+    changed = retry_after_concurrent_delete(change)
+    if conn.is_active():
+        conn.commit()
+    return changed

@@ -12,6 +12,7 @@ from firebird.driver import (
     tpb,
 )
 
+from bookshelf.db import retry_after_concurrent_delete
 from bookshelf.models.books.isbn import normalise_isbn
 from bookshelf.models.books.model import (
     FOREIGN_KEY_VIOLATION,
@@ -304,12 +305,16 @@ def delete_book(conn: Connection, book_id: UUID) -> DeletedBook:
     """
     Delete a book for good, with its author links and categories. An author it
     leaves without books is deleted too, as when editing.
-    Raises UnknownBookError for an unknown book and BookInCollectionError if
-    it is in any user's collection (even one added at this moment); nothing
-    changes then.
+    Raises UnknownBookError for an unknown book (even one deleted at this
+    moment) and BookInCollectionError if it is in any user's collection (even
+    one added at this moment); nothing changes then.
 
     The transaction is its own and read committed, as in update_book.
     """
+    return retry_after_concurrent_delete(lambda: _delete_book(conn, book_id))
+
+
+def _delete_book(conn: Connection, book_id: UUID) -> DeletedBook:
     with (
         conn.transaction_manager(
             tpb(Isolation.READ_COMMITTED_RECORD_VERSION),

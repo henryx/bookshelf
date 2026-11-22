@@ -7,7 +7,12 @@ from firebird.driver import Connection, DatabaseError, connect
 from flask import Flask
 
 from bookshelf import create_app
-from bookshelf.db import ConnectionPool, close_pool, get_db
+from bookshelf.db import (
+    ConnectionPool,
+    close_pool,
+    get_db,
+    retry_after_concurrent_delete,
+)
 
 
 def _attachment_id(conn: Connection) -> int:
@@ -136,3 +141,45 @@ def test_error_closing_a_discarded_connection_is_logged(
         "Discarding connection that failed rollback",
         "Error closing database connection",
     ]
+
+
+ERASED_RECORD = 335544382
+
+
+def _database_error(code: int) -> DatabaseError:
+    error = DatabaseError(f"error {code}")
+    error.gds_codes = (code,)
+    return error
+
+
+def _failing(*errors: DatabaseError):
+    """A run that raises each error in turn, then returns how often it ran."""
+    calls: list[None] = []
+
+    def run() -> int:
+        calls.append(None)
+        if len(calls) <= len(errors):
+            raise errors[len(calls) - 1]
+        return len(calls)
+
+    return run
+
+
+def test_run_again_after_a_concurrent_delete():
+    run = _failing(_database_error(ERASED_RECORD))
+
+    assert retry_after_concurrent_delete(run) == 2
+
+
+def test_run_again_only_once():
+    run = _failing(_database_error(ERASED_RECORD), _database_error(ERASED_RECORD))
+
+    with pytest.raises(DatabaseError, match=f"error {ERASED_RECORD}"):
+        retry_after_concurrent_delete(run)
+
+
+def test_other_database_errors_are_not_run_again():
+    run = _failing(_database_error(335544665))
+
+    with pytest.raises(DatabaseError, match="error 335544665"):
+        retry_after_concurrent_delete(run)

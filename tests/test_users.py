@@ -1,6 +1,8 @@
+import logging
 import threading
 import time
 from collections.abc import Callable
+from datetime import datetime
 from uuid import UUID
 
 import pytest
@@ -8,6 +10,7 @@ from firebird.driver import Connection, DatabaseError
 from flask import Flask
 
 from bookshelf.db import get_db
+from bookshelf.models import users as users_model
 from bookshelf.models.users import (
     MIN_PASSWORD_LENGTH,
     LastAdminError,
@@ -25,6 +28,7 @@ from bookshelf.models.users import (
     set_locked,
     set_password,
     set_role,
+    start_login_attempt,
     update_account,
     update_user,
 )
@@ -498,3 +502,61 @@ def test_update_account_rejects_short_password_and_changes_nothing(
 def test_malformed_session_id_finds_nobody(db_app: Flask, user: User, session_id: str):
     with db_app.app_context():
         assert find_by_session_id(get_db(), session_id) is None
+
+
+def test_refused_login_removal_retries_after_a_conflict(
+    db_app: Flask,
+    user: User,
+    other_conn: Connection,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+):
+    """
+    Another refused attempt removing the same, identical-looking row makes
+    the removal fail with an update conflict: it tries again and succeeds.
+    """
+    remove = users_model._delete_one_failure
+    calls: list[datetime] = []
+
+    def remove_after_another_request(
+        conn: Connection, email: str, ip: str, attempted_at: datetime
+    ) -> None:
+        if not calls:
+            # The other request removes the row first, committing a moment later.
+            with other_conn.cursor() as cur:
+                cur.execute(
+                    "DELETE FROM LOGIN_FAILURES "
+                    "WHERE EMAIL = ? AND IP_ADDRESS = ? AND ATTEMPTED_AT = ? ROWS 1",
+                    (email, ip, attempted_at),
+                )
+            threading.Timer(0.5, other_conn.commit).start()
+        calls.append(attempted_at)
+        remove(conn, email, ip, attempted_at)
+
+    monkeypatch.setattr(
+        users_model, "_delete_one_failure", remove_after_another_request
+    )
+    with (
+        db_app.app_context(),
+        caplog.at_level(logging.DEBUG, logger="bookshelf.models.users"),
+    ):
+        conn = get_db()
+        allowed = start_login_attempt(
+            conn,
+            user.email,
+            "192.0.2.1",
+            max_failures=0,
+            max_ip_failures=10,
+            window_minutes=15,
+        )
+        with conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) FROM LOGIN_FAILURES")
+            (failures,) = cur.fetchone()
+
+    assert not allowed
+    assert len(calls) == 2
+    assert failures == 0
+    assert (
+        f"Retrying removal of refused login for {user.email} from 192.0.2.1"
+        in caplog.messages
+    )

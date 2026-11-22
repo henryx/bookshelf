@@ -11,6 +11,7 @@ from firebird.driver import (
     tpb,
 )
 
+from bookshelf.db import retry_after_concurrent_delete
 from bookshelf.models.books import PAGE_SIZE, SEARCH_MAX_LENGTH, Author
 
 __all__ = [
@@ -195,12 +196,19 @@ def rename_author(conn: Connection, author_id: UUID, author: Author) -> Renamed:
     Rename an author for every book, name and surname trimmed. When another
     author already has that name (ignoring case) the two are merged: their
     books all get that author, as spelled, and this one is deleted. Raises
-    UnknownAuthorError for an unknown author; nothing changes then.
+    UnknownAuthorError for an unknown author (even one deleted at this
+    moment); nothing changes then.
 
     The transaction is its own and read committed, as in add_book, so it
     sees an author with that name committed by someone else meanwhile.
     """
     author = Author(author.name.strip(), author.surname.strip())
+    return retry_after_concurrent_delete(
+        lambda: _rename_author(conn, author_id, author)
+    )
+
+
+def _rename_author(conn: Connection, author_id: UUID, author: Author) -> Renamed:
     with (
         conn.transaction_manager(
             tpb(Isolation.READ_COMMITTED_RECORD_VERSION),
