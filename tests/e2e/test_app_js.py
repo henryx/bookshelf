@@ -1,4 +1,4 @@
-"""The behaviour app.js adds in a browser: error banner, dialogs, author rows,
+"""The behaviour the scripts in static/js/ add in a browser: error banner, dialogs, author rows,
 suggestions and the account menu."""
 
 from importlib.metadata import version

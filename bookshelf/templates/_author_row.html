@@ -1,10 +1,10 @@
 {# One author row of a book form (see _author_rows.html). Takes id_prefix, index (a number, or "__index__" in the
-   <template> that app.js copies), name, surname, errors and first: the first row
+   <template> that js/rows.js copies), name, surname, errors and first: the first row
    has the + button, the others a - button. Both submit the form when JavaScript
    is off, so the server adds or removes the row. readonly (a picked book in the add-book form):
    read-only fields and no buttons. #}
 {# Typing in either field fills its suggestion list with matching authors from the
-   server (app.js sends the text as q); picking one fills both fields. #}
+   server (js/suggestions.js sends the text as q); picking one fills both fields. #}
 {% set prefix = "authors-" ~ index %}
 {% macro author_input(field, value, placeholder) %}
   {% set id = id_prefix ~ prefix ~ "-" ~ field %}

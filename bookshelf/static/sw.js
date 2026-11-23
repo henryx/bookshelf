@@ -3,13 +3,14 @@
 // fallback for when the server cannot be reached:
 // - static files are kept as they are fetched (the core ones on install);
 // - the collection and the catalogue, as last seen online, are shown again
-//   read-only (app.js disables their forms; see markOffline);
+//   read-only (js/offline.js disables their forms; see markOffline);
 // - any other page shows the offline page.
 // The saved lists are one user's: they are deleted on login, logout and
 // setup, and when a list redirects (the session has ended).
 "use strict";
 
-var STATIC_CACHE = "bookshelf-static-v1";
+// A new name when PRECACHE changes: activating drops the old cache.
+var STATIC_CACHE = "bookshelf-static-v2";
 var PAGES_CACHE = "bookshelf-pages";
 
 var root = new URL(self.registration.scope);
@@ -23,7 +24,13 @@ var PRECACHE = [
   "offline",
   "static/style.css",
   "static/htmx.min.js",
-  "static/app.js",
+  "static/js/errors.js",
+  "static/js/dialogs.js",
+  "static/js/rows.js",
+  "static/js/suggestions.js",
+  "static/js/menu.js",
+  "static/js/scan.js",
+  "static/js/offline.js",
   "static/fonts/fraunces-latin.woff2",
   "static/fonts/bricolage-grotesque-latin.woff2",
   "static/fonts/jetbrains-mono-latin.woff2",
@@ -124,7 +131,7 @@ function savedList(request) {
   });
 }
 
-// Mark a saved page as a copy for app.js: <body data-offline="<its Date header>">.
+// Mark a saved page as a copy for js/offline.js: <body data-offline="<its Date header>">.
 function markOffline(saved) {
   return saved.text().then(function (html) {
     var date = (saved.headers.get("Date") || "").replace(/[^\w ,:+-]/g, "");

@@ -1,3 +1,4 @@
+import re
 from typing import NoReturn
 
 import pytest
@@ -108,4 +109,14 @@ def test_pages_have_error_banner_and_swap_errors(client: FlaskClient):
 
     assert 'id="error-banner"' in html
     assert "responseHandling" in html
-    assert "app.js" in html
+    # The scripts, each deferred, in this order: their listeners run in it.
+    scripts = re.findall(r'<script src="/static/js/([a-z]+\.js)" defer></script>', html)
+    assert scripts == [
+        "errors.js",
+        "dialogs.js",
+        "rows.js",
+        "suggestions.js",
+        "menu.js",
+        "scan.js",
+        "offline.js",
+    ]

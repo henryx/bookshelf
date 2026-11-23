@@ -1,4 +1,4 @@
-"""The suggestion list under a field (app.js): shown, moved through, picked from, closed.
+"""The suggestion list under a field (js/suggestions.js): shown, moved through, picked from, closed.
 The same in every browser: it is not a <datalist>, whose dropdown Firefox opens only for
 the options there when a key is pressed."""
 

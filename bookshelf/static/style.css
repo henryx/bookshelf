@@ -1167,7 +1167,7 @@ dialog .card {
   cursor: progress;
 }
 
-/* A suggestion field and the list of matches under it (app.js shows it while the field has the
+/* A suggestion field and the list of matches under it (js/suggestions.js shows it while the field has the
    focus). Not hidden by display: the list's hidden attribute does that. */
 .suggest {
   position: relative;
@@ -1269,7 +1269,7 @@ dialog .card {
   }
 }
 
-/* Scan: only where app.js found a camera to use (<html data-can-scan>). */
+/* Scan: only where js/scan.js found a camera to use (<html data-can-scan>). */
 .scan-button {
   display: none;
 }
@@ -1326,7 +1326,7 @@ dialog .card {
   }
 }
 
-/* Its text is a .hint, or an .error (app.js). */
+/* Its text is a .hint, or an .error (js/scan.js). */
 .scan-status {
   min-height: 1.5em;
 }

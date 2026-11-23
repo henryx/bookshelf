@@ -212,7 +212,7 @@ up its volume.
 
 ```sh
 uv run tox -e py3                     # tests, in parallel (each worker starts its own Firebird via testcontainers: Docker must be running)
-uv run tox -e e2e                     # browser tests of app.js (Playwright; installs Chromium, Docker too)
+uv run tox -e e2e                     # browser tests of the scripts in static/js/ (Playwright; installs Chromium, Docker too)
 uv run tox -e e2e-firefox             # the same in Firefox
 uv run tox -e lint                    # ruff check
 uv run tox -e format                  # ruff format (use `-- --check .` to only check)

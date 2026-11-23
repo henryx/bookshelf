@@ -2,7 +2,7 @@
   {# The title leads to the first page, the user's collection. #}
   <h1><a href="{{ url_for('collection.index') }}">Bookshelf</a></h1>
   {# The account menu, upper right. A <details>, so it opens without JavaScript;
-     app.js closes it on a click elsewhere or Escape. #}
+     js/menu.js closes it on a click elsewhere or Escape. #}
   <details class="avatar">
     <summary>
       <span class="avatar-label">{{ current_user.full_name or current_user.email }}</span>

@@ -1,5 +1,5 @@
 """
-Scanning a book's barcode with the camera (app.js): the camera is replaced by
+Scanning a book's barcode with the camera (js/scan.js): the camera is replaced by
 a canvas stream painting an EAN-13 barcode, so ZXing reads a real image in
 every browser; the browser's BarcodeDetector is removed, or replaced by a stub.
 """

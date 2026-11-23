@@ -1,4 +1,4 @@
-{# The options of an author row field's suggestion list; app.js fills both fields from the one picked. #}
+{# The options of an author row field's suggestion list; js/suggestions.js fills both fields from the one picked. #}
 {% for author in authors %}
   <li role="option" data-value="{{ author }}" data-name="{{ author.name }}" data-surname="{{ author.surname }}">{{ author }}</li>
 {% endfor %}

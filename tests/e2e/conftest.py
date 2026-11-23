@@ -1,5 +1,5 @@
 """
-Browser tests of app.js: the app is served on a free local port by a
+Browser tests of the scripts in static/js/: the app is served on a free local port by a
 werkzeug server in a thread, and driven with Playwright: Chromium (tox -e e2e) or
 Firefox (tox -e e2e-firefox).
 """

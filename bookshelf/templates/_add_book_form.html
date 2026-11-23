@@ -46,7 +46,7 @@
          hx-indicator="#add-book-loading">Choose another book</a>
     </div>
   {% else %}
-    {# Picking a title or ISBN suggestion triggers this (app.js), with the book's id. #}
+    {# Picking a title or ISBN suggestion triggers this (js/suggestions.js), with the book's id. #}
     <span hidden data-book-loader hx-get="{{ new_url }}" hx-trigger="book-picked"
           hx-target="#add-book-form" hx-swap="outerHTML" hx-indicator="#add-book-loading"></span>
   {% endif %}
@@ -75,7 +75,7 @@
     {% for error in f.errors %}<p class="error">{{ error }}</p>{% endfor %}
   {% endmacro %}
 
-  {# Typing a title or an ISBN lists matching catalogue books under it (app.js sends the
+  {# Typing a title or an ISBN lists matching catalogue books under it (js/suggestions.js sends the
      text as q); picking one loads it into the form (data-book-pick). #}
   {{ field("title", required=True, maxlength=255, autocomplete="off", suggest=True,
            data_book_pick=True, **{
@@ -109,7 +109,7 @@
       <button type="submit" class="secondary" name="lookup" value="1" formnovalidate
               hx-post="{{ action }}" hx-target="#add-book-form" hx-swap="outerHTML"
               hx-indicator="#add-book-lookup" hx-disabled-elt="#add-book-form button">Look up</button>
-      {# Reads the barcode with the camera into the ISBN and looks it up (app.js); shown only
+      {# Reads the barcode with the camera into the ISBN and looks it up (js/scan.js); shown only
          where a camera can be used (style.css), so never without JavaScript. #}
       <button type="button" class="secondary scan-button" data-barcode-scan
               aria-controls="book-scan-dialog" aria-haspopup="dialog">Scan</button>
@@ -134,7 +134,7 @@
   {% endif %}
   {# Publisher and year side by side; the year needs only a few digits. #}
   <div class="field-row">
-    {# Typing lists matching publishers under it (app.js sends the text as q). #}
+    {# Typing lists matching publishers under it (js/suggestions.js sends the text as q). #}
     <div class="field">
       {{ field("publisher", maxlength=255, autocomplete="off", suggest=True, **{
                  "hx-get": url_for("suggestions.publishers"),

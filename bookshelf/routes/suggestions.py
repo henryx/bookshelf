@@ -37,7 +37,7 @@ def books() -> str:
     """
     The options of the add-book form's title or ISBN suggestion list (by
     `field`): catalogue books whose title or ISBN starts with `q`. Picking
-    one loads it into the form (app.js).
+    one loads it into the form (js/suggestions.js).
     """
     try:
         field = BookField(request.args.get("field"))

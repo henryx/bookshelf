@@ -1,8 +1,8 @@
 {# One category row of a book form (see _category_rows.html). Takes id_prefix, index (a number, or
-   "__index__" in the <template> that app.js copies), value, errors and first: the first row has the
+   "__index__" in the <template> that js/rows.js copies), value, errors and first: the first row has the
    + button, the others a - button. Both submit the form when JavaScript is off, so the server adds
    or removes the row. Typing fills the row's suggestion list with matching categories from the server
-   (app.js sends the text as q). readonly (a picked book in the add-book form): a read-only field and
+   (js/suggestions.js sends the text as q). readonly (a picked book in the add-book form): a read-only field and
    no button. #}
 {% set id = id_prefix ~ "categories-" ~ index %}
 <div class="category-row" data-row data-index="{{ index }}">

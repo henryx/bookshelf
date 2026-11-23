@@ -12,7 +12,7 @@ from bookshelf.db import get_db
 from bookshelf.models.books import NewBook, add_book
 from bookshelf.models.users import User
 
-# These fail in Firefox whatever app.js and sw.js do (they did before any change
+# These fail in Firefox whatever js/offline.js and sw.js do (they did before any change
 # to them): there, the page Playwright takes offline (set_offline) is not served
 # by the service worker's cache.
 pytestmark = pytest.mark.skip_browser("firefox")

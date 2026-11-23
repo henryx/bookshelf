@@ -1,5 +1,5 @@
 <!doctype html>
-{# data-service-worker: registered by app.js. Its offline copies of a page add data-offline
+{# data-service-worker: registered by js/offline.js. Its offline copies of a page add data-offline
    to the plain <body> tag below: keep it as it is. #}
 <html lang="en" data-service-worker="{{ url_for('pwa.service_worker') }}">
 <head>
@@ -19,7 +19,15 @@
         as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
   <script src="{{ url_for('static', filename='htmx.min.js') }}" defer></script>
-  <script src="{{ url_for('static', filename='app.js') }}" defer></script>
+  {# Deferred, so they run in this order, after htmx: errors.js first, so a request clears the
+     banner before the others handle it. sw.js precaches the same list. #}
+  <script src="{{ url_for('static', filename='js/errors.js') }}" defer></script>
+  <script src="{{ url_for('static', filename='js/dialogs.js') }}" defer></script>
+  <script src="{{ url_for('static', filename='js/rows.js') }}" defer></script>
+  <script src="{{ url_for('static', filename='js/suggestions.js') }}" defer></script>
+  <script src="{{ url_for('static', filename='js/menu.js') }}" defer></script>
+  <script src="{{ url_for('static', filename='js/scan.js') }}" defer></script>
+  <script src="{{ url_for('static', filename='js/offline.js') }}" defer></script>
 </head>
 <body>
   <div id="error-banner" class="error-banner" role="alert" aria-live="assertive"></div>

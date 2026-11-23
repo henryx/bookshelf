@@ -20,7 +20,7 @@
   <a class="fab" href="{{ url_for('main.new_book') }}" data-dialog-open="add-book-dialog"
      aria-label="Add book" title="Add book"><span aria-hidden="true">+</span></a>
 
-  {# Closing it empties it again (data-dialog-reset, app.js), e.g. after a book was picked. #}
+  {# Closing it empties it again (data-dialog-reset, js/dialogs.js), e.g. after a book was picked. #}
   <dialog id="add-book-dialog" aria-labelledby="add-book-title" data-dialog-reset>
     <div class="section-header">
       <h2 id="add-book-title">Add book</h2>
@@ -29,7 +29,7 @@
     {% include "_add_book_form.html" %}
   </dialog>
 
-  {# Filled with a book's details by the titles in the list, then opened (app.js). #}
+  {# Filled with a book's details by the titles in the list, then opened (js/dialogs.js). #}
   <dialog id="book-dialog" aria-labelledby="book-dialog-title">
     <div class="section-header">
       <h2 id="book-dialog-title">Edit book</h2>

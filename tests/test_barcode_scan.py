@@ -1,7 +1,7 @@
 """
 Scanning a book's barcode with the camera into the add-book form: the page
 side (the Scan button, its dialog and the vendored decoder). Scanning itself
-is app.js, tested in tests/e2e/test_scan_ui.py.
+is static/js/scan.js, tested in tests/e2e/test_scan_ui.py.
 """
 
 import re

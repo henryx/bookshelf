@@ -28,7 +28,7 @@ Decisions:
    and is served before setup is done. The worker goes to the network first, always: the cache is only a
    fallback when the server cannot be reached, so a deploy is seen at once.
    - Offline, the collection (`/`) and the catalogue (`/catalogue`) are shown as they were last seen online,
-     read-only: the worker marks the saved copy (`<body data-offline="<date>">`), and `app.js` shows its date,
+     read-only: the worker marks the saved copy (`<body data-offline="<date>">`), and `js/offline.js` shows its date,
      disables its forms, stops htmx requests and reloads the page when the connection is back. Other pages show
      `/offline`.
    - The saved lists belong to one user: they are deleted when `/login`, `/logout` or `/setup` is posted, and
