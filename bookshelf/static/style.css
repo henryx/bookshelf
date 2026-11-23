@@ -1027,8 +1027,11 @@ a.author-name:focus-visible {
 
 /* Dialogs: a raised sheet with a cloth head band. */
 
+/* The padding is inside the width (35rem: 32rem of content), so a dialog
+   never runs off a phone's screen. */
 dialog {
-  width: min(32rem, calc(100vw - 2rem));
+  box-sizing: border-box;
+  width: min(35rem, calc(100vw - 2rem));
   padding: 1.25rem 1.5rem 1.5rem;
   border: 0;
   border-top: 0.5rem solid var(--cloth);

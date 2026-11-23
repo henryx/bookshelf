@@ -173,6 +173,29 @@ def test_close_button_closes_dialog(reader_page: Page):
     expect(reader_page.locator("#add-book-dialog")).to_be_hidden()
 
 
+def _expect_within_viewport(page: Page, selector: str) -> None:
+    box = page.locator(selector).bounding_box()
+    assert box is not None
+    width = page.viewport_size["width"] if page.viewport_size else 0
+    assert box["x"] >= 0
+    assert box["x"] + box["width"] <= width
+
+
+@pytest.mark.parametrize("width", [320, 390])
+def test_dialogs_fit_a_phone_screen(reader_page: Page, width):
+    """Their padding is inside their width, so a phone shows the whole dialog."""
+    reader_page.set_viewport_size({"width": width, "height": 800})
+
+    _open_add_book(reader_page)
+    _expect_within_viewport(reader_page, "#add-book-dialog")
+    reader_page.locator("#add-book-dialog").get_by_role("button", name="Close").click()
+
+    reader_page.locator("details.avatar summary").click()
+    reader_page.get_by_role("link", name="About").click()
+    expect(reader_page.get_by_role("dialog", name="About Bookshelf")).to_be_visible()
+    _expect_within_viewport(reader_page, "#about-dialog")
+
+
 def test_content_swapped_into_closed_dialog_opens_it(
     admin_page: Page, live_server: str, user: User
 ):
