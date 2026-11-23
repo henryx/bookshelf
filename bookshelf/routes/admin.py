@@ -11,8 +11,10 @@ from flask import (
 )
 from flask_login import current_user, login_required, login_user
 from werkzeug.wrappers import Response as BaseResponse
+from wtforms import SelectChoice
 
 from bookshelf.db import get_db
+from bookshelf.models.books import CopiedCollection, CopyMode, copy_collection
 from bookshelf.models.users import (
     AuthMethod,
     LastAdminError,
@@ -28,7 +30,7 @@ from bookshelf.models.users import (
     update_user,
 )
 from bookshelf.routes import htmx_redirect, is_htmx
-from bookshelf.routes.forms import NewUserForm, UserForm
+from bookshelf.routes.forms import CopyCollectionForm, NewUserForm, UserForm
 
 __all__ = ["admin_route"]
 
@@ -97,18 +99,51 @@ def users() -> BaseResponse | str:
     return htmx_redirect(url_for("admin.users"))
 
 
-def _render_user(form: UserForm, user: User) -> str:
+def _user_form(user: User, *, from_request: bool = True) -> UserForm:
+    """The user's edit form: filled from the request's form data, else from the user."""
+    data = {
+        "name": user.name,
+        "surname": user.surname,
+        "role": user.role.value,
+        "locked": user.is_locked,
+        "auth_method": user.auth_method.value,
+    }
+    if from_request:
+        return UserForm(data=data)
+    return UserForm(formdata=None, data=data)
+
+
+def _copy_form(user: User, *, from_request: bool = True) -> CopyCollectionForm:
+    """The form copying the user's collection, offering every other user."""
+    form = CopyCollectionForm() if from_request else CopyCollectionForm(formdata=None)
+    form.target.choices = [SelectChoice("", "Choose a user…")] + [
+        SelectChoice(str(other.id), other.email)
+        for other in list_users(get_db())
+        if other.id != user.id
+    ]
+    return form
+
+
+def _render_user(
+    form: UserForm, user: User, copy_form: CopyCollectionForm | None = None
+) -> str:
     """
-    Full page without htmx. With htmx, a GET fills the edit dialog (form and
-    delete button); a POST with errors swaps only the form.
+    Full page without htmx. With htmx, a GET fills the edit dialog (forms and
+    delete button); a POST with errors swaps only the form posted.
     """
+    if copy_form is None:
+        copy_form = _copy_form(user, from_request=False)
     if not is_htmx():
         template = "admin/user.html"
     elif request.method == "GET":
         template = "admin/_user_details.html"
+    elif copy_form.errors or copy_form.form_errors:
+        template = "admin/_copy_collection_form.html"
     else:
         template = "admin/_user_form.html"
-    return render_template(template, form=form, user=user, is_self=_is_self(user))
+    return render_template(
+        template, form=form, copy_form=copy_form, user=user, is_self=_is_self(user)
+    )
 
 
 def _changes(
@@ -142,15 +177,7 @@ def user_details(user_id: UUID) -> BaseResponse | str:
     the user's open sessions.
     """
     user = _user_or_404(user_id)
-    form = UserForm(
-        data={
-            "name": user.name,
-            "surname": user.surname,
-            "role": user.role.value,
-            "locked": user.is_locked,
-            "auth_method": user.auth_method.value,
-        }
-    )
+    form = _user_form(user)
     if not form.validate_on_submit():
         return _render_user(form, user)
 
@@ -217,4 +244,53 @@ def delete(user_id: UUID) -> BaseResponse:
         "User %s deleted by admin %s", user.email, current_user.email
     )
     flash(f"User {user.email} deleted.")
+    return htmx_redirect(url_for("admin.users"))
+
+
+def _books(count: int) -> str:
+    return f"{count} book" if count == 1 else f"{count} books"
+
+
+def _copied(copied: CopiedCollection, mode: CopyMode) -> str:
+    """What a copy changed, for the confirmation: "2 books added, 1 book removed"."""
+    changes = [f"{_books(copied.added)} added"]
+    match mode:
+        case CopyMode.ADD:
+            changes.append(f"{copied.updated} with more copies")
+        case CopyMode.REPLACE:
+            changes.append(f"{_books(copied.removed)} removed")
+        case CopyMode.KEEP:
+            pass
+    return ", ".join(changes)
+
+
+@admin_route.post("/users/<uuid:user_id>/copy-collection")
+def copy_user_collection(user_id: UUID) -> BaseResponse | str:
+    """
+    Copy the user's collection into another user's, as the admin chose:
+    keeping, adding to or replacing the books the other user already has.
+    """
+    user = _user_or_404(user_id)
+    form = _copy_form(user)
+    if not form.validate_on_submit():
+        return _render_user(_user_form(user, from_request=False), user, form)
+    target = find_by_id(get_db(), UUID(form.target.data))
+    if target is None:
+        # Deleted since the form was shown.
+        form.form_errors.append("That user no longer exists.")
+        return _render_user(_user_form(user, from_request=False), user, form)
+
+    mode = CopyMode(form.mode.data)
+    copied = copy_collection(get_db(), user.id, target.id, mode)
+    current_app.logger.info(
+        "Collection of %s copied to %s (%s) by admin %s: %s",
+        user.email,
+        target.email,
+        mode.value.lower(),
+        current_user.email,
+        copied,
+    )
+    flash(
+        f"Collection of {user.email} copied to {target.email}: {_copied(copied, mode)}."
+    )
     return htmx_redirect(url_for("admin.users"))

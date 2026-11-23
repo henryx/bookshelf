@@ -5,6 +5,7 @@ deleting books, ISBN checks and the book forms' suggestions.
 
 from bookshelf.models.books.collection import (
     add_to_collection,
+    copy_collection,
     remove_from_collection,
     set_copies,
     set_read,
@@ -26,6 +27,7 @@ from bookshelf.models.books.listing import (
 )
 from bookshelf.models.books.model import (
     CATEGORY_MAX_LENGTH,
+    MAX_COPIES,
     PAGE_SIZE,
     SEARCH_MAX_LENGTH,
     Author,
@@ -37,6 +39,8 @@ from bookshelf.models.books.model import (
     BookInCollectionError,
     BookPage,
     BookSuggestion,
+    CopiedCollection,
+    CopyMode,
     DeletedBook,
     InvalidIsbnError,
     IsbnAlreadySetError,
@@ -55,6 +59,7 @@ from bookshelf.models.books.suggestions import (
 
 __all__ = [
     "CATEGORY_MAX_LENGTH",
+    "MAX_COPIES",
     "PAGE_SIZE",
     "SEARCH_MAX_LENGTH",
     "SUGGESTIONS_LIMIT",
@@ -67,6 +72,8 @@ __all__ = [
     "BookInCollectionError",
     "BookPage",
     "BookSuggestion",
+    "CopiedCollection",
+    "CopyMode",
     "DeletedBook",
     "InvalidIsbnError",
     "IsbnAlreadySetError",
@@ -76,6 +83,7 @@ __all__ = [
     "UnknownBookError",
     "add_book",
     "add_to_collection",
+    "copy_collection",
     "delete_book",
     "find_book",
     "find_book_by_isbn",

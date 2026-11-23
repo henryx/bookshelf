@@ -1,0 +1,32 @@
+{# Copy a user's collection into another user's: part of the user's details, and the htmx response to a copy with errors. #}
+<form id="copy-collection-form" class="card copy-collection" method="post"
+      action="{{ url_for('admin.copy_user_collection', user_id=user.id) }}"
+      hx-post="{{ url_for('admin.copy_user_collection', user_id=user.id) }}"
+      hx-target="this" hx-swap="outerHTML"
+      hx-confirm="Copy the collection of {{ user.email }}? Replacing removes the other user’s books first."
+      hx-indicator="#copy-indicator" hx-disabled-elt="find button"
+      aria-labelledby="copy-collection-title">
+  {# Not hidden_tag(): its csrf_token id would repeat the edit form's in the same dialog. #}
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <h3 id="copy-collection-title">Copy collection</h3>
+  <p class="hint">Adds this user’s books, with how many copies of each they own, to another user’s collection.
+    Copied books start unread.</p>
+  {% for error in copy_form.form_errors %}
+    <p class="error" role="alert">{{ error }}</p>
+  {% endfor %}
+
+  <label for="copy-target">{{ copy_form.target.label.text }}</label>
+  {{ copy_form.target(id="copy-target") }}
+  {% for error in copy_form.target.errors %}<p class="error">{{ error }}</p>{% endfor %}
+
+  <fieldset class="copy-mode">
+    <legend>{{ copy_form.mode.label.text }}</legend>
+    {% for option in copy_form.mode %}
+      <label class="checkbox">{{ option(id="copy-mode-" ~ loop.index0) }} {{ option.label.text }}</label>
+    {% endfor %}
+  </fieldset>
+  {% for error in copy_form.mode.errors %}<p class="error">{{ error }}</p>{% endfor %}
+
+  <button type="submit">Copy collection</button>
+  <span id="copy-indicator" class="htmx-indicator">Copying…</span>
+</form>

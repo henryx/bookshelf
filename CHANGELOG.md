@@ -4,6 +4,15 @@ All notable changes to Bookshelf, newest first. Each version is released as the 
 `quay.io/enricobianchi/bookshelf:<version>` and, from 1.0.2, as the Helm chart
 `oci://quay.io/enricobianchi/bookshelf-chart --version <version>`.
 
+## Unreleased
+
+### New
+
+- **Copy a collection from one user to another** (admin area). A user's details have a "Copy collection" form: the
+  admin picks another user and chooses what happens to the books that user already has. They can keep theirs (add
+  only the books they lack), add the copies together (up to 999), or replace their whole collection. Copied books
+  start unread, and the first user's collection does not change.
+
 ## 1.2.1 (2026-11-23)
 
 ### ⚠️ Breaking change: the Helm chart's Google login secret

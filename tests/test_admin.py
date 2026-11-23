@@ -7,6 +7,7 @@ from flask import Flask
 from flask.testing import FlaskClient
 
 from bookshelf.db import get_db
+from bookshelf.models.books import NewBook, add_book
 from bookshelf.models.users import (
     AuthMethod,
     LastAdminError,
@@ -355,7 +356,7 @@ def test_own_details_page_cannot_change_role_or_lock(
     html = admin_client.get(_detail(admin)).get_data(as_text=True)
 
     assert 'type="checkbox"' not in html
-    assert "<select" not in html
+    assert '<select id="edit-role"' not in html
     assert f"{_detail(admin)}/delete" not in html
 
 
@@ -681,3 +682,169 @@ def test_admin_cannot_switch_own_login(
         as_text=True
     )
     assert _existing(db_app, ADMIN_EMAIL).auth_method is AuthMethod.LOCAL
+
+
+# Copying a collection
+
+
+@pytest.fixture
+def reader(db_app: Flask, password: str) -> User:
+    """Another regular user, owning Ulysses, to copy collections to."""
+    with db_app.app_context():
+        reader = create_user(get_db(), "target@example.com", password)
+        add_book(get_db(), reader.id, NewBook("Ulysses", ()))
+    return reader
+
+
+@pytest.fixture
+def user_books(db_app: Flask, user: User) -> None:
+    """`user` owns Dune (2 copies) and Emma."""
+    with db_app.app_context():
+        add_book(get_db(), user.id, NewBook("Dune", ()), copies=2)
+        add_book(get_db(), user.id, NewBook("Emma", ()))
+
+
+def _owned(app: Flask, user: User) -> dict[str, int]:
+    """The titles in the user's collection, with their copies."""
+    with app.app_context(), get_db().cursor() as cur:
+        cur.execute(
+            "SELECT b.TITLE, cb.COPIES FROM COLLECTION_BOOKS cb "
+            "JOIN BOOKS b ON b.ID = cb.BOOK_ID WHERE cb.USER_ID = ?",
+            (user.id.bytes,),
+        )
+        return dict(cur.fetchall())
+
+
+def _copy(client: FlaskClient, source: User, target: str, mode: str, **kw):
+    return client.post(
+        f"{_detail(source)}/copy-collection",
+        data={"target": target, "mode": mode},
+        **kw,
+    )
+
+
+def test_details_offer_copying_the_collection_to_another_user(
+    admin_client: FlaskClient, user: User, reader: User, admin: User
+):
+    html = admin_client.get(_detail(user), headers=HTMX).get_data(as_text=True)
+
+    assert 'id="copy-collection-form"' in html
+    assert f'hx-post="{_detail(user)}/copy-collection"' in html
+    assert f'value="{reader.id}"' in html
+    assert f'value="{admin.id}"' in html
+    # Not to the user themselves.
+    assert f'<option value="{user.id}"' not in html
+    for mode in ("KEEP", "ADD", "REPLACE"):
+        assert f'value="{mode}"' in html
+
+
+@pytest.mark.parametrize("headers", [HTMX, {}], ids=["htmx", "plain"])
+def test_copy_collection_keeping_the_targets_books(
+    admin_client: FlaskClient,
+    db_app: Flask,
+    user: User,
+    reader: User,
+    user_books: None,
+    headers: dict[str, str],
+):
+    rv = _copy(admin_client, user, str(reader.id), "KEEP", headers=headers)
+
+    if headers:
+        assert rv.status_code == 204
+        assert rv.headers["HX-Redirect"] == "/admin/users"
+    else:
+        assert rv.status_code == 302
+        assert rv.headers["Location"] == "/admin/users"
+    assert _owned(db_app, reader) == {"Dune": 2, "Emma": 1, "Ulysses": 1}
+    assert _owned(db_app, user) == {"Dune": 2, "Emma": 1}
+    page = admin_client.get("/admin/users").get_data(as_text=True)
+    assert (
+        f"Collection of {user.email} copied to {reader.email}: 2 books added." in page
+    )
+
+
+def test_copy_collection_adding_the_copies(
+    admin_client: FlaskClient, db_app: Flask, user: User, reader: User, user_books: None
+):
+    _copy(admin_client, user, str(reader.id), "KEEP")
+
+    _copy(admin_client, user, str(reader.id), "ADD")
+
+    assert _owned(db_app, reader) == {"Dune": 4, "Emma": 2, "Ulysses": 1}
+    page = admin_client.get("/admin/users").get_data(as_text=True)
+    assert "0 books added, 2 with more copies." in page
+
+
+def test_copy_collection_replacing_the_targets(
+    admin_client: FlaskClient, db_app: Flask, user: User, reader: User, user_books: None
+):
+    _copy(admin_client, user, str(reader.id), "REPLACE")
+
+    assert _owned(db_app, reader) == {"Dune": 2, "Emma": 1}
+    page = admin_client.get("/admin/users").get_data(as_text=True)
+    assert "2 books added, 1 book removed." in page
+
+
+@pytest.mark.parametrize(
+    ("target", "mode"),
+    [("self", "KEEP"), (str(uuid4()), "KEEP"), ("reader", "MOVE"), ("reader", "")],
+    ids=["same user", "unknown user", "unknown mode", "no mode"],
+)
+def test_copy_collection_rejects_invalid_choices(
+    admin_client: FlaskClient,
+    db_app: Flask,
+    user: User,
+    reader: User,
+    user_books: None,
+    target: str,
+    mode: str,
+):
+    target_id = {"self": str(user.id), "reader": str(reader.id)}.get(target, target)
+
+    rv = _copy(admin_client, user, target_id, mode, headers=HTMX)
+    html = rv.get_data(as_text=True)
+
+    assert rv.status_code == 200
+    assert 'id="copy-collection-form"' in html
+    assert 'class="error"' in html
+    assert 'id="user-form"' not in html
+    assert _owned(db_app, reader) == {"Ulysses": 1}
+    assert _owned(db_app, user) == {"Dune": 2, "Emma": 1}
+
+
+def test_copy_collection_with_errors_without_htmx_shows_the_details_page(
+    admin_client: FlaskClient, user: User
+):
+    rv = _copy(admin_client, user, str(user.id), "KEEP")
+    html = rv.get_data(as_text=True)
+
+    assert rv.status_code == 200
+    assert 'class="topbar"' in html
+    assert 'id="user-form"' in html
+    assert 'id="copy-collection-form"' in html
+
+
+def test_copy_collection_of_an_unknown_user(admin_client: FlaskClient, reader: User):
+    rv = admin_client.post(
+        f"/admin/users/{uuid4()}/copy-collection",
+        data={"target": str(reader.id), "mode": "KEEP"},
+    )
+
+    assert rv.status_code == 404
+
+
+def test_copy_collection_forbidden_to_regular_users(
+    db_client: FlaskClient,
+    db_app: Flask,
+    admin: User,
+    user: User,
+    password: str,
+    reader: User,
+    user_books: None,
+):
+    db_client.post("/login", data={"email": user.email, "password": password})
+
+    rv = _copy(db_client, user, str(reader.id), "REPLACE")
+
+    assert rv.status_code == 403
+    assert _owned(db_app, reader) == {"Ulysses": 1}

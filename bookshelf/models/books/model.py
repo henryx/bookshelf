@@ -15,6 +15,28 @@ CATEGORY_MAX_LENGTH = 64
 # The longest searched text (TITLE, or an author's name and surname); a
 # longer text matches nothing.
 SEARCH_MAX_LENGTH = 255
+# Copies of a book one user may record owning.
+MAX_COPIES = 999
+
+
+class CopyMode(StrEnum):
+    """How copying a collection treats the books already in the target's."""
+
+    # Add only the books the target lacks; theirs stay as they are.
+    KEEP = "KEEP"
+    # Also add the copies of the books both have (up to MAX_COPIES).
+    ADD = "ADD"
+    # Remove the target's books first: theirs becomes a copy of the source's.
+    REPLACE = "REPLACE"
+
+
+@dataclass(frozen=True)
+class CopiedCollection:
+    """What copying a collection changed in the target's."""
+
+    added: int
+    updated: int
+    removed: int
 
 
 class InvalidIsbnError(ValueError):

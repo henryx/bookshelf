@@ -9,6 +9,7 @@ from wtforms import (
     FormField,
     IntegerField,
     PasswordField,
+    RadioField,
     SelectChoice,
     SelectField,
     StringField,
@@ -27,7 +28,9 @@ from wtforms.validators import (
 
 from bookshelf.models.books import (
     CATEGORY_MAX_LENGTH,
+    MAX_COPIES,
     Author,
+    CopyMode,
     InvalidIsbnError,
     IsbnLostDigitsError,
     NewBook,
@@ -45,6 +48,7 @@ __all__ = [
     "AuthorForm",
     "BookForm",
     "CopiesForm",
+    "CopyCollectionForm",
     "EditBookForm",
     "ImportForm",
     "LoginForm",
@@ -179,6 +183,28 @@ class UserForm(FlaskForm):
         _check_new_password(field.data or "")
 
 
+class CopyCollectionForm(FlaskForm):
+    """
+    Copy a user's collection into another user's: the route sets the target
+    choices (every other user, after an empty "choose" one).
+    """
+
+    target = SelectField("Copy to", validators=[InputRequired("Choose a user.")])
+    mode = RadioField(
+        "Books they already have",
+        choices=[
+            SelectChoice(
+                CopyMode.KEEP.value, "Keep theirs: add only the books they lack"
+            ),
+            SelectChoice(CopyMode.ADD.value, "Add these copies to theirs"),
+            SelectChoice(
+                CopyMode.REPLACE.value, "Replace their whole collection with this one"
+            ),
+        ],
+        default=CopyMode.KEEP.value,
+    )
+
+
 class AuthorForm(Form):
     """
     One author row: name and surname. An empty row is ignored; a name needs a
@@ -216,15 +242,11 @@ class RenameAuthorForm(FlaskForm):
         return Author(self.name.data or "", self.surname.data or "")
 
 
-# Copies of a book one user may record owning.
-_MAX_COPIES = 999
-
-
 def _copies_field(label: str) -> IntegerField:
     return IntegerField(
         label,
         default=1,
-        validators=[InputRequired(), NumberRange(min=1, max=_MAX_COPIES)],
+        validators=[InputRequired(), NumberRange(min=1, max=MAX_COPIES)],
     )
 
 
@@ -270,7 +292,7 @@ class EditBookForm(FlaskForm):
         "Plot", filters=[_strip_or_none], validators=[Optional(), Length(max=4000)]
     )
     copies = IntegerField(
-        "Copies you own", validators=[Optional(), NumberRange(min=1, max=_MAX_COPIES)]
+        "Copies you own", validators=[Optional(), NumberRange(min=1, max=MAX_COPIES)]
     )
 
     def add_row(self, field: FieldList) -> None:

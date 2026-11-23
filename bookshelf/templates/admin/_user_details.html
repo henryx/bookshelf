@@ -1,5 +1,7 @@
-{# A user's edit form and delete button: the edit dialog's content, and the body of the details page. #}
+{# A user's edit form, copy-collection form and delete button: the edit dialog's content, and the body of the details page. #}
 {% include "admin/_user_form.html" %}
+
+{% include "admin/_copy_collection_form.html" %}
 
 {% if not is_self %}
   <form class="danger" method="post"

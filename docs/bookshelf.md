@@ -159,6 +159,7 @@ not logged in is sent to the login page, and a regular user is refused. An admin
  - Choose whether a user logs in with a password or with Google, when creating them or later (not for their own
    account: a Google login that is not set up would lock them out).
  - Delete a user for good.
+ - Copy a user's collection into another user's.
 
 **Opening it.** When an admin is logged in, the account menu in the top bar (see "Account menu") has an "Admin" link;
 other users do not see it. It opens the users list: a table with each user's email, name and surname, role (regular
@@ -171,6 +172,20 @@ together, and only if every field is valid; otherwise the dialog stays open, sho
 Closing the dialog discards unsaved changes.
 
 **Deleting a user.** The details dialog has a Delete button, which asks for confirmation.
+
+**Copying a collection.** The details dialog also has a "Copy collection" form: the admin chooses another user and
+what happens to the books that user already has, then confirms. The copied books keep how many copies the first
+user owns, and start unread: what someone has read is their own. The first user's collection does not change. For
+the books the other user already has, the admin chooses one of:
+
+ - *Keep theirs* (the default): only the books they lack are added; theirs stay as they are, so copying twice
+   changes nothing.
+ - *Add these copies to theirs*: their copies of a book both have become the sum, up to 999 (the most a form takes).
+ - *Replace their whole collection*: their books are removed first, so their collection becomes a copy of this one.
+
+The list then reloads saying what changed ("2 books added, 1 book removed"), and the copy is logged with the admin
+who made it. A collection cannot be copied to its own user (that user is not offered). The copy is one transaction:
+all of it or nothing.
 
 **Creating a user.** A "Create user" button, on the right of the "Users" heading, opens a dialog asking for the
 email, the name and surname (optional) and the password (typed twice). New users are regular users; an admin makes them admins from their details.
@@ -218,6 +233,7 @@ The same operations are also available as CLI commands (see README):
 | Lock / unlock a user | `lock-user`, `unlock-user` |
 | Delete a user | `delete-user` (asks for confirmation) |
 | Set a user's name and surname | none: web only (the admin area, or the user's account page) |
+| Copy a user's collection to another user | none: web only (the admin area) |
 
 Every CLI operation except `create-admin` requires valid admin credentials (correct password, `ADMIN` role, not
 locked) and is logged with the admin who performed it. An admin cannot lock, demote or delete their own account.

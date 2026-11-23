@@ -11,14 +11,18 @@ from flask.testing import FlaskClient
 from bookshelf import create_app
 from bookshelf.db import get_db
 from bookshelf.models.books import (
+    MAX_COPIES,
     SEARCH_MAX_LENGTH,
     Author,
     Book,
+    CopiedCollection,
+    CopyMode,
     NewBook,
     Sort,
     UnknownBookError,
     add_book,
     add_to_collection,
+    copy_collection,
     find_book,
     find_book_by_isbn,
     list_books,
@@ -70,6 +74,16 @@ def _copies(app: Flask, user: User, book_id: UUID) -> int | None:
         )
         row = cur.fetchone()
         return row[0] if row else None
+
+
+def _collection(app: Flask, user: User) -> dict[UUID, tuple[int, bool]]:
+    """The user's collection: each book's copies and read state."""
+    with app.app_context(), get_db().cursor() as cur:
+        cur.execute(
+            "SELECT BOOK_ID, COPIES, IS_READ FROM COLLECTION_BOOKS WHERE USER_ID = ?",
+            (user.id.bytes,),
+        )
+        return {UUID(bytes=b): (c, r) for b, c, r in cur.fetchall()}
 
 
 def _in_catalogue(app: Flask, book_id: UUID) -> bool:
@@ -245,6 +259,112 @@ def test_remove_from_collection_keeps_the_book_in_the_catalogue(db_app, user):
 
     assert _copies(db_app, user, book_id) is None
     assert _in_catalogue(db_app, book_id)
+
+
+@pytest.fixture
+def two_collections(db_app, user, other) -> tuple[UUID, UUID, UUID]:
+    """
+    `user` owns Dune (2 copies, read) and Emma (3 copies); `other` owns Emma
+    (1 copy, read) and Ulysses (1 copy). Returns Dune, Emma and Ulysses.
+    """
+    dune = _book(db_app, user, "Dune", copies=2)
+    emma = _book(db_app, user, "Emma", copies=3)
+    ulysses = _book(db_app, other, "Ulysses")
+    with db_app.app_context():
+        conn = get_db()
+        assert set_read(conn, user.id, dune, read=True)
+        assert add_to_collection(conn, other.id, emma, read=True)
+    return dune, emma, ulysses
+
+
+def _copy(app: Flask, source: User, target: User, mode: CopyMode) -> CopiedCollection:
+    with app.app_context():
+        return copy_collection(get_db(), source.id, target.id, mode)
+
+
+def test_copy_collection_keeping_the_targets_books(
+    db_app, user, other, two_collections
+):
+    dune, emma, ulysses = two_collections
+
+    copied = _copy(db_app, user, other, CopyMode.KEEP)
+
+    assert copied == CopiedCollection(added=1, updated=0, removed=0)
+    # Dune added, unread; Emma and Ulysses as they were.
+    assert _collection(db_app, other) == {
+        dune: (2, False),
+        emma: (1, True),
+        ulysses: (1, False),
+    }
+    assert _collection(db_app, user) == {dune: (2, True), emma: (3, False)}
+
+
+def test_copy_collection_keeping_twice_changes_nothing(
+    db_app, user, other, two_collections
+):
+    _copy(db_app, user, other, CopyMode.KEEP)
+    before = _collection(db_app, other)
+
+    copied = _copy(db_app, user, other, CopyMode.KEEP)
+
+    assert copied == CopiedCollection(added=0, updated=0, removed=0)
+    assert _collection(db_app, other) == before
+
+
+def test_copy_collection_adding_the_copies(db_app, user, other, two_collections):
+    dune, emma, ulysses = two_collections
+
+    copied = _copy(db_app, user, other, CopyMode.ADD)
+
+    assert copied == CopiedCollection(added=1, updated=1, removed=0)
+    # Emma: 1 + 3 copies, still read.
+    assert _collection(db_app, other) == {
+        dune: (2, False),
+        emma: (4, True),
+        ulysses: (1, False),
+    }
+
+
+def test_copy_collection_adding_caps_the_copies(db_app, user, other):
+    dune = _book(db_app, user, "Dune", copies=MAX_COPIES - 1)
+    with db_app.app_context():
+        assert add_to_collection(get_db(), other.id, dune, copies=2)
+
+    _copy(db_app, user, other, CopyMode.ADD)
+
+    assert _copies(db_app, other, dune) == MAX_COPIES
+
+
+def test_copy_collection_replacing_the_targets(db_app, user, other, two_collections):
+    dune, emma, _ = two_collections
+
+    copied = _copy(db_app, user, other, CopyMode.REPLACE)
+
+    assert copied == CopiedCollection(added=2, updated=0, removed=2)
+    assert _collection(db_app, other) == {dune: (2, False), emma: (3, False)}
+    assert _collection(db_app, user) == {dune: (2, True), emma: (3, False)}
+
+
+def test_copy_an_empty_collection_replacing_empties_the_target(
+    db_app, other, password, two_collections
+):
+    with db_app.app_context():
+        empty = create_user(get_db(), "empty@example.com", password)
+
+    copied = _copy(db_app, empty, other, CopyMode.REPLACE)
+
+    assert copied == CopiedCollection(added=0, updated=0, removed=2)
+    assert _collection(db_app, other) == {}
+
+
+@pytest.mark.parametrize("mode", list(CopyMode))
+def test_copy_a_collection_to_its_own_user_is_refused(
+    db_app, user, two_collections, mode
+):
+    with pytest.raises(ValueError, match="own"):
+        _copy(db_app, user, user, mode)
+
+    assert len(_collection(db_app, user)) == 2
 
 
 def test_find_book(db_app, user, other):

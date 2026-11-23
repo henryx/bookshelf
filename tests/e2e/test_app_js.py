@@ -3,7 +3,7 @@ suggestions and the account menu."""
 
 import pytest
 from flask import Flask
-from playwright.sync_api import Page, Route, expect
+from playwright.sync_api import Dialog, Page, Route, expect
 
 from bookshelf.db import get_db
 from bookshelf.models.books import Author, NewBook, add_book
@@ -304,3 +304,42 @@ def test_escape_closes_account_menu_and_focuses_it(reader_page: Page):
 
     expect(menu).not_to_have_attribute("open", "")
     expect(menu.locator("summary")).to_be_focused()
+
+
+def test_admin_copies_a_collection_from_the_user_dialog(
+    herbert_book, user: User, admin: User, admin_page: Page, live_server: str
+):
+    """The copy form works inside the edit-user dialog: confirm, post, reload."""
+    admin_page.goto(f"{live_server}/admin/users")
+    admin_page.get_by_role("link", name=user.email).click()
+    dialog = admin_page.locator("#user-dialog")
+    expect(dialog).to_be_visible()
+    admin_page.wait_for_function(
+        "() => !document.querySelector('.htmx-swapping, .htmx-settling')"
+    )
+    dialog.get_by_label("Copy to").select_option(label=admin.email)
+    dialog.get_by_label("Replace their whole collection with this one").check()
+    confirmations: list[str] = []
+
+    def accept(confirmation: Dialog) -> None:
+        confirmations.append(confirmation.message)
+        confirmation.accept()
+
+    admin_page.on("dialog", accept)
+    dialog.get_by_role("button", name="Copy collection").click()
+
+    expect(
+        admin_page.get_by_text(
+            f"Collection of {user.email} copied to {admin.email}: "
+            "1 book added, 0 books removed."
+        )
+    ).to_be_visible()
+    assert admin_page.url == f"{live_server}/admin/users"
+    assert confirmations == [
+        (
+            f"Copy the collection of {user.email}? "
+            "Replacing removes the other user’s books first."
+        )
+    ]
+    admin_page.goto(f"{live_server}/")
+    expect(admin_page.get_by_role("link", name="Dune")).to_be_visible()
