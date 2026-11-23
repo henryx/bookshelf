@@ -35,6 +35,7 @@ spec:
               containerPort: 8080
           {{- include "bookshelf.env" . | nindent 10 }}
           {{- include "bookshelf.googleEnv" . | nindent 12 }}
+          {{- include "bookshelf.googleBooksEnv" . | nindent 12 }}
           # No database: a database outage does not restart the pods.
           livenessProbe:
             httpGet:

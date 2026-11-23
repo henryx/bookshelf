@@ -92,6 +92,14 @@ class Config:
         return client_id, secret
 
     @property
+    def google_books_api_key(self) -> str | None:
+        """
+        Google Books API key for looking books up by ISBN; None without one
+        (Google Books then allows fewer lookups a day).
+        """
+        return os.environ.get("APP_GOOGLE_BOOKS_API_KEY") or None
+
+    @property
     def log_level(self) -> str:
         return os.environ.get("APP_LOG_LEVEL", "info")
 

@@ -57,6 +57,8 @@ def create_app(overrides: Mapping[str, object] | None = None) -> Flask:
         # Logging in with Google, when both are set.
         GOOGLE_CLIENT_ID=google_id,
         GOOGLE_CLIENT_SECRET=google_secret,
+        # Looking books up by ISBN; optional.
+        GOOGLE_BOOKS_API_KEY=cfg.google_books_api_key,
         # Largest request body (413 above it): room for a collection CSV import.
         MAX_CONTENT_LENGTH=1024 * 1024,
     )

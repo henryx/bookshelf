@@ -468,8 +468,11 @@ Decisions:
    - Google Books' description loses its HTML. Open Library's subjects ("Large type books") are not used as
      categories, and it has no plot.
    - An ISBN already in the catalogue is not looked up: the form offers that book, as when adding it.
-   - Each service gets 5 seconds. One that fails (unreachable, too slow, an error or over Google's daily quota
-     for requests without an API key) is logged and the other is asked; if none has the book and one failed,
+   - Google Books is asked with the API key `APP_GOOGLE_BOOKS_API_KEY` when it is set; without one, Google
+     allows fewer lookups a day. The key is sent in the `X-goog-api-key` header, not in the URL: a failed
+     request's error, which is logged, shows the URL.
+   - Each service gets 5 seconds. One that fails (unreachable, too slow, an error or over Google's daily quota)
+     is logged and the other is asked; if none has the book and one failed,
      the form says which could not be reached, since it may have the book. The server needs outbound HTTPS
      to `www.googleapis.com` and `openlibrary.org`, and the ISBN is all it sends them.
 

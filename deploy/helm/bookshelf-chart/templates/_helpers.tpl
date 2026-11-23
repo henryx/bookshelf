@@ -91,6 +91,20 @@ init-db hook runs before the chart creates the Google Secret.
 {{- end }}
 {{- end }}
 
+{{/*
+The Google Books API key, for the app's pods only (env items, after
+bookshelf.env's): an optional key of the app's Secret, so an existingSecret
+without it, or a release from before it, still starts.
+*/}}
+{{- define "bookshelf.googleBooksEnv" -}}
+- name: APP_GOOGLE_BOOKS_API_KEY
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "bookshelf.secretName" . }}
+      key: APP_GOOGLE_BOOKS_API_KEY
+      optional: true
+{{- end }}
+
 {{/* appuser in the image */}}
 {{- define "bookshelf.podSecurityContext" -}}
 runAsUser: 8877

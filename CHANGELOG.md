@@ -11,7 +11,9 @@ All notable changes to Bookshelf, newest first. Each version is released as the 
 - **Look up a book by its ISBN:** "Look up", next to the ISBN in the add-book form, fills in the empty fields
   (title, authors, publisher, year, plot and categories) from Google Books, or from Open Library when Google
   Books doesn't have the book. What you typed is kept, and nothing is saved until you add the book. The server
-  needs outbound HTTPS access to `www.googleapis.com` and `openlibrary.org`.
+  needs outbound HTTPS access to `www.googleapis.com` and `openlibrary.org`. An optional Google Books API key
+  (`APP_GOOGLE_BOOKS_API_KEY`; the Helm chart's `googleBooksApiKey`, or that key in `existingSecret`) raises
+  Google's daily limit on lookups.
 - **About dialog:** "About" in the account menu shows the version of Bookshelf, its licence, a link to its source
   code and the credits for the fonts and htmx it bundles. Without JavaScript it opens the `/about` page.
 

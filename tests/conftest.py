@@ -225,6 +225,8 @@ class OnlineCatalogues:
     google: object = field(default_factory=lambda: {"totalItems": 0})
     open_library: object = field(default_factory=dict)
     calls: list[str] = field(default_factory=list)
+    # The headers of each request, as `calls`.
+    headers: list[dict[str, str]] = field(default_factory=list)
 
     def google_has(self, **volume_info: object) -> None:
         self.google = {"totalItems": 1, "items": [{"volumeInfo": volume_info}]}
@@ -238,9 +240,10 @@ def online_catalogues(monkeypatch: pytest.MonkeyPatch) -> OnlineCatalogues:
     """Google Books and Open Library, stubbed: no test reaches the internet."""
     catalogues = OnlineCatalogues()
 
-    def get(url: str, **_kwargs: object) -> _Response:
+    def get(url: str, *, headers: dict[str, str], **_kwargs: object) -> _Response:
         name = "google" if "googleapis.com" in url else "open_library"
         catalogues.calls.append(name)
+        catalogues.headers.append(headers)
         answer = getattr(catalogues, name)
         if isinstance(answer, Exception):
             raise answer

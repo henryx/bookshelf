@@ -82,6 +82,7 @@ All settings come from environment variables:
 | `APP_WORKERS` | no | 2 × CPUs + 1 | gunicorn worker processes; set it in containers with a CPU limit |
 | `APP_TIMEOUT` | no | `30` | Seconds before gunicorn restarts a worker stuck on a request |
 | `APP_GOOGLE_CLIENT_ID` / `APP_GOOGLE_CLIENT_SECRET` | no | — | Google OAuth client for logging in with Google (see "Logging in with Google"); both or neither, or the app does not start |
+| `APP_GOOGLE_BOOKS_API_KEY` | no | — | Google Books API key for the add form's Look up (a key of a Google Cloud project with the Books API enabled). Without one Google Books allows fewer lookups a day, shared by everyone without a key, and Open Library is asked when it refuses |
 
 ## Books
 
@@ -189,6 +190,8 @@ Logging in with Google keeps its OAuth client in a Secret of its own: set `googl
 `google.clientSecret` and the chart creates `<release>-google`, or name an existing Secret with the keys
 `APP_GOOGLE_CLIENT_ID` and `APP_GOOGLE_CLIENT_SECRET` in `google.existingSecret` (it may be the same Secret as
 `existingSecret`). Only the app's pods read it, not the `init-db` and `prune-login-failures` jobs.
+A Google Books API key goes in the app's Secret: set `googleBooksApiKey`, or add the key
+`APP_GOOGLE_BOOKS_API_KEY` to `existingSecret`. It is optional, and only the app's pods read it.
 
 The setup wizard is open to whoever reaches it first, so create the first admin before the Ingress is reachable
 by anyone else (the chart's install notes show the command):

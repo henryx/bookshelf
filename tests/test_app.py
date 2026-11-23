@@ -77,6 +77,16 @@ def test_invalid_db_pool_size_fails(monkeypatch, value):
         create_app()
 
 
+@pytest.mark.parametrize(("value", "key"), [(None, None), ("", None), ("k3y", "k3y")])
+def test_google_books_api_key_from_env(monkeypatch, value, key):
+    if value is None:
+        monkeypatch.delenv("APP_GOOGLE_BOOKS_API_KEY", raising=False)
+    else:
+        monkeypatch.setenv("APP_GOOGLE_BOOKS_API_KEY", value)
+
+    assert create_app().config["GOOGLE_BOOKS_API_KEY"] == key
+
+
 def test_overrides_are_applied():
     app = create_app({"TESTING": True, "SECRET_KEY": "override"})
 

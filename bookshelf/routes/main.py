@@ -273,7 +273,9 @@ def _look_up(form: BookForm) -> str:
     if existing := find_book_by_isbn(get_db(), current_user.id, isbn):
         return _render_add(form, existing)
     try:
-        found = look_up_isbn(isbn)
+        found = look_up_isbn(
+            isbn, google_books_key=current_app.config["GOOGLE_BOOKS_API_KEY"]
+        )
     except BookLookupError as e:
         form.form_errors.append(str(e))
         return _render_add(form)

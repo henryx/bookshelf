@@ -49,17 +49,22 @@ class BookLookupError(Exception):
         self.isbn = isbn
 
 
-def look_up_isbn(isbn: str) -> FoundBook | None:
+def look_up_isbn(isbn: str, *, google_books_key: str | None = None) -> FoundBook | None:
     """
     The book with this ISBN-13 as Google Books has it, else as Open Library
     has it; None when neither has it. Raises BookLookupError when a service
     could not be asked (unreachable, too slow, an error or over its quota)
-    and no other had the book.
+    and no other had the book. `google_books_key`: a Google Books API key,
+    for more lookups a day than Google allows without one.
     """
+    sources: tuple[tuple[str, Callable[[], FoundBook | None]], ...] = (
+        ("Google Books", lambda: _from_google_books(isbn, google_books_key)),
+        ("Open Library", lambda: _from_open_library(isbn)),
+    )
     failed = []
-    for source, find in _SOURCES:
+    for source, find in sources:
         try:
-            found = find(isbn)
+            found = find()
         except requests.RequestException:
             logger.warning(
                 "Looking up ISBN %s in %s failed", isbn, source, exc_info=True
@@ -73,8 +78,11 @@ def look_up_isbn(isbn: str) -> FoundBook | None:
     return None
 
 
-def _from_google_books(isbn: str) -> FoundBook | None:
-    items = _list(_get_json(GOOGLE_BOOKS_URL, {"q": f"isbn:{isbn}"}), "items")
+def _from_google_books(isbn: str, key: str | None) -> FoundBook | None:
+    # The key in a header: in the URL, a failed request's logged error would show it.
+    headers = {"X-goog-api-key": key} if key else {}
+    data = _get_json(GOOGLE_BOOKS_URL, {"q": f"isbn:{isbn}"}, headers)
+    items = _list(data, "items")
     if not items:
         return None
     info = _member(items[0], "volumeInfo")
@@ -91,7 +99,7 @@ def _from_google_books(isbn: str) -> FoundBook | None:
 
 def _from_open_library(isbn: str) -> FoundBook | None:
     params = {"bibkeys": f"ISBN:{isbn}", "jscmd": "data", "format": "json"}
-    book = _member(_get_json(OPEN_LIBRARY_URL, params), f"ISBN:{isbn}")
+    book = _member(_get_json(OPEN_LIBRARY_URL, params, {}), f"ISBN:{isbn}")
     if not isinstance(book, dict):
         return None
     publishers = _names(book, "publishers")
@@ -107,15 +115,11 @@ def _from_open_library(isbn: str) -> FoundBook | None:
     )
 
 
-_SOURCES: tuple[tuple[str, Callable[[str], FoundBook | None]], ...] = (
-    ("Google Books", _from_google_books),
-    ("Open Library", _from_open_library),
-)
-
-
-def _get_json(url: str, params: dict[str, str]) -> object:
+def _get_json(url: str, params: dict[str, str], headers: dict[str, str]) -> object:
     """The JSON answer; requests.RequestException when there is none."""
-    response = requests.get(url, params=params, headers=_HEADERS, timeout=_TIMEOUT)
+    response = requests.get(
+        url, params=params, headers={**_HEADERS, **headers}, timeout=_TIMEOUT
+    )
     response.raise_for_status()
     return response.json()
 

@@ -112,6 +112,24 @@ def test_look_up_of_a_book_with_little_data(online_catalogues):
     )
 
 
+def test_look_up_sends_the_google_books_api_key_in_a_header(online_catalogues):
+    """Not in the URL, which a failed request's error (logged) would show."""
+    online_catalogues.google = 503
+    online_catalogues.open_library_has(DUNE_ISBN, title="Dune")
+
+    look_up_isbn(DUNE_ISBN, google_books_key="k3y")
+
+    google, open_library = online_catalogues.headers
+    assert google["X-goog-api-key"] == "k3y"
+    assert "X-goog-api-key" not in open_library
+
+
+def test_look_up_without_an_api_key(online_catalogues):
+    look_up_isbn(DUNE_ISBN)
+
+    assert all("X-goog-api-key" not in sent for sent in online_catalogues.headers)
+
+
 def test_look_up_of_a_book_neither_has(online_catalogues):
     assert look_up_isbn(DUNE_ISBN) is None
     assert online_catalogues.calls == ["google", "open_library"]
@@ -296,6 +314,17 @@ def test_look_up_when_the_services_cannot_be_reached(client, online_catalogues):
         f"Could not reach Google Books or Open Library to look up ISBN {DUNE_ISBN}. "
         "Try again later, or fill in the book yourself." in html
     )
+
+
+def test_look_up_uses_the_configured_api_key(
+    db_app: Flask, client, online_catalogues, monkeypatch
+):
+    monkeypatch.setitem(db_app.config, "GOOGLE_BOOKS_API_KEY", "k3y")
+    online_catalogues.google_has(**DUNE)
+
+    _look_up(client)
+
+    assert online_catalogues.headers[0]["X-goog-api-key"] == "k3y"
 
 
 def test_look_up_saves_nothing(db_app: Flask, client, online_catalogues):
