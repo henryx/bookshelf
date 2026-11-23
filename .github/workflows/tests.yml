@@ -54,12 +54,39 @@ jobs:
         env:
           PLAYWRIGHT_INSTALL_ARGS: ${{ matrix.playwright_install_args || '' }}
 
+  # pyproject.toml's version, the chart's version and its appVersion are bumped
+  # together on release: they must match on every run, and match the tag on a
+  # version tag, before anything is published.
+  versions:
+    name: versions
+    runs-on: ubuntu-latest
+    env:
+      CHART_FILE: deploy/helm/bookshelf-chart/Chart.yaml
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+
+      - name: Check versions match
+        run: |
+          project_version="$(python3 -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
+          chart_version="$(sed -n 's/^version: *//p' "$CHART_FILE")"
+          app_version="$(sed -n 's/^appVersion: *//p' "$CHART_FILE" | tr -d '"')"
+          echo "pyproject.toml $project_version, chart version $chart_version, appVersion $app_version"
+          if [ "$chart_version" != "$project_version" ] || [ "$app_version" != "$project_version" ]; then
+            echo "::error file=$CHART_FILE::Chart version $chart_version / appVersion $app_version do not match pyproject.toml version $project_version"
+            exit 1
+          fi
+          if [ "$GITHUB_REF_TYPE" = tag ] && [ "${GITHUB_REF_NAME#v}" != "$project_version" ]; then
+            echo "::error file=pyproject.toml::Tag $GITHUB_REF_NAME does not match version $project_version"
+            exit 1
+          fi
+
   # The Docker image, built only once every check above has passed; pushed to
   # quay.io/enricobianchi/bookshelf for main and version tags (pull requests
   # just build it).
   image:
     name: image
-    needs: tox
+    needs: [tox, versions]
     permissions:
       contents: read
     uses: ./.github/workflows/docker.yml
