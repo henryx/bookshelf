@@ -376,8 +376,8 @@ Decisions:
  - Loans (who borrowed a book and when it is due back) are not tracked in the first version.
  - Each user can mark a book in their collection as read (see "Your collection"); a book is not read until they
    do. Other reading statuses (to read, reading) and ratings are not tracked in the first version.
- - Books are entered by hand, or filled in from an online service by their ISBN (see "Adding a book").
-   Scanning the barcode with the phone camera may come later.
+ - Books are entered by hand, or filled in from an online service by their ISBN, typed or scanned from the
+   barcode with the phone camera (see "Adding a book").
  - Books have no cover images in the first version.
  - A book whose ISBN is already in the catalogue is refused. Any number of books may have no ISBN, and books
    with the same title and authors are allowed.
@@ -475,6 +475,16 @@ Decisions:
      is logged and the other is asked; if none has the book and one failed,
      the form says which could not be reached, since it may have the book. The server needs outbound HTTPS
      to `www.googleapis.com` and `openlibrary.org`, and the ISBN is all it sends them.
+ - "Scan", next to "Look up", reads the barcode on the back cover with the camera: the EAN-13 of a book is its
+   ISBN-13 (978 or 979), which fills the ISBN and is looked up as above. Another barcode (a price, a
+   product) is not an ISBN, and the dialog says so and keeps scanning. Closing the dialog, or the barcode
+   being read, stops the camera.
+   - The browser reads the barcode itself where it can (`BarcodeDetector` with EAN-13, e.g. Chrome on Android);
+     elsewhere (e.g. Firefox) with ZXing (`static/zxing/`, @zxing/library 0.23.0, Apache-2.0), vendored like
+     htmx and loaded only the first time Scan is used. It runs in the page: the image never leaves the phone.
+   - Browsers give the camera only to secure pages: the app must be served over HTTPS (or on localhost).
+     Without a camera to ask for, Scan is not shown, and neither is it without JavaScript: the ISBN is typed.
+   - A camera that cannot be used (access denied, none found, already in use) is said in the dialog.
 
 Known limitations:
 

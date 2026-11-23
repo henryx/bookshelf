@@ -109,8 +109,29 @@
       <button type="submit" class="secondary" name="lookup" value="1" formnovalidate
               hx-post="{{ action }}" hx-target="#add-book-form" hx-swap="outerHTML"
               hx-indicator="#add-book-lookup" hx-disabled-elt="#add-book-form button">Look up</button>
+      {# Reads the barcode with the camera into the ISBN and looks it up (app.js); shown only
+         where a camera can be used (style.css), so never without JavaScript. #}
+      <button type="button" class="secondary scan-button" data-barcode-scan
+              aria-controls="book-scan-dialog" aria-haspopup="dialog">Scan</button>
     {% endif %}
   </div>
+  {% if not picked %}
+    {# The camera view. data-barcode-decoder: ZXing, loaded where the browser cannot read
+       barcodes itself (BarcodeDetector). #}
+    <dialog id="book-scan-dialog" class="scan-dialog" aria-labelledby="book-scan-title"
+            data-barcode-input="book-isbn"
+            data-barcode-decoder="{{ url_for('static', filename='zxing/zxing.min.js') }}">
+      <div class="section-header">
+        <h2 id="book-scan-title">Scan the barcode</h2>
+        <button type="button" class="secondary" data-dialog-close aria-label="Close">✕</button>
+      </div>
+      <div class="scan-view">
+        <video class="scan-video" muted playsinline></video>
+        <span class="scan-aim" aria-hidden="true"></span>
+      </div>
+      <p class="scan-status hint" role="status" data-barcode-status></p>
+    </dialog>
+  {% endif %}
   {# Publisher and year side by side; the year needs only a few digits. #}
   <div class="field-row">
     {# Typing lists matching publishers under it (app.js sends the text as q). #}
