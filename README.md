@@ -91,7 +91,9 @@ added, in pages of 50. The round "+" button at the bottom right (here and in you
 "Add book" dialog. Authors are rows of name and surname, and categories rows of one field (a book can have
 several); in both "+" adds a row and "−" removes one. The author, category and publisher fields suggest existing
 entries as you type, and picking an author fills both name and surname. The book is added to the shared catalogue
-and to your own collection.
+and to your own collection. "Look up", next to the ISBN, fills in the empty fields from Google Books or Open
+Library (see `APP_GOOGLE_BOOKS_API_KEY`). "Scan" reads the ISBN from the book's barcode with the phone camera and
+looks it up; browsers give pages the camera only over HTTPS (or on localhost), so it shows only there.
 
 Clicking a book's title opens it in a dialog to edit every field but the title; the ISBN can be set while the
 book has none, and only admins can change or remove one already set. Admins can also delete a book from that
@@ -336,19 +338,24 @@ would add a Java runtime to the deployment.
 ## CI and releases
 
 GitHub Actions (`tests.yml`) run lint, format check, type check, audit, tests and browser tests (in
-Chromium and in Firefox) on every push to `main`, on version tags and on pull requests. Only once all of them pass is the image
+Chromium and in Firefox) on every push to `main`, on version tags and on pull requests. A `versions` job also
+checks that `pyproject.toml`'s version and the Helm chart's `version` and `appVersion` are the same, and on a
+version tag that they match the tag. Only once all of them pass is the image
 built (`docker.yml`, called by `tests.yml`): pushes to `main` publish `quay.io/enricobianchi/bookshelf:latest`,
 version tags their version tags, and pull requests just build it. A commit or tag whose checks fail
-publishes no image. Pushing to quay.io needs the repository secrets `QUAY_USERNAME` and `QUAY_PASSWORD`
+publishes no image. The Helm chart is then linted and rendered (`helm.yml`), and pushed to
+`oci://quay.io/enricobianchi/bookshelf-chart` for version tags. Pushing to quay.io needs the repository secrets `QUAY_USERNAME` and `QUAY_PASSWORD`
 (a quay.io robot account with write access to the repository works).
 
 To release a version:
 
 ```sh
 uv version 1.2.3                      # must match the tag, CI checks it
+# and set `version: 1.2.3` and `appVersion: "1.2.3"` in deploy/helm/bookshelf-chart/Chart.yaml;
+# in CHANGELOG.md, turn "Unreleased" into "1.2.3 (<date>)"; in README.md, the `helm install --version`
 git commit -am "Release 1.2.3"
 git tag v1.2.3
 git push origin main v1.2.3
 ```
 
-Once the checks pass on the tag, this publishes the image tags `1.2.3`, `1.2` and `1`.
+Once the checks pass on the tag, this publishes the image tags `1.2.3`, `1.2` and `1`, and the chart `1.2.3`.

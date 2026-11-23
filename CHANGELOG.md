@@ -15,12 +15,30 @@ All notable changes to Bookshelf, newest first. Each version is released as the 
   (`APP_GOOGLE_BOOKS_API_KEY`; the Helm chart's `googleBooksApiKey`, or that key in `existingSecret`) raises
   Google's daily limit on lookups.
 - **About dialog:** "About" in the account menu shows the version of Bookshelf, its licence, a link to its source
-  code and the credits for the fonts and htmx it bundles. Without JavaScript it opens the `/about` page.
+  code and the credits for the fonts, htmx and ZXing it bundles. Without JavaScript it opens the `/about` page.
+- **Scan a book's barcode:** "Scan", next to "Look up", opens the phone camera and reads the barcode on the
+  back cover. A book's barcode is its ISBN-13 (starting 978 or 979), so the ISBN is filled in and looked up.
+  Another barcode, such as a price, is not an ISBN: the dialog says so and keeps scanning. The camera stops
+  when the dialog closes or the barcode is read, and the image never leaves the phone. Browsers give pages the
+  camera only over HTTPS, so "Scan" shows only when Bookshelf is served over HTTPS (or on localhost) and the
+  browser has a camera to offer. The browser reads the barcode itself where it can (e.g. Chrome on Android);
+  elsewhere the bundled ZXing library does, loaded the first time "Scan" is used.
 
 ### Fixes
 
 - Renaming an author no longer fails with "unknown author" when another author takes the new name and gives it
   up again at the same moment. The rename is tried again instead, up to 10 times.
+- Dialogs fit on a phone's screen. They were a little wider than a phone (398 px on a 390 px screen) and ran
+  off its right edge.
+- On a phone the add-book form's ISBN field takes the whole width, with its buttons underneath, instead of
+  being squeezed beside them.
+
+### Development
+
+- The unit tests run in parallel (pytest-xdist, up to 8 workers, each with its own Firebird container):
+  about 90 seconds instead of 200. `uv run tox -e py3 -- -n0 <path>` runs them in one process.
+- CI checks on every push that `pyproject.toml`'s version and the Helm chart's `version` and `appVersion`
+  match, and on a version tag that they match the tag, before any image or chart is published.
 
 ## 1.3.0 (2026-11-23)
 
