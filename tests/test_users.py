@@ -10,7 +10,6 @@ from firebird.driver import Connection, DatabaseError
 from flask import Flask
 
 from bookshelf.db import get_db
-from bookshelf.models import users as users_model
 from bookshelf.models.users import (
     MIN_PASSWORD_LENGTH,
     AuthMethod,
@@ -29,6 +28,7 @@ from bookshelf.models.users import (
     find_by_session_id,
     google_login,
     list_users,
+    login_limits,
     set_auth_method,
     set_locked,
     set_password,
@@ -521,7 +521,7 @@ def test_refused_login_removal_retries_after_a_conflict(
     Another refused attempt removing the same, identical-looking row makes
     the removal fail with an update conflict: it tries again and succeeds.
     """
-    remove = users_model._delete_one_failure
+    remove = login_limits._delete_one_failure
     calls: list[datetime] = []
 
     def remove_after_another_request(
@@ -540,7 +540,7 @@ def test_refused_login_removal_retries_after_a_conflict(
         remove(conn, email, ip, attempted_at)
 
     monkeypatch.setattr(
-        users_model, "_delete_one_failure", remove_after_another_request
+        login_limits, "_delete_one_failure", remove_after_another_request
     )
     with (
         db_app.app_context(),
@@ -601,7 +601,7 @@ def test_removing_a_refused_attempt_gives_up(
         conn.begin()  # as the failed DELETE did
         raise _database_error(code)
 
-    monkeypatch.setattr(users_model, "_delete_one_failure", fail)
+    monkeypatch.setattr(login_limits, "_delete_one_failure", fail)
     with db_app.app_context(), pytest.raises(DatabaseError, match=f"error {code}"):
         start_login_attempt(
             get_db(),
