@@ -6,13 +6,9 @@ import pytest
 from firebird.driver import Connection
 from flask import Flask
 
-from bookshelf.db import get_db, schema
-from bookshelf.db.schema import (
-    SchemaTooNewError,
-    UpgradeStep,
-    init_db,
-    schema_behind,
-)
+from bookshelf.db import get_db, upgrades
+from bookshelf.db.schema import init_db, schema_behind
+from bookshelf.db.upgrades import SchemaTooNewError, UpgradeStep
 
 
 def _column_exists(conn: Connection, table: str, column: str) -> bool:
@@ -114,7 +110,7 @@ def steps(monkeypatch: pytest.MonkeyPatch):
     """Set the upgrade steps init_db knows."""
 
     def use(*steps: UpgradeStep) -> None:
-        monkeypatch.setattr(schema, "UPGRADES", list(steps))
+        monkeypatch.setattr(upgrades, "UPGRADES", list(steps))
 
     return use
 
@@ -330,7 +326,7 @@ def test_a_second_init_db_waits_for_the_first(app: Flask, other_conn, race):
 
 def test_requests_wait_while_the_schema_is_behind(app: Flask, steps, caplog):
     """The session database has every real step: one more puts it behind."""
-    steps(*schema.UPGRADES, ADD_NOTE)
+    steps(*upgrades.UPGRADES, ADD_NOTE)
     client = app.test_client()
 
     rv = client.get("/login")

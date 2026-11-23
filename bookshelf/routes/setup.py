@@ -4,7 +4,8 @@ from flask_login import login_user
 from werkzeug.wrappers import Response as BaseResponse
 
 from bookshelf.db import get_db
-from bookshelf.db.schema import init_db, schema_behind, table_exists
+from bookshelf.db.catalog import table_exists
+from bookshelf.db.schema import init_db, schema_behind
 from bookshelf.models.users import (
     Role,
     UserExistsError,

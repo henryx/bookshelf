@@ -6,8 +6,9 @@ import pytest
 from firebird.driver import Connection, DatabaseError
 from flask import Flask
 
-from bookshelf.db import get_db, schema
-from bookshelf.db.schema import USERS_AUTH_METHOD, init_db
+from bookshelf.db import get_db, upgrades
+from bookshelf.db.schema import init_db
+from bookshelf.db.upgrades import USERS_AUTH_METHOD
 
 # USERS at version 0: its columns and constraints.
 V0_COLUMNS = ["ID", "EMAIL", "PASSWORD_HASH", "ROLE", "IS_LOCKED", "NAME", "SURNAME"]
@@ -52,7 +53,7 @@ def _password_hash_nullable(conn: Connection) -> bool:
 @pytest.fixture
 def v0_conn(empty_db_app: Flask, monkeypatch: pytest.MonkeyPatch):
     """A connection to a database at version 0, holding a user."""
-    monkeypatch.setattr(schema, "UPGRADES", [])
+    monkeypatch.setattr(upgrades, "UPGRADES", [])
     with empty_db_app.app_context():
         conn = get_db()
         init_db(conn)
@@ -90,8 +91,8 @@ def test_rollback_after_failing_at_each_change(v0_conn: Connection, applied: int
     for change in USERS_AUTH_METHOD[:applied]:
         change.apply(v0_conn)
 
-    schema.UPGRADES[0].rollback(v0_conn)
-    schema.UPGRADES[0].rollback(v0_conn)  # a second time changes nothing more
+    upgrades.UPGRADES[0].rollback(v0_conn)
+    upgrades.UPGRADES[0].rollback(v0_conn)  # a second time changes nothing more
 
     assert _columns(v0_conn) == V0_COLUMNS
     assert not _password_hash_nullable(v0_conn)
@@ -102,8 +103,8 @@ def test_rollback_after_failing_at_each_change(v0_conn: Connection, applied: int
 
 
 def test_upgrade_run_twice_changes_nothing_more(v0_conn: Connection):
-    schema.UPGRADES[0].upgrade(v0_conn)
-    schema.UPGRADES[0].upgrade(v0_conn)
+    upgrades.UPGRADES[0].upgrade(v0_conn)
+    upgrades.UPGRADES[0].upgrade(v0_conn)
 
     assert _columns(v0_conn) == [*V0_COLUMNS, "AUTH_METHOD", "GOOGLE_SUBJECT"]
 

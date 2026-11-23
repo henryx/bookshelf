@@ -282,7 +282,7 @@ would add a Java runtime to the deployment.
   (`VALUE` is a reserved word in Firebird, so it is always written quoted). The `SCHEMA_VERSION` setting is
   the last step applied; `init-db` adds it as `0`, the frozen 1.0.0 schema, the first time it runs, and a
   database from before versions (1.0.x) is at version 0.
-- **Steps.** `UPGRADES` in `schema.py` lists the steps; step *n* (`UPGRADES[n - 1]`) takes a database from
+- **Steps.** `UPGRADES` in `bookshelf/db/upgrades.py` lists the steps (with the code applying them); step *n* (`UPGRADES[n - 1]`) takes a database from
   version *n − 1* to *n*. Append only: never change or remove a released step. Each is an `UpgradeStep` of two
   Python functions taking the connection, `upgrade` and `rollback`, running complete literal SQL strings, as
   everywhere else. `rollback` undoes `upgrade`, taking the database back to version *n − 1*. Both commit their
