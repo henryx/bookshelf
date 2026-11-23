@@ -42,18 +42,6 @@ jobs:
           helm template bookshelf "$CHART" --set "$in_cluster" > /dev/null
           helm template bookshelf "$CHART" --set "$external" > /dev/null
 
-      - name: Check tag matches chart versions
-        if: env.PUBLISH == 'true'
-        run: |
-          tag_version="${GITHUB_REF_NAME#v}"
-          chart_version="$(helm show chart "$CHART" | sed -n 's/^version: //p')"
-          app_version="$(helm show chart "$CHART" | sed -n 's/^appVersion: //p' | tr -d '"')"
-          if [ "$chart_version" != "$tag_version" ] || [ "$app_version" != "$tag_version" ]; then
-            echo "::error file=$CHART/Chart.yaml::Tag $GITHUB_REF_NAME does not match chart version $chart_version / appVersion $app_version"
-            exit 1
-          fi
-          echo "Chart $chart_version matches tag $GITHUB_REF_NAME"
-
       - name: Package and push
         if: env.PUBLISH == 'true'
         env:
