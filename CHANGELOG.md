@@ -4,6 +4,19 @@ All notable changes to Bookshelf, newest first. Each version is released as the 
 `quay.io/enricobianchi/bookshelf:<version>` and, from 1.0.2, as the Helm chart
 `oci://quay.io/enricobianchi/bookshelf-chart --version <version>`.
 
+## Unreleased
+
+### Changes
+
+- The app's JavaScript is split into a script per feature (`static/js/`), replacing `app.js`. Nothing changes
+  in use. A list saved for offline use before upgrading has no scripts until it is opened online once again:
+  shown offline in between, its forms are not disabled.
+
+### Development
+
+- Dependabot opens weekly pull requests for outdated Python packages, GitHub Actions and the Dockerfile's base
+  images, each a week after its release.
+
 ## 1.4.0 (2026-11-23)
 
 ### New

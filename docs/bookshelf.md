@@ -23,6 +23,12 @@ Decisions:
    `Referrer-Policy: same-origin`. So no page can be framed by another site (clickjacking), and pages must not
    use inline `<script>`, `<style>` or `style=""`: htmx's own inline indicator styles are turned off
    (`includeIndicatorStyles`), their rules being in `style.css`. HSTS is set by the HTTPS proxy, not the app.
+ - The app's JavaScript is plain scripts in `static/js/`, one per feature (errors, dialogs, rows, suggestions,
+   the menu, barcode scanning, offline), with no build step or modules: each is an IIFE adding listeners on
+   `document`, and none uses another's code. `base.html` loads them deferred, after htmx, in a fixed order, the
+   order their listeners run in (`errors.js` first, so a new request clears the error banner before the others
+   see it). A new script goes in that list and in the service worker's `PRECACHE`, whose cache name changes
+   with it. Every page works without them: each section says what happens without JavaScript.
  - PWA: `static/manifest.webmanifest` (icons in `static/icons/`) makes the app installable; the service worker
    (`static/sw.js`) is served at `/sw.js`, so its scope is the whole app. Like `/offline`, it needs no login
    and is served before setup is done. The worker goes to the network first, always: the cache is only a
