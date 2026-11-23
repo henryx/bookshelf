@@ -1,0 +1,40 @@
+# Weekly pull requests for outdated dependencies; each runs the Tests workflow
+# like any other pull request. A release is offered only once it is a week old
+# (cooldown), so a broken or compromised one is usually withdrawn by then.
+# Not covered: the vendored htmx and ZXing (static/), the Firebird image of the
+# tests (tests/conftest.py) and of the chart (values.yaml).
+version: 2
+updates:
+  # pyproject.toml and uv.lock. Minor and patch releases come together in one
+  # pull request; a major one gets its own, as it may need code changes.
+  - package-ecosystem: uv
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      python-minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        patterns: ["*"]
+
+  # The Dockerfile's base images (uv's; Dependabot may not read them, as they
+  # are ARG defaults). The Python version is changed on purpose,
+  # with requires-python, .python-version and tox.ini, not by Dependabot.
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    ignore:
+      - dependency-name: python

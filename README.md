@@ -347,6 +347,11 @@ publishes no image. The Helm chart is then linted and rendered (`helm.yml`), and
 `oci://quay.io/enricobianchi/bookshelf-chart` for version tags. Pushing to quay.io needs the repository secrets `QUAY_USERNAME` and `QUAY_PASSWORD`
 (a quay.io robot account with write access to the repository works).
 
+Dependabot (`.github/dependabot.yml`) opens weekly pull requests for outdated Python packages (`uv.lock`), GitHub
+Actions and the Dockerfile's base images (set through `ARG`s, which Dependabot may not read), only for releases at
+least a week old. It does not cover the vendored htmx and ZXing, nor the Firebird image of the tests and of the
+chart: check those when releasing.
+
 To release a version:
 
 ```sh
