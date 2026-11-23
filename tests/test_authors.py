@@ -620,7 +620,9 @@ def test_saving_a_book_returns_to_its_authors_books(db_app, client, user):
     assert rv.headers["HX-Redirect"] == f"/catalogue?author={frank.id}"
 
 
-@pytest.mark.parametrize("author", [str(uuid4()), "not-an-id"])
+@pytest.mark.parametrize(
+    "author", [pytest.param(str(uuid4()), id="unknown-id"), "not-an-id"]
+)
 def test_unknown_authors_books_are_not_found(client, author):
     assert client.get(f"/catalogue?author={author}").status_code == 404
 
@@ -698,6 +700,8 @@ def test_removing_without_javascript_returns_to_the_authors_books(db_app, client
     assert rv.headers["Location"] == f"/?author={frank.id}"
 
 
-@pytest.mark.parametrize("author", [str(uuid4()), "not-an-id"])
+@pytest.mark.parametrize(
+    "author", [pytest.param(str(uuid4()), id="unknown-id"), "not-an-id"]
+)
 def test_unknown_authors_books_in_the_collection_are_not_found(client, author):
     assert client.get(f"/?author={author}").status_code == 404

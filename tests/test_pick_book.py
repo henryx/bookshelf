@@ -251,6 +251,8 @@ def test_picked_book_without_htmx_is_the_add_page(client, dune):
     assert f'action="/collection/books/{dune}/add"' in html
 
 
-@pytest.mark.parametrize("book", [str(uuid4()), "nonsense"])
+@pytest.mark.parametrize(
+    "book", [pytest.param(str(uuid4()), id="unknown-id"), "nonsense"]
+)
 def test_picking_an_unknown_book_is_not_found(client, book):
     assert _picked(client, book).status_code == 404

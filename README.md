@@ -209,7 +209,7 @@ up its volume.
 ## Tests and checks
 
 ```sh
-uv run tox -e py3                     # tests (starts Firebird via testcontainers: Docker must be running)
+uv run tox -e py3                     # tests, in parallel (each worker starts its own Firebird via testcontainers: Docker must be running)
 uv run tox -e e2e                     # browser tests of app.js (Playwright; installs Chromium, Docker too)
 uv run tox -e e2e-firefox             # the same in Firefox
 uv run tox -e lint                    # ruff check

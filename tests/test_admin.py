@@ -828,7 +828,12 @@ def test_copy_collection_replacing_the_targets(
 
 @pytest.mark.parametrize(
     ("target", "mode"),
-    [("self", "KEEP"), (str(uuid4()), "KEEP"), ("reader", "MOVE"), ("reader", "")],
+    [
+        ("self", "KEEP"),
+        pytest.param(str(uuid4()), "KEEP", id="unknown-KEEP"),
+        ("reader", "MOVE"),
+        ("reader", ""),
+    ],
     ids=["same user", "unknown user", "unknown mode", "no mode"],
 )
 def test_copy_collection_rejects_invalid_choices(
