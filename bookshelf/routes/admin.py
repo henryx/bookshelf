@@ -14,7 +14,7 @@ from werkzeug.wrappers import Response as BaseResponse
 from wtforms import SelectChoice
 
 from bookshelf.db import get_db
-from bookshelf.models.books import CopiedCollection, CopyMode, copy_collection
+from bookshelf.models.books import CopyMode, copy_collection
 from bookshelf.models.users import (
     AuthMethod,
     LastAdminError,
@@ -247,23 +247,6 @@ def delete(user_id: UUID) -> BaseResponse:
     return htmx_redirect(url_for("admin.users"))
 
 
-def _books(count: int) -> str:
-    return f"{count} book" if count == 1 else f"{count} books"
-
-
-def _copied(copied: CopiedCollection, mode: CopyMode) -> str:
-    """What a copy changed, for the confirmation: "2 books added, 1 book removed"."""
-    changes = [f"{_books(copied.added)} added"]
-    match mode:
-        case CopyMode.ADD:
-            changes.append(f"{copied.updated} with more copies")
-        case CopyMode.REPLACE:
-            changes.append(f"{_books(copied.removed)} removed")
-        case CopyMode.KEEP:
-            pass
-    return ", ".join(changes)
-
-
 @admin_route.post("/users/<uuid:user_id>/copy-collection")
 def copy_user_collection(user_id: UUID) -> BaseResponse | str:
     """
@@ -291,6 +274,6 @@ def copy_user_collection(user_id: UUID) -> BaseResponse | str:
         copied,
     )
     flash(
-        f"Collection of {user.email} copied to {target.email}: {_copied(copied, mode)}."
+        f"Collection of {user.email} copied to {target.email}: {copied.summary(mode)}."
     )
     return htmx_redirect(url_for("admin.users"))

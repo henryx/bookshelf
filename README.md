@@ -152,6 +152,7 @@ characters long (12 by default).
 | `promote-user EMAIL` / `demote-user EMAIL` | Give or remove the admin role |
 | `lock-user EMAIL` / `unlock-user EMAIL` | Block or allow a user's login; locking ends open sessions |
 | `delete-user EMAIL [--yes]` | Permanently delete a user (asks for confirmation) |
+| `copy-collection SOURCE TARGET [--mode keep\|add\|replace] [--yes]` | Copy a user's collection into another user's; for books the target already has, `keep` theirs (the default), `add` the copies, or `replace` their whole collection (asks for confirmation). Copied books start unread |
 
 All commands except `init-db`, `prune-login-failures` and `create-admin` require admin credentials
 (`--admin-email`, or prompted, plus the admin password). Admins cannot lock, demote or

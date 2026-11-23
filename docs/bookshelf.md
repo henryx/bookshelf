@@ -233,7 +233,7 @@ The same operations are also available as CLI commands (see README):
 | Lock / unlock a user | `lock-user`, `unlock-user` |
 | Delete a user | `delete-user` (asks for confirmation) |
 | Set a user's name and surname | none: web only (the admin area, or the user's account page) |
-| Copy a user's collection to another user | none: web only (the admin area) |
+| Copy a user's collection to another user | `copy-collection` (`--mode keep`, `add` or `replace`; `replace` asks for confirmation) |
 
 Every CLI operation except `create-admin` requires valid admin credentials (correct password, `ADMIN` role, not
 locked) and is logged with the admin who performed it. An admin cannot lock, demote or delete their own account.

@@ -4,6 +4,7 @@ import pytest
 from flask import Flask
 
 from bookshelf.db import get_db
+from bookshelf.models.books import NewBook, add_book
 from bookshelf.models.users import (
     AuthMethod,
     LastAdminError,
@@ -783,3 +784,147 @@ def test_list_users_shows_google_users(db_app: Flask, admin: User):
 
     line = next(line for line in rv.output.splitlines() if "gina@example.com" in line)
     assert "google" in line
+
+
+# copy-collection
+
+
+@pytest.fixture
+def target(db_app: Flask) -> User:
+    """A user owning Ulysses, to copy collections to."""
+    with db_app.app_context():
+        target = create_user(get_db(), "target@example.com", NEW_PASSWORD)
+        add_book(get_db(), target.id, NewBook("Ulysses"))
+    return target
+
+
+@pytest.fixture
+def user_books(db_app: Flask, user: User) -> None:
+    """`user` owns Dune (2 copies) and Emma."""
+    with db_app.app_context():
+        add_book(get_db(), user.id, NewBook("Dune"), copies=2)
+        add_book(get_db(), user.id, NewBook("Emma"))
+
+
+def _owned(app: Flask, user: User) -> dict[str, int]:
+    """The titles in the user's collection, with their copies."""
+    with app.app_context(), get_db().cursor() as cur:
+        cur.execute(
+            "SELECT b.TITLE, cb.COPIES FROM COLLECTION_BOOKS cb "
+            "JOIN BOOKS b ON b.ID = cb.BOOK_ID WHERE cb.USER_ID = ?",
+            (user.id.bytes,),
+        )
+        return dict(cur.fetchall())
+
+
+def _copy(
+    db_app: Flask, *args: str, admin_password: str = ADMIN_PASSWORD, confirm: str = ""
+):
+    return db_app.test_cli_runner().invoke(
+        args=["copy-collection", *args, "--admin-email", ADMIN_EMAIL],
+        input=f"{admin_password}\n{confirm}",
+    )
+
+
+def test_copy_collection_keeps_the_targets_books_by_default(
+    db_app: Flask, admin: User, user: User, target: User, user_books: None
+):
+    rv = _copy(db_app, user.email, target.email)
+
+    assert rv.exit_code == 0, rv.output
+    assert (
+        f"Collection of {user.email} copied to {target.email}: 2 books added."
+        in rv.output
+    )
+    assert _owned(db_app, target) == {"Dune": 2, "Emma": 1, "Ulysses": 1}
+    assert _owned(db_app, user) == {"Dune": 2, "Emma": 1}
+
+
+def test_copy_collection_adding_the_copies(
+    db_app: Flask, admin: User, user: User, target: User, user_books: None
+):
+    _copy(db_app, user.email, target.email)
+
+    rv = _copy(db_app, user.email, target.email, "--mode", "add")
+
+    assert rv.exit_code == 0, rv.output
+    assert "0 books added, 2 with more copies." in rv.output
+    assert _owned(db_app, target) == {"Dune": 4, "Emma": 2, "Ulysses": 1}
+
+
+def test_copy_collection_replacing_asks_for_confirmation(
+    db_app: Flask, admin: User, user: User, target: User, user_books: None
+):
+    rv = _copy(db_app, user.email, target.email, "--mode", "REPLACE", confirm="y\n")
+
+    assert rv.exit_code == 0, rv.output
+    assert f"Replace the collection of {target.email}" in rv.output
+    assert "2 books added, 1 book removed." in rv.output
+    assert _owned(db_app, target) == {"Dune": 2, "Emma": 1}
+
+
+def test_copy_collection_replacing_can_be_cancelled(
+    db_app: Flask, admin: User, user: User, target: User, user_books: None
+):
+    rv = _copy(db_app, user.email, target.email, "--mode", "replace", confirm="n\n")
+
+    assert rv.exit_code != 0
+    assert f"Replace the collection of {target.email}" in rv.output
+    assert "Aborted!" in rv.output
+    assert _owned(db_app, target) == {"Ulysses": 1}
+
+
+def test_copy_collection_replacing_yes_skips_confirmation(
+    db_app: Flask, admin: User, user: User, target: User, user_books: None
+):
+    rv = _copy(db_app, user.email, target.email, "--mode", "replace", "--yes")
+
+    assert rv.exit_code == 0, rv.output
+    assert "Replace the collection" not in rv.output
+    assert _owned(db_app, target) == {"Dune": 2, "Emma": 1}
+
+
+@pytest.mark.parametrize(
+    ("args", "message"),
+    [
+        (
+            ["reader@example.com", "nobody@example.com"],
+            "User nobody@example.com not found",
+        ),
+        (
+            ["nobody@example.com", "target@example.com"],
+            "User nobody@example.com not found",
+        ),
+        (["reader@example.com", "Reader@Example.com"], "to its own user"),
+        (
+            ["reader@example.com", "target@example.com", "--mode", "move"],
+            "Invalid value",
+        ),
+    ],
+    ids=["unknown target", "unknown source", "same user", "unknown mode"],
+)
+def test_copy_collection_rejects_invalid_arguments(
+    db_app: Flask,
+    admin: User,
+    user: User,
+    target: User,
+    user_books: None,
+    args: list[str],
+    message: str,
+):
+    rv = _copy(db_app, *args)
+
+    assert rv.exit_code != 0
+    assert message in rv.output
+    assert _owned(db_app, target) == {"Ulysses": 1}
+    assert _owned(db_app, user) == {"Dune": 2, "Emma": 1}
+
+
+def test_copy_collection_rejects_wrong_admin_password(
+    db_app: Flask, admin: User, user: User, target: User, user_books: None
+):
+    rv = _copy(db_app, user.email, target.email, admin_password="wrong")
+
+    assert rv.exit_code != 0
+    assert "Invalid admin credentials" in rv.output
+    assert _owned(db_app, target) == {"Ulysses": 1}

@@ -38,6 +38,22 @@ class CopiedCollection:
     updated: int
     removed: int
 
+    def summary(self, mode: CopyMode) -> str:
+        """What the copy changed, for people: "2 books added, 1 book removed"."""
+        changes = [f"{_books(self.added)} added"]
+        match mode:
+            case CopyMode.ADD:
+                changes.append(f"{self.updated} with more copies")
+            case CopyMode.REPLACE:
+                changes.append(f"{_books(self.removed)} removed")
+            case CopyMode.KEEP:
+                pass
+        return ", ".join(changes)
+
+
+def _books(count: int) -> str:
+    return f"{count} book" if count == 1 else f"{count} books"
+
 
 class InvalidIsbnError(ValueError):
     """Text that is not a valid ISBN-10 or ISBN-13."""
