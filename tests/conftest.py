@@ -2,9 +2,11 @@ import os
 import time
 from collections.abc import Callable, Iterator, Sequence
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, field
 from uuid import uuid4
 
 import pytest
+import requests
 from firebird.driver import (
     Connection,
     Cursor,
@@ -195,6 +197,59 @@ def fail_statement(monkeypatch: pytest.MonkeyPatch) -> Callable[[str], None]:
         monkeypatch.setattr(Cursor, "execute", failing)
 
     return fail
+
+
+class _Response:
+    """What requests.get returns, as far as the book lookup reads it."""
+
+    def __init__(self, status_code: int, payload: object) -> None:
+        self.status_code = status_code
+        self.payload = payload
+
+    def raise_for_status(self) -> None:
+        if self.status_code >= 400:
+            raise requests.HTTPError(f"{self.status_code} error")
+
+    def json(self) -> object:
+        return self.payload
+
+
+@dataclass
+class OnlineCatalogues:
+    """
+    What Google Books and Open Library answer the book lookup: a JSON
+    payload, an HTTP error status, or an exception raised; by default that
+    they have no such book. `calls`: the services asked, in order.
+    """
+
+    google: object = field(default_factory=lambda: {"totalItems": 0})
+    open_library: object = field(default_factory=dict)
+    calls: list[str] = field(default_factory=list)
+
+    def google_has(self, **volume_info: object) -> None:
+        self.google = {"totalItems": 1, "items": [{"volumeInfo": volume_info}]}
+
+    def open_library_has(self, isbn: str, **book: object) -> None:
+        self.open_library = {f"ISBN:{isbn}": book}
+
+
+@pytest.fixture
+def online_catalogues(monkeypatch: pytest.MonkeyPatch) -> OnlineCatalogues:
+    """Google Books and Open Library, stubbed: no test reaches the internet."""
+    catalogues = OnlineCatalogues()
+
+    def get(url: str, **_kwargs: object) -> _Response:
+        name = "google" if "googleapis.com" in url else "open_library"
+        catalogues.calls.append(name)
+        answer = getattr(catalogues, name)
+        if isinstance(answer, Exception):
+            raise answer
+        if isinstance(answer, int):
+            return _Response(answer, None)
+        return _Response(200, answer)
+
+    monkeypatch.setattr("bookshelf.models.books.lookup.requests.get", get)
+    return catalogues
 
 
 @pytest.fixture

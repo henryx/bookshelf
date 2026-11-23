@@ -15,6 +15,7 @@
   {% for error in form.form_errors %}
     <p class="error" role="alert">{{ error }}</p>
   {% endfor %}
+  {% if notice %}<p class="flash" role="status">{{ notice }}</p>{% endif %}
   {# The ISBN typed is already in the catalogue: offer that book instead. The button
      posts this form (its copies) to the collection; without JavaScript via formaction. #}
   {% if existing %}
@@ -87,16 +88,29 @@
              "hx-indicator": "this",
            }) }}
   {% with id_prefix = "book-" %}{% include "_author_rows.html" %}{% endwith %}
-  {{ field("isbn", "ISBN-10 or ISBN-13; hyphens and spaces are fine.", autocomplete="off",
-           suggest=True, data_book_pick=True, **{
-             "hx-get": url_for("main.book_suggestions"),
-             "hx-vals": '{"field": "isbn"}',
-             "hx-trigger": "input changed delay:200ms",
-             "hx-target": "#book-isbn-suggestions",
-             "hx-swap": "innerHTML",
-             "hx-sync": "this:replace",
-             "hx-indicator": "this",
-           }) }}
+  {% set isbn_hint = "ISBN-10 or ISBN-13; hyphens and spaces are fine." if picked else
+       "ISBN-10 or ISBN-13; hyphens and spaces are fine. Look up fills in the empty fields "
+       "from Google Books or Open Library." %}
+  <div class="isbn-lookup">
+    <div class="field">
+      {{ field("isbn", isbn_hint, autocomplete="off", suggest=True, data_book_pick=True, **{
+                 "hx-get": url_for("main.book_suggestions"),
+                 "hx-vals": '{"field": "isbn"}',
+                 "hx-trigger": "input changed delay:200ms",
+                 "hx-target": "#book-isbn-suggestions",
+                 "hx-swap": "innerHTML",
+                 "hx-sync": "this:replace",
+                 "hx-indicator": "this",
+               }) }}
+    </div>
+    {% if not picked %}
+      {# Posts the form as it is (nothing is saved) and gets it back with its empty
+         fields filled; without JavaScript as a plain submit, like the rows' buttons. #}
+      <button type="submit" class="secondary" name="lookup" value="1" formnovalidate
+              hx-post="{{ action }}" hx-target="#add-book-form" hx-swap="outerHTML"
+              hx-indicator="#add-book-lookup" hx-disabled-elt="#add-book-form button">Look up</button>
+    {% endif %}
+  </div>
   {# Publisher and year side by side; the year needs only a few digits. #}
   <div class="field-row">
     {# Typing lists matching publishers under it (app.js sends the text as q). #}
@@ -130,4 +144,5 @@
   {% endif %}
   <span id="add-book-indicator" class="htmx-indicator">Adding…</span>
   <span id="add-book-loading" class="htmx-indicator">Loading…</span>
+  <span id="add-book-lookup" class="htmx-indicator">Looking up…</span>
 </form>

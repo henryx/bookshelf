@@ -1,9 +1,12 @@
+from collections.abc import Sequence
+
 from flask import current_app
 from flask_wtf import FlaskForm
 from flask_wtf.file import FileAllowed, FileField, FileRequired
 from wtforms import (
     BooleanField,
     EmailField,
+    Field,
     FieldList,
     Form,
     FormField,
@@ -31,6 +34,7 @@ from bookshelf.models.books import (
     MAX_COPIES,
     Author,
     CopyMode,
+    FoundBook,
     InvalidIsbnError,
     IsbnLostDigitsError,
     NewBook,
@@ -375,6 +379,32 @@ class BookForm(EditBookForm):
     )
     copies = _copies_field("Copies you own")
 
+    def fill_empty(self, found: FoundBook) -> list[str]:
+        """
+        Fill the fields left empty with a book found online (the Look up
+        button); what was typed stays. The fields filled, as named to people.
+        """
+        filled = ["title"] if _fill(self.title, found.title) else []
+        if found.authors and not any(a.name or a.surname for a in self.author_list()):
+            _replace_rows(
+                self.authors,
+                [{"name": a.name, "surname": a.surname} for a in found.authors],
+            )
+            filled.append("authors")
+        filled += [
+            field.label.text.lower()
+            for field, value in (
+                (self.publisher, found.publisher),
+                (self.publication_year, found.publication_year),
+                (self.plot, found.plot),
+            )
+            if _fill(field, value)
+        ]
+        if found.categories and not any(self.category_names()):
+            _replace_rows(self.categories, found.categories)
+            filled.append("categories")
+        return filled
+
     def to_book(self) -> NewBook:
         return NewBook(
             title=self.title.data or "",
@@ -387,6 +417,24 @@ class BookForm(EditBookForm):
             plot=self.plot.data,
             categories=self.category_names(),
         )
+
+
+def _fill(field: Field, value: object) -> bool:
+    """Give an empty field this value, if there is one; whether it did."""
+    if field.data not in (None, "") or value is None:
+        return False
+    field.data = value
+    # What was posted, shown in place of the data: it was empty.
+    field.raw_data = None
+    return True
+
+
+def _replace_rows(field: FieldList, rows: Sequence[object]) -> None:
+    """Replace every row of authors or categories with these."""
+    while field.entries:
+        field.pop_entry()
+    for row in rows:
+        field.append_entry(row)
 
 
 class AccountForm(FlaskForm):

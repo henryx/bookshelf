@@ -1,6 +1,7 @@
 """
 Books: the catalogue and its lists, a user's collection, adding, editing and
-deleting books, ISBN checks and the book forms' suggestions.
+deleting books, ISBN checks, the book forms' suggestions and looking a book
+up online by its ISBN.
 """
 
 from bookshelf.models.books.collection import (
@@ -25,6 +26,7 @@ from bookshelf.models.books.listing import (
     list_books,
     list_collection,
 )
+from bookshelf.models.books.lookup import BookLookupError, FoundBook, look_up_isbn
 from bookshelf.models.books.model import (
     CATEGORY_MAX_LENGTH,
     MAX_COPIES,
@@ -70,11 +72,13 @@ __all__ = [
     "BookExistsError",
     "BookField",
     "BookInCollectionError",
+    "BookLookupError",
     "BookPage",
     "BookSuggestion",
     "CopiedCollection",
     "CopyMode",
     "DeletedBook",
+    "FoundBook",
     "InvalidIsbnError",
     "IsbnAlreadySetError",
     "IsbnLostDigitsError",
@@ -90,6 +94,7 @@ __all__ = [
     "find_book_details",
     "list_books",
     "list_collection",
+    "look_up_isbn",
     "normalise_isbn",
     "remove_from_collection",
     "set_copies",

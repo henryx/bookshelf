@@ -1235,6 +1235,19 @@ dialog .card {
   margin-top: 0.5rem;
 }
 
+/* The ISBN with its Look up button at its right, level with the input: below the
+   label's line (its 0.9375rem at line-height 1.5) and the field's gap. */
+.isbn-lookup {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.5rem;
+  align-items: start;
+}
+
+.isbn-lookup > button {
+  margin-top: calc(0.9375rem * 1.5 + 0.5rem);
+}
+
 /* The copies the user owns, at the right of the add and edit forms, under the book's fields. */
 .copies-field {
   justify-self: end;

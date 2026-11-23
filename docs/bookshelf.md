@@ -376,8 +376,8 @@ Decisions:
  - Loans (who borrowed a book and when it is due back) are not tracked in the first version.
  - Each user can mark a book in their collection as read (see "Your collection"); a book is not read until they
    do. Other reading statuses (to read, reading) and ratings are not tracked in the first version.
- - Books are entered by hand in the first version. Filling in a book's details from an online service by ISBN
-   (e.g. Open Library), and scanning the barcode with the phone camera, may come later.
+ - Books are entered by hand, or filled in from an online service by their ISBN (see "Adding a book").
+   Scanning the barcode with the phone camera may come later.
  - Books have no cover images in the first version.
  - A book whose ISBN is already in the catalogue is refused. Any number of books may have no ISBN, and books
    with the same title and authors are allowed.
@@ -456,6 +456,22 @@ Decisions:
  - Only picking a suggestion loads a book: typing a whole title does not, since another book may have the same
    title. A title several catalogue books share is not loaded even when picked; its ISBN tells them apart.
  - The publication year is between 1 and 9999; copies between 1 and 999.
+ - "Look up", next to the ISBN, fills in the form from the book's ISBN online: Google Books first (the best
+   coverage, Italian editions included, and a description for the plot), else Open Library (open data, no
+   quota). The server asks them (`models/books/lookup.py`), not the browser: the Content-Security-Policy lets
+   pages reach only the app. Nothing is saved: the user checks the form and adds the book as usual.
+   - Only the fields left empty are filled (title, authors, publisher, year, plot, categories); what the user
+     typed stays. Authors and categories are filled only when all their rows are empty. A notice says which
+     fields were filled and from where.
+   - An author given as one text is split at the last space ("Frank Herbert") or at a comma ("Herbert,
+     Frank"); one word is a surname. Names like "Ursula K. Le Guin" come out wrong and are fixed by hand.
+   - Google Books' description loses its HTML. Open Library's subjects ("Large type books") are not used as
+     categories, and it has no plot.
+   - An ISBN already in the catalogue is not looked up: the form offers that book, as when adding it.
+   - Each service gets 5 seconds. One that fails (unreachable, too slow, an error or over Google's daily quota
+     for requests without an API key) is logged and the other is asked; if none has the book and one failed,
+     the form says which could not be reached, since it may have the book. The server needs outbound HTTPS
+     to `www.googleapis.com` and `openlibrary.org`, and the ISBN is all it sends them.
 
 Known limitations:
 

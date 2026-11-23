@@ -25,7 +25,9 @@ from bookshelf.models.books import (
     BookExistsError,
     BookField,
     BookInCollectionError,
+    BookLookupError,
     DeletedBook,
+    InvalidIsbnError,
     IsbnAlreadySetError,
     Sort,
     UnknownBookError,
@@ -35,6 +37,7 @@ from bookshelf.models.books import (
     find_book_by_isbn,
     find_book_details,
     list_books,
+    look_up_isbn,
     normalise_isbn,
     set_copies,
     suggest_authors,
@@ -158,7 +161,10 @@ def _add_list(values: MultiDict[str, str]) -> str:
 
 
 def _render_add(
-    form: BookForm, existing: Book | None = None, picked: Book | None = None
+    form: BookForm,
+    existing: Book | None = None,
+    picked: Book | None = None,
+    notice: str | None = None,
 ) -> str:
     """
     The form alone for htmx (it lives in the dialog of the catalogue and of
@@ -167,6 +173,7 @@ def _render_add(
     to the user's collection instead.
     `picked`: the catalogue book picked from the title or ISBN suggestions;
     the form shows it read-only and adds it to the user's collection.
+    `notice`: what the Look up button filled in.
     """
     template = "_add_book_form.html" if is_htmx() else "add_book.html"
     return render_template(
@@ -174,6 +181,7 @@ def _render_add(
         form=form,
         existing=existing,
         picked=picked,
+        notice=notice,
         add_list=_add_list(request.values),
     )
 
@@ -236,6 +244,8 @@ def new_book() -> BaseResponse | str:
     form = BookForm()
     if _change_rows(form):
         return _render_add(form)
+    if "lookup" in request.form:
+        return _look_up(form)
     if not form.validate_on_submit():
         return _render_add(form)
     book = form.to_book()
@@ -248,6 +258,47 @@ def new_book() -> BaseResponse | str:
     current_app.logger.info("Book %r added by %s", book.title, current_user.email)
     flash(f"Book “{book.title}” added.")
     return htmx_redirect(url_for(book_list_endpoint(request.form)))
+
+
+def _look_up(form: BookForm) -> str:
+    """
+    The Look up button: fill the form's empty fields with the book its ISBN
+    finds online (nothing is saved), or offer the catalogue's book with it.
+    """
+    try:
+        isbn = normalise_isbn(form.isbn.data or "")
+    except InvalidIsbnError:
+        form.form_errors.append("Enter a valid ISBN to look it up.")
+        return _render_add(form)
+    if existing := find_book_by_isbn(get_db(), current_user.id, isbn):
+        return _render_add(form, existing)
+    try:
+        found = look_up_isbn(isbn)
+    except BookLookupError as e:
+        form.form_errors.append(str(e))
+        return _render_add(form)
+    if found is None:
+        current_app.logger.info(
+            "ISBN %s looked up by %s: not found", isbn, current_user.email
+        )
+        form.form_errors.append(f"No book found online with ISBN {form.isbn.data}.")
+        return _render_add(form)
+    current_app.logger.info(
+        "ISBN %s looked up by %s: found in %s", isbn, current_user.email, found.source
+    )
+    return _render_add(
+        form, notice=_filled_notice(form.fill_empty(found), found.source)
+    )
+
+
+def _filled_notice(filled: list[str], source: str) -> str:
+    """What the Look up button filled in: "Filled in title and year from …"."""
+    if not filled:
+        return f"{source} has this book, but nothing to add to it."
+    fields = (
+        filled[0] if len(filled) == 1 else f"{', '.join(filled[:-1])} and {filled[-1]}"
+    )
+    return f"Filled in {fields} from {source}."
 
 
 def book_list_endpoint(values: MultiDict[str, str]) -> str:

@@ -8,6 +8,10 @@ All notable changes to Bookshelf, newest first. Each version is released as the 
 
 ### New
 
+- **Look up a book by its ISBN:** "Look up", next to the ISBN in the add-book form, fills in the empty fields
+  (title, authors, publisher, year, plot and categories) from Google Books, or from Open Library when Google
+  Books doesn't have the book. What you typed is kept, and nothing is saved until you add the book. The server
+  needs outbound HTTPS access to `www.googleapis.com` and `openlibrary.org`.
 - **About dialog:** "About" in the account menu shows the version of Bookshelf, its licence, a link to its source
   code and the credits for the fonts and htmx it bundles. Without JavaScript it opens the `/about` page.
 

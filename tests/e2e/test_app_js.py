@@ -285,6 +285,29 @@ def test_picking_an_author_fills_name_and_surname(reader_page: Page, herbert_boo
     expect(reader_page.locator("#book-authors-0-surname")).to_have_value("Herbert")
 
 
+# Looking a book up online by its ISBN
+
+
+def test_look_up_fills_the_add_form(reader_page: Page, online_catalogues):
+    """htmx posts the form with the button's own value, and swaps it back filled."""
+    online_catalogues.google_has(
+        title="Dune", authors=["Frank Herbert"], publishedDate="1990"
+    )
+    reader_page.get_by_role("link", name="Add book").click()
+    dialog = reader_page.locator("#add-book-dialog")
+    dialog.get_by_label("ISBN").fill("9780441172719")
+
+    dialog.get_by_role("button", name="Look up").click()
+
+    expect(dialog.get_by_role("status")).to_have_text(
+        "Filled in title, authors and year from Google Books."
+    )
+    expect(dialog.get_by_label("Title")).to_have_value("Dune")
+    expect(dialog.get_by_label("Year")).to_have_value("1990")
+    expect(dialog.locator("#book-authors-0-surname")).to_have_value("Herbert")
+    expect(dialog).to_be_visible()
+
+
 # Account menu
 
 
