@@ -11,6 +11,7 @@ All notable changes to Bookshelf, newest first. Each version is released as the 
 - The app's JavaScript is split into a script per feature (`static/js/`), replacing `app.js`. Nothing changes
   in use. A list saved for offline use before upgrading has no scripts until it is opened online once again:
   shown offline in between, its forms are not disabled.
+- htmx, bundled with the app, is updated from 2.0.4 to 2.0.11 (bug fixes; nothing changes in use).
 
 ### Development
 

@@ -1,6 +1,7 @@
 """The behaviour the scripts in static/js/ add in a browser: error banner, dialogs, author rows,
 suggestions and the account menu."""
 
+import re
 from importlib.metadata import version
 
 import pytest
@@ -407,3 +408,26 @@ def test_admin_copies_a_collection_from_the_user_dialog(
     ]
     admin_page.goto(f"{live_server}/")
     expect(admin_page.get_by_role("link", name="Dune")).to_be_visible()
+
+
+def test_back_after_a_search_shows_the_whole_list_again(
+    reader_page: Page, live_server: str, db_app: Flask, user: User
+):
+    """The search pushes its URL (hx-push-url); Back restores the list it replaced."""
+    with db_app.app_context():
+        add_book(get_db(), user.id, NewBook("Dune", (Author("Frank", "Herbert"),)))
+        add_book(get_db(), user.id, NewBook("Emma", (Author("Jane", "Austen"),)))
+    reader_page.reload()
+    books = reader_page.locator("#book-list")
+    expect(books.get_by_role("link", name="Emma")).to_be_visible()
+
+    with reader_page.expect_response("**/catalogue?q=dune*"):
+        reader_page.get_by_label("Search books").fill("dune")
+    expect(reader_page).to_have_url(re.compile(r"/catalogue\?q=dune(&|$)"))
+    expect(books.get_by_role("link", name="Emma")).to_have_count(0)
+
+    reader_page.go_back()
+
+    expect(reader_page).to_have_url(f"{live_server}/catalogue")
+    expect(books.get_by_role("link", name="Emma")).to_be_visible()
+    expect(books.get_by_role("link", name="Dune")).to_be_visible()
