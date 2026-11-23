@@ -568,7 +568,64 @@ def test_refused_login_removal_retries_after_a_conflict(
     )
 
 
-# Google authentication
+UPDATE_CONFLICT = 335544451
+DEADLOCK = 335544336
+
+
+def _database_error(code: int) -> DatabaseError:
+    error = DatabaseError(f"error {code}")
+    error.gds_codes = (code,)
+    return error
+
+
+@pytest.mark.parametrize(
+    ("code", "tries"),
+    [(UPDATE_CONFLICT, 10), (DEADLOCK, 1)],
+    ids=["conflict-every-time", "other-error"],
+)
+def test_removing_a_refused_attempt_gives_up(
+    db_app: Flask,
+    user: User,
+    monkeypatch: pytest.MonkeyPatch,
+    code: int,
+    tries: int,
+):
+    """
+    Update conflicts are tried again, up to 10 times in all; any other error
+    is not. Either way the last error reaches the caller.
+    """
+    calls: list[datetime] = []
+
+    def fail(conn: Connection, email: str, ip: str, attempted_at: datetime) -> None:
+        calls.append(attempted_at)
+        conn.begin()  # as the failed DELETE did
+        raise _database_error(code)
+
+    monkeypatch.setattr(users_model, "_delete_one_failure", fail)
+    with db_app.app_context(), pytest.raises(DatabaseError, match=f"error {code}"):
+        start_login_attempt(
+            get_db(),
+            user.email,
+            "192.0.2.1",
+            max_failures=0,
+            max_ip_failures=10,
+            window_minutes=15,
+        )
+
+    assert len(calls) == tries
+
+
+def test_create_user_passes_on_unexpected_database_errors(
+    db_app: Flask, fail_statement: Callable[[str], None]
+):
+    """Not taken for an existing email; no user is created."""
+    fail_statement("INSERT INTO USERS")
+
+    with db_app.app_context(), pytest.raises(DatabaseError, match="deadlock"):
+        create_user(get_db(), "new@example.com", "a-long-enough-password")
+
+    with db_app.app_context():
+        assert find_by_email(get_db(), "new@example.com") is None
 
 
 def _google_user(db_app: Flask, email: str = "g@example.com") -> User:

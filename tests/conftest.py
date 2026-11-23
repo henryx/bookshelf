@@ -1,11 +1,18 @@
 import os
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from uuid import uuid4
 
 import pytest
-from firebird.driver import Connection, connect, create_database
+from firebird.driver import (
+    Connection,
+    Cursor,
+    DatabaseError,
+    Statement,
+    connect,
+    create_database,
+)
 from flask import Flask
 from flask.testing import FlaskClient
 from testcontainers.core.container import DockerContainer, Reaper
@@ -19,6 +26,7 @@ from bookshelf.models.users import User, create_user
 PASSWORD = "correct horse battery staple"
 FIREBIRD_IMAGE = "firebirdsql/firebird:3.0.14"
 FIREBIRD_PASSWORD = "masterkey"  # throwaway test container only
+DEADLOCK = 335544336  # isc_deadlock: an error no model expects
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -160,6 +168,33 @@ def race(app: Flask, other_conn: Connection) -> Callable[..., object]:
             return result.result(timeout=10)
 
     return run
+
+
+@pytest.fixture
+def fail_statement(monkeypatch: pytest.MonkeyPatch) -> Callable[[str], None]:
+    """
+    Make every statement starting with the given SQL fail with a deadlock, a
+    database error no model handles: it must reach the caller, not be taken
+    for one of the errors the model expects there.
+    """
+
+    def fail(sql: str) -> None:
+        execute = Cursor.execute
+
+        def failing(
+            cur: Cursor,
+            operation: str | Statement,
+            parameters: Sequence[object] | None = None,
+        ) -> Cursor:
+            if isinstance(operation, str) and operation.startswith(sql):
+                error = DatabaseError("deadlock")
+                error.gds_codes = (DEADLOCK,)
+                raise error
+            return execute(cur, operation, parameters)
+
+        monkeypatch.setattr(Cursor, "execute", failing)
+
+    return fail
 
 
 @pytest.fixture

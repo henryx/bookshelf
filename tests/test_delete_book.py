@@ -2,9 +2,11 @@
 
 import logging
 import re
+from collections.abc import Callable
 from uuid import UUID, uuid4
 
 import pytest
+from firebird.driver import Connection, DatabaseError
 from flask import Flask
 from flask.testing import FlaskClient
 
@@ -19,6 +21,7 @@ from bookshelf.models.books import (
     add_book,
     add_to_collection,
     delete_book,
+    editing,
     find_book_details,
     remove_from_collection,
 )
@@ -96,6 +99,42 @@ def test_book_in_a_collection_cannot_be_deleted(db_app, user):
         delete_book(get_db(), dune)
 
     assert _exists(db_app, dune)
+
+
+def test_delete_a_book_deleted_after_it_was_looked_up(
+    db_app: Flask,
+    user: User,
+    other_conn: Connection,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Another request deletes it between the lookup and the delete."""
+    dune = _book(db_app, user, NewBook("Dune"))
+    author_ids = editing._author_ids
+
+    def deleted_meanwhile(cur, book_id):
+        with other_conn.cursor() as other:
+            other.execute("DELETE FROM BOOKS WHERE ID = ?", (book_id.bytes,))
+        other_conn.commit()
+        return author_ids(cur, book_id)
+
+    monkeypatch.setattr(editing, "_author_ids", deleted_meanwhile)
+
+    with db_app.app_context(), pytest.raises(UnknownBookError):
+        delete_book(get_db(), dune)
+
+
+def test_delete_book_passes_on_unexpected_database_errors(
+    db_app: Flask, user: User, fail_statement: Callable[[str], None]
+):
+    """Not taken for a book in a collection; nothing is deleted."""
+    dune = _book(db_app, user, NewBook("Dune", authors=(FRANK,)))
+    fail_statement("DELETE FROM BOOKS")
+
+    with db_app.app_context(), pytest.raises(DatabaseError, match="deadlock"):
+        delete_book(get_db(), dune)
+
+    assert _exists(db_app, dune)
+    assert _authors(db_app) == [FRANK]
 
 
 def test_delete_an_unknown_book(db_app):

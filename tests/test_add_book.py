@@ -2,11 +2,12 @@
 
 import re
 import time
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from uuid import uuid4
 
 import pytest
-from firebird.driver import connect
+from firebird.driver import DatabaseError, connect
 from flask import Flask
 from flask.testing import FlaskClient
 
@@ -477,6 +478,23 @@ def test_add_book_uses_author_committed_while_inserting(db_app, user, other_conn
 
     assert _rows(db_app, "SELECT AUTHOR_ID FROM BOOK_AUTHORS") == [(theirs,)]
     assert _scalar(db_app, "SELECT COUNT(*) FROM AUTHORS") == 1
+
+
+@pytest.mark.parametrize(
+    "statement", ["INSERT INTO BOOKS", "INSERT INTO AUTHORS"], ids=["book", "author"]
+)
+def test_add_book_passes_on_unexpected_database_errors(
+    db_app: Flask, user: User, fail_statement: Callable[[str], None], statement: str
+):
+    """Not taken for a duplicate ISBN or author; nothing is saved."""
+    fail_statement(statement)
+    book = NewBook("Dune", (Author("Frank", "Herbert"),), isbn="9780441172719")
+
+    with db_app.app_context(), pytest.raises(DatabaseError, match="deadlock"):
+        add_book(get_db(), user.id, book)
+
+    assert _scalar(db_app, "SELECT COUNT(*) FROM BOOKS") == 0
+    assert _scalar(db_app, "SELECT COUNT(*) FROM AUTHORS") == 0
 
 
 # Author rows

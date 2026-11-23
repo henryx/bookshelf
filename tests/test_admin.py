@@ -15,7 +15,9 @@ from bookshelf.models.users import (
     User,
     authenticate,
     create_user,
+    delete_user,
     find_by_email,
+    list_users,
 )
 
 HTMX = {"HX-Request": "true"}
@@ -661,6 +663,21 @@ def test_editing_a_google_user_keeps_them_google(
     assert (saved.name, saved.auth_method) == ("Gina", AuthMethod.GOOGLE)
 
 
+def test_a_user_switched_to_google_gets_no_password(
+    admin_client: FlaskClient, db_app: Flask, user: User
+):
+    rv = _save(
+        admin_client,
+        user,
+        auth_method="GOOGLE",
+        password=NEW_PASSWORD,
+        confirm=NEW_PASSWORD,
+    )
+
+    assert "A user logging in with Google has no password" in rv.get_data(as_text=True)
+    assert _existing(db_app, user.email).auth_method is AuthMethod.LOCAL
+
+
 def test_details_of_a_google_user(admin_client: FlaskClient, db_app: Flask):
     google = _google_user(db_app)
 
@@ -721,6 +738,30 @@ def _copy(client: FlaskClient, source: User, target: str, mode: str, **kw):
         data={"target": target, "mode": mode},
         **kw,
     )
+
+
+def test_copy_collection_to_a_user_deleted_meanwhile(
+    admin_client: FlaskClient,
+    db_app: Flask,
+    user: User,
+    reader: User,
+    user_books: None,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """The target is deleted after the form offering it was checked."""
+
+    def listed_then_deleted(conn):
+        users = list_users(conn)
+        delete_user(conn, reader)
+        return users
+
+    monkeypatch.setattr("bookshelf.routes.admin.list_users", listed_then_deleted)
+
+    rv = _copy(admin_client, user, str(reader.id), "KEEP", headers=HTMX)
+
+    assert rv.status_code == 200
+    assert "That user no longer exists." in rv.get_data(as_text=True)
+    assert _owned(db_app, user) == {"Dune": 2, "Emma": 1}
 
 
 def test_details_offer_copying_the_collection_to_another_user(

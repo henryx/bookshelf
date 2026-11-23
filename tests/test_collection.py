@@ -1,10 +1,12 @@
 """The current user's collection: listing it, and adding, changing and removing books."""
 
 import re
+from collections.abc import Callable
 from urllib.parse import parse_qs, urlsplit
 from uuid import UUID, uuid4
 
 import pytest
+from firebird.driver import DatabaseError
 from flask import Flask
 from flask.testing import FlaskClient
 
@@ -200,6 +202,19 @@ def test_set_copies_of_a_book_not_in_the_collection(db_app, user, other):
 
     with db_app.app_context():
         assert not set_copies(get_db(), user.id, book_id, 4)
+
+    assert _copies(db_app, user, book_id) is None
+
+
+def test_add_to_collection_passes_on_unexpected_database_errors(
+    db_app: Flask, user: User, other: User, fail_statement: Callable[[str], None]
+):
+    """Not taken for an unknown book or one already in the collection."""
+    book_id = _book(db_app, other, "Emma")
+    fail_statement("INSERT INTO COLLECTION_BOOKS")
+
+    with db_app.app_context(), pytest.raises(DatabaseError, match="deadlock"):
+        add_to_collection(get_db(), user.id, book_id)
 
     assert _copies(db_app, user, book_id) is None
 

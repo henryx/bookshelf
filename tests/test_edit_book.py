@@ -4,11 +4,12 @@ import logging
 import re
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import replace
 from uuid import UUID, uuid4
 
 import pytest
-from firebird.driver import Connection
+from firebird.driver import Connection, DatabaseError
 from flask import Flask
 from flask.testing import FlaskClient
 
@@ -24,6 +25,8 @@ from bookshelf.models.books import (
     add_book,
     find_book,
     find_book_details,
+    remove_from_collection,
+    set_copies,
     update_book,
 )
 from bookshelf.models.users import Role, User, create_user
@@ -289,6 +292,37 @@ def test_update_an_unknown_book(db_app):
         _update(db_app, uuid4(), volume="1")
 
 
+@pytest.mark.parametrize("replace_isbn", [False, True], ids=["set", "replace"])
+def test_update_book_passes_on_unexpected_errors_saving_the_isbn(
+    db_app: Flask,
+    user: User,
+    fail_statement: Callable[[str], None],
+    replace_isbn: bool,
+):
+    """Not taken for a duplicate ISBN; nothing is saved."""
+    book_id = _book(db_app, user, NewBook("Emma"))
+    fail_statement("UPDATE BOOKS SET ISBN")
+
+    with pytest.raises(DatabaseError, match="deadlock"):
+        _update(db_app, book_id, isbn=EMMA_ISBN, replace_isbn=replace_isbn, volume="2")
+
+    details = _details(db_app, book_id)
+    assert (details.isbn, details.volume) == (None, None)
+
+
+def test_update_book_passes_on_unexpected_errors_deleting_unused_authors(
+    db_app: Flask, user: User, fail_statement: Callable[[str], None]
+):
+    """Not taken for a book being added with that author; nothing is saved."""
+    book_id = _book(db_app, user, DUNE)
+    fail_statement("DELETE FROM AUTHORS")
+
+    with pytest.raises(DatabaseError, match="deadlock"):
+        _update(db_app, book_id, authors=(Author("Brian", "Herbert"),))
+
+    assert _details(db_app, book_id).authors == DUNE.authors
+
+
 # Routes
 
 
@@ -433,6 +467,34 @@ def test_save_sets_the_copies(db_app, client, user):
     assert rv.status_code == 204
     assert _copies(db_app, user, book_id) == 5
     assert _details(db_app, book_id).volume == "2"
+
+
+def test_save_copies_of_a_book_that_left_the_collection_meanwhile(
+    db_app, client, user, monkeypatch, caplog
+):
+    """The rest is saved; the book is not put back in the collection."""
+    book_id = _book(db_app, user, DUNE)
+
+    def removed_first(conn, user_id, book_id, copies):
+        remove_from_collection(conn, user_id, book_id)
+        return set_copies(conn, user_id, book_id, copies)
+
+    monkeypatch.setattr("bookshelf.routes.main.set_copies", removed_first)
+
+    with caplog.at_level(logging.INFO):
+        rv = client.post(
+            _url(book_id), data={"copies": "5", "volume": "2"}, headers=HTMX
+        )
+
+    assert rv.status_code == 204
+    assert _details(db_app, book_id).volume == "2"
+    with db_app.app_context():
+        book = find_book(get_db(), user.id, book_id)
+    assert book is not None and book.copies is None
+    assert (
+        f"Book 'Dune' left the collection of {user.email} before its copies "
+        "were saved" in caplog.messages
+    )
 
 
 def test_save_without_copies_keeps_them(db_app, client, user):
