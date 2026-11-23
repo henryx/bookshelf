@@ -19,11 +19,9 @@ from bookshelf.models.authors import AuthorEntry, find_author
 from bookshelf.models.books import (
     SEARCH_MAX_LENGTH,
     Author,
-    AuthorField,
     Book,
     BookDetails,
     BookExistsError,
-    BookField,
     BookInCollectionError,
     BookLookupError,
     DeletedBook,
@@ -40,10 +38,6 @@ from bookshelf.models.books import (
     look_up_isbn,
     normalise_isbn,
     set_copies,
-    suggest_authors,
-    suggest_books,
-    suggest_categories,
-    suggest_publishers,
     unique_authors,
     unique_categories,
     update_book,
@@ -524,50 +518,3 @@ def about() -> str:
     opens them in a dialog, and this page without JavaScript.
     """
     return render_template("about.html")
-
-
-@main_route.route("/authors/suggestions", methods=("GET",))
-@login_required
-def author_suggestions() -> str:
-    """
-    The options of an author row field's suggestion list: authors whose
-    name (or surname, by `field`) starts with `q`.
-    """
-    try:
-        field = AuthorField(request.args.get("field"))
-    except ValueError:
-        abort(400, description="Unknown author field.")
-    authors = suggest_authors(get_db(), request.args.get("q", ""), field)
-    return render_template("_author_suggestions.html", authors=authors)
-
-
-@main_route.route("/books/suggestions", methods=("GET",))
-@login_required
-def book_suggestions() -> str:
-    """
-    The options of the add-book form's title or ISBN suggestion list (by
-    `field`): catalogue books whose title or ISBN starts with `q`. Picking
-    one loads it into the form (app.js).
-    """
-    try:
-        field = BookField(request.args.get("field"))
-    except ValueError:
-        abort(400, description="Unknown book field.")
-    books = suggest_books(get_db(), request.args.get("q", ""), field)
-    return render_template("_book_suggestions.html", books=books, field=field)
-
-
-@main_route.route("/publishers/suggestions", methods=("GET",))
-@login_required
-def publisher_suggestions() -> str:
-    """The options of the publisher's suggestion list: publishers starting with `q`."""
-    publishers = suggest_publishers(get_db(), request.args.get("q", ""))
-    return render_template("_publisher_suggestions.html", publishers=publishers)
-
-
-@main_route.route("/categories/suggestions", methods=("GET",))
-@login_required
-def category_suggestions() -> str:
-    """The options of a category row's suggestion list: categories starting with `q`."""
-    categories = suggest_categories(get_db(), request.args.get("q", ""))
-    return render_template("_category_suggestions.html", categories=categories)

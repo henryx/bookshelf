@@ -43,7 +43,7 @@
   <div class="field-row">
     <div class="field">
       {{ field(form.publisher, maxlength=255, autocomplete="off", suggest=True, **{
-                 "hx-get": url_for("main.publisher_suggestions"),
+                 "hx-get": url_for("suggestions.publishers"),
                  "hx-trigger": "input changed delay:200ms",
                  "hx-target": "#edit-book-publisher-suggestions",
                  "hx-swap": "innerHTML",

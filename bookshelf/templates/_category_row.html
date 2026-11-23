@@ -11,7 +11,7 @@
            maxlength="64" autocomplete="off" placeholder="Category" aria-label="Category"
            role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="{{ id }}-suggestions"
            data-suggest
-           hx-get="{{ url_for('main.category_suggestions') }}"
+           hx-get="{{ url_for('suggestions.categories') }}"
            hx-trigger="input changed delay:200ms" hx-target="#{{ id }}-suggestions" hx-swap="innerHTML"
            hx-sync="this:replace" hx-indicator="closest .category-row"{% if readonly %} readonly{% endif %}>
     {% with id = id ~ "-suggestions" %}{% include "_suggestion_list.html" %}{% endwith %}
