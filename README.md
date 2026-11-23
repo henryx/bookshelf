@@ -171,7 +171,7 @@ schema additions are created before its pods serve; if it fails, the upgrade fai
 With Firebird in the cluster:
 
 ```sh
-helm install bookshelf oci://quay.io/enricobianchi/bookshelf-chart --version 1.2.0 \
+helm install bookshelf oci://quay.io/enricobianchi/bookshelf-chart --version 1.2.1 \
   -n bookshelf --create-namespace \
   --set firebird.enabled=true \
   --set ingress.enabled=true,ingress.host=books.example.com \

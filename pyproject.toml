@@ -1,6 +1,6 @@
 [project]
 name = "bookshelf"
-version = "1.2.0"
+version = "1.2.1"
 description = "Bookshelf library app"
 authors = [
     { name = "Enrico Bianchi", email = "enrico.bianchi@gmail.com" },
