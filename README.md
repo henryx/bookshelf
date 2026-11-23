@@ -8,6 +8,10 @@ Requirements and decisions are in [docs/bookshelf.md](docs/bookshelf.md).
 - Python 3.14+
 - [uv](https://docs.astral.sh/uv/)
 - Docker (development database, tests, image builds)
+- The Firebird client library, `libfbclient.so.2`, which `firebird-driver` loads (dev server, CLI, tests):
+  `libfbclient2` on Fedora (`sudo dnf install libfbclient2`) and Debian/Ubuntu (`sudo apt install libfbclient2`).
+  Without it every database call, and every test, fails with "The location of Firebird Client Library could not
+  be determined". The Docker image already installs it.
 
 ## Development setup
 
