@@ -3,7 +3,7 @@ name: bookshelf-chart
 description: Bookshelf, a self-hosted book library web app (Flask, HTMX, Firebird)
 type: application
 # Released with the app: both versions match pyproject.toml and the vX.Y.Z tag (.github/workflows/tests.yml).
-version: 1.4.0
-appVersion: "1.4.0"
+version: 1.4.1
+appVersion: "1.4.1"
 sources:
   - https://github.com/henryx/bookshelf
