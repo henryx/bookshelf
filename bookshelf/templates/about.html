@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{# Without JavaScript the account menu's About link opens this page instead of the dialog. #}
+{% block title %}About · Bookshelf{% endblock %}
+{% from "_hero.html" import hero %}
+{% block hero %}
+  {% call hero() %}{% include "_topbar.html" %}{% endcall %}
+{% endblock %}
+{% block content %}
+  <h2>About Bookshelf</h2>
+  {% include "_about.html" %}
+{% endblock %}

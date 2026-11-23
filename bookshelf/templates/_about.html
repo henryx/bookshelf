@@ -1,0 +1,23 @@
+{# The about dialog's and page's content; app_version is set in create_app. #}
+<div class="about">
+  <p class="about-release">
+    <span class="about-label">Version</span>
+    <span class="about-version">{{ app_version }}</span>
+  </p>
+  <p>A library of books: a shared catalogue, and each reader's own collection.</p>
+  <dl class="about-facts">
+    <dt>Licence</dt>
+    <dd><a href="https://www.apache.org/licenses/LICENSE-2.0">Apache License 2.0</a></dd>
+    <dt>Source code</dt>
+    <dd><a href="https://github.com/henryx/bookshelf">henryx/bookshelf on GitHub</a></dd>
+    <dt>Credits</dt>
+    <dd>
+      <ul class="about-credits">
+        <li>Fraunces, <a href="{{ url_for('static', filename='fonts/OFL-fraunces.txt') }}">SIL Open Font License 1.1</a></li>
+        <li>Bricolage Grotesque, <a href="{{ url_for('static', filename='fonts/OFL-bricolagegrotesque.txt') }}">SIL Open Font License 1.1</a></li>
+        <li>JetBrains Mono, <a href="{{ url_for('static', filename='fonts/OFL-jetbrainsmono.txt') }}">SIL Open Font License 1.1</a></li>
+        <li><a href="https://htmx.org/">htmx</a>, Zero-Clause BSD licence</li>
+      </ul>
+    </dd>
+  </dl>
+</div>

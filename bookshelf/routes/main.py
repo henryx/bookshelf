@@ -463,6 +463,16 @@ def delete(book_id: UUID) -> BaseResponse:
     return htmx_redirect(_list_after_delete(request.form, deleted))
 
 
+@main_route.route("/about", methods=("GET",))
+@login_required
+def about() -> str:
+    """
+    The app's version, licence, source code and credits: the account menu
+    opens them in a dialog, and this page without JavaScript.
+    """
+    return render_template("about.html")
+
+
 @main_route.route("/authors/suggestions", methods=("GET",))
 @login_required
 def author_suggestions() -> str:

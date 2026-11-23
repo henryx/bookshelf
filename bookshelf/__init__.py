@@ -1,5 +1,6 @@
 from collections.abc import Mapping
 from datetime import timedelta
+from importlib.metadata import version
 from logging.config import dictConfig
 
 from flask import Flask, Response, current_app, make_response, render_template, request
@@ -63,6 +64,9 @@ def create_app(overrides: Mapping[str, object] | None = None) -> Flask:
         app.config.update(overrides)
 
     app.url_map.strict_slashes = False
+    # Shown in the about dialog, which the top bar of every page holds.
+    app_version = version("bookshelf")
+    app.context_processor(lambda: {"app_version": app_version})
     if cfg.trusted_proxies:
         # Client IP, scheme and host from X-Forwarded-*, set by that many proxies.
         # Flask's documented pattern; ty rejects assigning to a method.

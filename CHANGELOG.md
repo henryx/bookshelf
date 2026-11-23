@@ -6,6 +6,11 @@ All notable changes to Bookshelf, newest first. Each version is released as the 
 
 ## Unreleased
 
+### New
+
+- **About dialog:** "About" in the account menu shows the version of Bookshelf, its licence, a link to its source
+  code and the credits for the fonts and htmx it bundles. Without JavaScript it opens the `/about` page.
+
 ### Fixes
 
 - Renaming an author no longer fails with "unknown author" when another author takes the new name and gives it

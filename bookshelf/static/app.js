@@ -59,6 +59,11 @@
       var dialog = document.getElementById(opener.dataset.dialogOpen);
       if (dialog) {
         event.preventDefault();
+        // Opened from the account menu (About): the menu is done.
+        var menu = opener.closest("details.avatar");
+        if (menu) {
+          menu.open = false;
+        }
         if (!dialog.open) {
           saveDialog(dialog);
           dialog.showModal();

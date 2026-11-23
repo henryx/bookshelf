@@ -20,6 +20,8 @@
       {% if current_user.is_admin %}
         <a href="{{ url_for('admin.users') }}">Admin</a>
       {% endif %}
+      {# Opens the dialog below; without JavaScript, the about page. #}
+      <a href="{{ url_for('main.about') }}" data-dialog-open="about-dialog">About</a>
       <form method="post" action="{{ url_for('auth.logout') }}"
             hx-post="{{ url_for('auth.logout') }}"
             hx-indicator="#logout-indicator" hx-disabled-elt="find button">
@@ -29,4 +31,12 @@
       </form>
     </div>
   </details>
+  {# Outside the menu: a closed <details> would hide it. #}
+  <dialog id="about-dialog" aria-labelledby="about-dialog-title">
+    <div class="section-header">
+      <h2 id="about-dialog-title">About Bookshelf</h2>
+      <button type="button" class="secondary" data-dialog-close aria-label="Close">✕</button>
+    </div>
+    {% include "_about.html" %}
+  </dialog>
 </header>

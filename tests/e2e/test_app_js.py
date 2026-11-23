@@ -1,6 +1,8 @@
 """The behaviour app.js adds in a browser: error banner, dialogs, author rows,
 suggestions and the account menu."""
 
+from importlib.metadata import version
+
 import pytest
 from flask import Flask
 from playwright.sync_api import Dialog, Page, Route, expect
@@ -304,6 +306,22 @@ def test_escape_closes_account_menu_and_focuses_it(reader_page: Page):
 
     expect(menu).not_to_have_attribute("open", "")
     expect(menu.locator("summary")).to_be_focused()
+
+
+def test_account_menu_opens_the_about_dialog(reader_page: Page, live_server: str):
+    menu = reader_page.locator("details.avatar")
+    menu.locator("summary").click()
+    reader_page.get_by_role("link", name="About").click()
+
+    dialog = reader_page.get_by_role("dialog", name="About Bookshelf")
+    expect(dialog).to_be_visible()
+    expect(menu).not_to_have_attribute("open", "")
+    expect(dialog.locator(".about-version")).to_have_text(version("bookshelf"))
+    # A dialog, not the no-JavaScript page.
+    expect(reader_page).to_have_url(f"{live_server}/catalogue")
+
+    dialog.get_by_role("button", name="Close").click()
+    expect(dialog).to_be_hidden()
 
 
 def test_admin_copies_a_collection_from_the_user_dialog(
