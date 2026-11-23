@@ -28,12 +28,14 @@ secretKey: ""
 
 # Logging in with Google (README.md, "Logging in with Google"): a Google OAuth
 # client for a web application, whose authorised redirect URI is
-# https://<host>/login/google/callback. Empty clientId: no Google login.
-# The secret goes in the chart's Secret, or in existingSecret under the key
-# APP_GOOGLE_CLIENT_SECRET.
+# https://<host>/login/google/callback. The client has a Secret of its own,
+# apart from the app's (existingSecret): either name an existing one with the
+# keys APP_GOOGLE_CLIENT_ID and APP_GOOGLE_CLIENT_SECRET, or set clientId and
+# clientSecret and the chart creates <release>-google. Neither: no Google login.
 google:
   clientId: ""
   clientSecret: ""
+  existingSecret: ""
 
 database:
   # Firebird user: allowed to create the tables (e.g. the database owner).

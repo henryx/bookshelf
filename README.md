@@ -183,8 +183,11 @@ instead of `firebird.*`. `helm upgrade bookshelf oci://quay.io/enricobianchi/boo
 --reuse-values` moves to a new release; `helm show values oci://quay.io/enricobianchi/bookshelf-chart` lists
 every setting. From a checkout, use `deploy/helm/bookshelf-chart` in place of the `oci://` reference. Rather than passing secrets on the command line, a values file kept out of git or an
 existing Secret (`existingSecret`, with the keys `APP_SECRET_KEY`, `APP_DB_USER`, `APP_DB_PASSWORD`,
-`FIREBIRD_ROOT_PASSWORD` with `firebird.enabled`, and `APP_GOOGLE_CLIENT_SECRET` with `google.clientId`) works too.
-Logging in with Google is turned on with `google.clientId` and `google.clientSecret`.
+and `FIREBIRD_ROOT_PASSWORD` with `firebird.enabled`) works too.
+Logging in with Google keeps its OAuth client in a Secret of its own: set `google.clientId` and
+`google.clientSecret` and the chart creates `<release>-google`, or name an existing Secret with the keys
+`APP_GOOGLE_CLIENT_ID` and `APP_GOOGLE_CLIENT_SECRET` in `google.existingSecret` (it may be the same Secret as
+`existingSecret`). Only the app's pods read it, not the `init-db` and `prune-login-failures` jobs.
 
 The setup wizard is open to whoever reaches it first, so create the first admin before the Ingress is reachable
 by anyone else (the chart's install notes show the command):

@@ -7,9 +7,6 @@ metadata:
     {{- include "bookshelf.selectorLabels" . | nindent 4 }}
 data:
   APP_DB_DSN: {{ include "bookshelf.dbDsn" . | quote }}
-  {{- with .Values.google.clientId }}
-  APP_GOOGLE_CLIENT_ID: {{ . | quote }}
-  {{- end }}
   {{- range $name, $value := .Values.config }}
   {{ $name }}: {{ $value | toString | quote }}
   {{- end }}

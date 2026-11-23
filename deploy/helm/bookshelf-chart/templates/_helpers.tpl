@@ -41,6 +41,16 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- .Values.existingSecret | default (include "bookshelf.fullname" .) }}
 {{- end }}
 
+{{/* Logging in with Google is on: non-empty output. */}}
+{{- define "bookshelf.googleEnabled" -}}
+{{- if or .Values.google.clientId .Values.google.existingSecret }}true{{ end }}
+{{- end }}
+
+{{/* The Google OAuth client's own Secret: google.existingSecret, or the chart's. */}}
+{{- define "bookshelf.googleSecretName" -}}
+{{- .Values.google.existingSecret | default (printf "%s-google" (include "bookshelf.fullname" .) | trunc 63 | trimSuffix "-") }}
+{{- end }}
+
 {{- define "bookshelf.dbDsn" -}}
 {{- if .Values.firebird.enabled }}
 {{- printf "%s:/var/lib/firebird/data/bookshelf.fdb" (include "bookshelf.firebird.fullname" .) }}
@@ -55,17 +65,30 @@ envFrom:
   - configMapRef:
       name: {{ include "bookshelf.fullname" . }}
 env:
-  {{- $keys := list "APP_SECRET_KEY" "APP_DB_USER" "APP_DB_PASSWORD" }}
-  {{- if .Values.google.clientId }}
-  {{- $keys = append $keys "APP_GOOGLE_CLIENT_SECRET" }}
-  {{- end }}
-  {{- range $keys }}
+  {{- range list "APP_SECRET_KEY" "APP_DB_USER" "APP_DB_PASSWORD" }}
   - name: {{ . }}
     valueFrom:
       secretKeyRef:
         name: {{ include "bookshelf.secretName" $ }}
         key: {{ . }}
   {{- end }}
+{{- end }}
+
+{{/*
+The Google OAuth client, for the app's pods only (env items, after
+bookshelf.env's): the CLI jobs don't log anyone in, and the pre-upgrade
+init-db hook runs before the chart creates the Google Secret.
+*/}}
+{{- define "bookshelf.googleEnv" -}}
+{{- if include "bookshelf.googleEnabled" . }}
+{{- range list "APP_GOOGLE_CLIENT_ID" "APP_GOOGLE_CLIENT_SECRET" }}
+- name: {{ . }}
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "bookshelf.googleSecretName" $ }}
+      key: {{ . }}
+{{- end }}
+{{- end }}
 {{- end }}
 
 {{/* appuser in the image */}}
