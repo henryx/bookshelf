@@ -28,6 +28,8 @@ __all__ = [
 # "violation of FOREIGN KEY constraint".
 _UNIQUE_KEY_VIOLATION = 335544665
 _FOREIGN_KEY_VIOLATION = 335544466
+# Renames tried when another author takes the name and gives it up again.
+_RENAME_TRIES = 10
 
 logger = logging.getLogger(__name__)
 
@@ -197,7 +199,9 @@ def rename_author(conn: Connection, author_id: UUID, author: Author) -> Renamed:
     author already has that name (ignoring case) the two are merged: their
     books all get that author, as spelled, and this one is deleted. Raises
     UnknownAuthorError for an unknown author (even one deleted at this
-    moment); nothing changes then.
+    moment); nothing changes then. When another author takes the name and
+    gives it up again before it can be merged into, the rename is tried
+    again, up to 10 times in all.
 
     The transaction is its own and read committed, as in add_book, so it
     sees an author with that name committed by someone else meanwhile.
@@ -216,15 +220,19 @@ def _rename_author(conn: Connection, author_id: UUID, author: Author) -> Renamed
         ) as transaction,
         transaction.cursor() as cur,
     ):
-        namesake = _namesake(cur, author_id, author)
-        if namesake is None and _rename(cur, author_id, author):
-            transaction.commit()
-            return Renamed(author, merged=False)
-        # Another author has the name, possibly since the lookup above.
-        namesake = namesake or _namesake(cur, author_id, author)
-        if namesake is None:
-            raise UnknownAuthorError(author_id)
-        into, existing = namesake
-        _merge(cur, author_id, into)
-        transaction.commit()
-        return Renamed(existing, merged=True)
+        for _ in range(_RENAME_TRIES):
+            namesake = _namesake(cur, author_id, author)
+            if namesake is not None:
+                into, existing = namesake
+                _merge(cur, author_id, into)
+                transaction.commit()
+                return Renamed(existing, merged=True)
+            if _rename(cur, author_id, author):
+                transaction.commit()
+                return Renamed(author, merged=False)
+            # Another author took the name meanwhile: merge into them, or try
+            # the rename again if they have already given it up.
+        raise RuntimeError(
+            f"Author {author_id}: the name {str(author)!r} kept being taken "
+            "and given up by another author"
+        )

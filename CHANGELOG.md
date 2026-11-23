@@ -4,6 +4,13 @@ All notable changes to Bookshelf, newest first. Each version is released as the 
 `quay.io/enricobianchi/bookshelf:<version>` and, from 1.0.2, as the Helm chart
 `oci://quay.io/enricobianchi/bookshelf-chart --version <version>`.
 
+## Unreleased
+
+### Fixes
+
+- Renaming an author no longer fails with "unknown author" when another author takes the new name and gives it
+  up again at the same moment. The rename is tried again instead, up to 10 times.
+
 ## 1.3.0 (2026-11-23)
 
 ### New

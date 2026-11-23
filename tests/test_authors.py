@@ -5,14 +5,16 @@ import logging
 import re
 import threading
 import time
+from collections.abc import Callable
 from uuid import UUID, uuid4
 
 import pytest
-from firebird.driver import Connection
+from firebird.driver import Connection, Cursor, DatabaseError
 from flask import Flask
 from flask.testing import FlaskClient
 
 from bookshelf.db import get_db
+from bookshelf.models import authors as authors_model
 from bookshelf.models.authors import (
     AuthorEntry,
     Renamed,
@@ -198,6 +200,67 @@ def test_rename_to_a_name_created_meanwhile_merges(
     assert _all(db_app) == [(FRANK, 1)]
 
 
+def _name_taken_and_given_up(
+    monkeypatch: pytest.MonkeyPatch, other_conn: Connection, *, times: int
+) -> list[None]:
+    """
+    Another request creates an author with the new name just before each of
+    the first `times` renames, and deletes them just after: the rename clashes
+    with an author who is gone when looked up. The renames made, returned.
+    """
+    rename = authors_model._rename
+    calls: list[None] = []
+
+    def clash(cur: Cursor, author_id: UUID, author: Author) -> bool:
+        calls.append(None)
+        if len(calls) > times:
+            return rename(cur, author_id, author)
+        namesake = uuid4().bytes
+        with other_conn.cursor() as other:
+            other.execute(
+                "INSERT INTO AUTHORS (ID, NAME, SURNAME) VALUES (?, ?, ?)",
+                (namesake, author.name, author.surname),
+            )
+        other_conn.commit()
+        try:
+            return rename(cur, author_id, author)
+        finally:
+            with other_conn.cursor() as other:
+                other.execute("DELETE FROM AUTHORS WHERE ID = ?", (namesake,))
+            other_conn.commit()
+
+    monkeypatch.setattr(authors_model, "_rename", clash)
+    return calls
+
+
+def test_rename_to_a_name_taken_and_given_up_meanwhile_tries_again(
+    db_app, user, other_conn: Connection, monkeypatch: pytest.MonkeyPatch
+):
+    dune = _book(db_app, user, "Dune", FRNAK)
+    entry = _entry(db_app, FRNAK)
+    renames = _name_taken_and_given_up(monkeypatch, other_conn, times=1)
+
+    assert _rename(db_app, entry, FRANK) == Renamed(FRANK, merged=False)
+
+    assert len(renames) == 2
+    assert _authors_of(db_app, dune) == (FRANK,)
+    assert _all(db_app) == [(FRANK, 1)]
+
+
+def test_rename_gives_up_when_the_name_keeps_being_taken_and_given_up(
+    db_app, user, other_conn: Connection, monkeypatch: pytest.MonkeyPatch
+):
+    _book(db_app, user, "Dune", FRNAK)
+    entry = _entry(db_app, FRNAK)
+    renames = _name_taken_and_given_up(monkeypatch, other_conn, times=10)
+
+    with pytest.raises(RuntimeError, match="kept being taken"):
+        _rename(db_app, entry, FRANK)
+
+    assert len(renames) == 10
+    assert _all(db_app) == [(FRNAK, 1)]
+
+
 def test_merge_keeps_an_author_a_book_being_saved_uses(
     db_app, user, other_conn: Connection, caplog
 ):
@@ -236,6 +299,22 @@ def test_merge_keeps_an_author_a_book_being_saved_uses(
     assert _authors_of(db_app, dune) == (FRANK,)
     assert _authors_of(db_app, emma) == (FRNAK,)
     assert _all(db_app) == [(FRANK, 2), (FRNAK, 1)]
+
+
+def test_merge_passes_on_unexpected_database_errors(
+    db_app, user, fail_statement: Callable[[str], None]
+):
+    """Not taken for a book being saved with the author; nothing changes."""
+    dune = _book(db_app, user, "Dune", FRNAK)
+    _book(db_app, user, "Dune Messiah", FRANK)
+    entry = _entry(db_app, FRNAK)
+    fail_statement("DELETE FROM AUTHORS WHERE ID = ?")
+
+    with pytest.raises(DatabaseError, match="deadlock"):
+        _rename(db_app, entry, FRANK)
+
+    assert _authors_of(db_app, dune) == (FRNAK,)
+    assert _all(db_app) == [(FRANK, 1), (FRNAK, 1)]
 
 
 def _delete_book(conn: Connection, book_id: UUID) -> None:
