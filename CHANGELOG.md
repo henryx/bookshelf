@@ -4,7 +4,7 @@ All notable changes to Bookshelf, newest first. Each version is released as the 
 `quay.io/enricobianchi/bookshelf:<version>` and, from 1.0.2, as the Helm chart
 `oci://quay.io/enricobianchi/bookshelf-chart --version <version>`.
 
-## Unreleased
+## 1.5.0 (2026-11-24)
 
 ### New
 

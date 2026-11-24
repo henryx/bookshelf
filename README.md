@@ -196,16 +196,15 @@ schema additions are created before its pods serve; if it fails, the upgrade fai
 With Firebird in the cluster:
 
 ```sh
-helm install bookshelf oci://quay.io/enricobianchi/bookshelf-chart --version 1.4.2 \
+helm install bookshelf oci://quay.io/enricobianchi/bookshelf-chart --version 1.5.0 \
   -n bookshelf --create-namespace \
   --set firebird.enabled=true \
   --set ingress.enabled=true,ingress.host=books.example.com \
   --set secretKey=... --set database.password=... --set firebird.rootPassword=...
 ```
 
-With PostgreSQL in the cluster instead (chart 1.5.0 or newer; until it is released, the chart from a checkout with
-`--set image.tag=latest`, as its `appVersion` names an image without PostgreSQL),
-`--set postgresql.enabled=true` in place of the `firebird.*` settings
+With PostgreSQL in the cluster instead (chart 1.5.0 or newer), `--set postgresql.enabled=true` in place of the
+`firebird.*` settings
 (no root password: the app's user owns the database); `database.searchLanguage` sets the search's language
 (`APP_SEARCH_LANGUAGE`). With an existing server, set `database.dsn` instead: for Firebird e.g.
 `db.example.com:/var/lib/firebird/data/bookshelf.fdb`, for PostgreSQL `database.backend=postgresql` and e.g.
