@@ -203,7 +203,9 @@ helm install bookshelf oci://quay.io/enricobianchi/bookshelf-chart --version 1.4
   --set secretKey=... --set database.password=... --set firebird.rootPassword=...
 ```
 
-With PostgreSQL in the cluster instead, `--set postgresql.enabled=true` in place of the `firebird.*` settings
+With PostgreSQL in the cluster instead (chart 1.5.0 or newer; until it is released, the chart from a checkout with
+`--set image.tag=latest`, as its `appVersion` names an image without PostgreSQL),
+`--set postgresql.enabled=true` in place of the `firebird.*` settings
 (no root password: the app's user owns the database); `database.searchLanguage` sets the search's language
 (`APP_SEARCH_LANGUAGE`). With an existing server, set `database.dsn` instead: for Firebird e.g.
 `db.example.com:/var/lib/firebird/data/bookshelf.fdb`, for PostgreSQL `database.backend=postgresql` and e.g.
@@ -215,7 +217,9 @@ and `FIREBIRD_ROOT_PASSWORD` with `firebird.enabled`) works too.
 Logging in with Google keeps its OAuth client in a Secret of its own: set `google.auth.clientId` and
 `google.auth.clientSecret` and the chart creates `<release>-google`, or name an existing Secret with the keys
 `APP_GOOGLE_CLIENT_ID` and `APP_GOOGLE_CLIENT_SECRET` in `google.auth.existingSecret` (it may be the same Secret as
-`existingSecret`). Only the app's pods read it, not the `init-db` and `prune-login-failures` jobs.
+`existingSecret`). Only the app's pods read it, not the `init-db` and `prune-login-failures` jobs. (These are
+chart 1.5.0's names; chart 1.4.x has them directly under `google`, and the Books key below as
+`googleBooksApiKey`. 1.5.0 still reads those.)
 A Google Books API key goes in the app's Secret: set `google.booksApiKey`, or add the key
 `APP_GOOGLE_BOOKS_API_KEY` to `existingSecret`. It is optional, and only the app's pods read it.
 
@@ -290,7 +294,7 @@ To run the published image with its database, save this as `compose.yaml` (here 
 ```yaml
 services:
   app:
-    image: quay.io/enricobianchi/bookshelf:latest  # or a version, e.g. :1.4.2
+    image: quay.io/enricobianchi/bookshelf:latest  # or a release: PostgreSQL needs 1.5.0 or newer
     ports:
       - "8080:8080"
     environment:
