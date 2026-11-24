@@ -3,20 +3,27 @@
 import logging
 from uuid import UUID, uuid4
 
-from firebird.driver import (
-    Connection,
-    Cursor,
-    DatabaseError,
-    DefaultAction,
-    Isolation,
-    tpb,
-)
+from sqlalchemy import delete, insert, select, update
+from sqlalchemy.exc import DBAPIError
+from sqlalchemy.orm import Session
 
-from bookshelf.db import retry_after_concurrent_delete
-from bookshelf.models.books.isbn import normalise_isbn
-from bookshelf.models.books.model import (
+from bookshelf.db import (
     FOREIGN_KEY_VIOLATION,
     UNIQUE_KEY_VIOLATION,
+    execute_change,
+    has_gds_code,
+    read_committed,
+    retry_after_concurrent_delete,
+)
+from bookshelf.db.orm import (
+    AuthorRow,
+    BookAuthorRow,
+    BookCategoryRow,
+    BookRow,
+    CollectionBookRow,
+)
+from bookshelf.models.books.isbn import normalise_isbn
+from bookshelf.models.books.model import (
     Author,
     BookExistsError,
     BookInCollectionError,
@@ -56,92 +63,116 @@ def unique_categories(names: tuple[str, ...]) -> list[str]:
     return unique
 
 
-def _find_author(cur: Cursor, author: Author) -> bytes | None:
+def _find_author(session: Session, author: Author) -> UUID | None:
     # Both ignore case (UNICODE_CI), so "TERRY PRATCHETT" finds "Terry Pratchett".
-    cur.execute(
-        "SELECT ID FROM AUTHORS WHERE SURNAME = ? AND NAME = ?",
-        (author.surname, author.name),
+    return session.scalar(
+        select(AuthorRow.id).where(
+            AuthorRow.surname == author.surname, AuthorRow.name == author.name
+        )
     )
-    row = cur.fetchone()
-    return row[0] if row else None
 
 
-def _author_id(cur: Cursor, author: Author) -> bytes:
+def _author_id(session: Session, author: Author) -> UUID:
     """The existing author with this name and surname (ignoring case), or a new one."""
-    author_id = _find_author(cur, author)
+    author_id = _find_author(session, author)
     if author_id is not None:
         return author_id
-    author_id = uuid4().bytes
+    author_id = uuid4()
     try:
-        cur.execute(
-            "INSERT INTO AUTHORS (ID, NAME, SURNAME) VALUES (?, ?, ?)",
-            (author_id, author.name, author.surname),
+        execute_change(
+            session,
+            insert(AuthorRow).values(
+                id=author_id, name=author.name, surname=author.surname
+            ),
         )
-    except DatabaseError as e:
+    except DBAPIError as e:
         # Committed by someone else since the lookup: use theirs. The
         # transaction is read committed (see add_book), so it sees that row.
-        existing = _find_author(cur, author)
-        if UNIQUE_KEY_VIOLATION not in e.gds_codes or existing is None:
+        existing = _find_author(session, author)
+        if not has_gds_code(e, UNIQUE_KEY_VIOLATION) or existing is None:
             raise
         return existing
     return author_id
 
 
-def _insert_authors(cur: Cursor, book_id: UUID, authors: tuple[Author, ...]) -> None:
+def _insert_authors(
+    session: Session, book_id: UUID, authors: tuple[Author, ...]
+) -> None:
     """Link a book (with no authors yet) to these authors, in order: see unique_authors."""
     for order, author in enumerate(unique_authors(authors), start=1):
-        cur.execute(
-            "INSERT INTO BOOK_AUTHORS (BOOK_ID, AUTHOR_ID, SORT_ORDER) "
-            "VALUES (?, ?, ?)",
-            (book_id.bytes, _author_id(cur, author), order),
+        execute_change(
+            session,
+            insert(BookAuthorRow).values(
+                book_id=book_id,
+                author_id=_author_id(session, author),
+                sort_order=order,
+            ),
         )
 
 
-def _replace_authors(cur: Cursor, book_id: UUID, authors: tuple[Author, ...]) -> None:
+def _replace_authors(
+    session: Session, book_id: UUID, authors: tuple[Author, ...]
+) -> None:
     """
     Make these the book's authors, in order. A former author that no book
     uses any more is deleted, so a misspelled name stops being suggested.
     """
-    former = _author_ids(cur, book_id)
+    former = _author_ids(session, book_id)
     # All at once: the rows are checked one by one, so they cannot be reordered in place.
-    cur.execute("DELETE FROM BOOK_AUTHORS WHERE BOOK_ID = ?", (book_id.bytes,))
-    _insert_authors(cur, book_id, authors)
-    _delete_unused_authors(cur, former)
-
-
-def _author_ids(cur: Cursor, book_id: UUID) -> list[bytes]:
-    cur.execute(
-        "SELECT AUTHOR_ID FROM BOOK_AUTHORS WHERE BOOK_ID = ?", (book_id.bytes,)
+    execute_change(
+        session, delete(BookAuthorRow).where(BookAuthorRow.book_id == book_id)
     )
-    return [author_id for (author_id,) in cur.fetchall()]
+    _insert_authors(session, book_id, authors)
+    _delete_unused_authors(session, former)
 
 
-def _delete_unused_authors(cur: Cursor, author_ids: list[bytes]) -> list[UUID]:
+def _author_ids(session: Session, book_id: UUID) -> list[UUID]:
+    return list(
+        session.scalars(
+            select(BookAuthorRow.author_id).where(BookAuthorRow.book_id == book_id)
+        )
+    )
+
+
+def _delete_unused_authors(session: Session, author_ids: list[UUID]) -> list[UUID]:
     """Delete each of these authors that no book uses any more; the ones deleted."""
     deleted = []
     for author_id in author_ids:
         try:
-            cur.execute(
-                "DELETE FROM AUTHORS a WHERE a.ID = ? AND NOT EXISTS ("
-                "SELECT 1 FROM BOOK_AUTHORS ba WHERE ba.AUTHOR_ID = a.ID)",
-                (author_id,),
+            result = execute_change(
+                session,
+                delete(AuthorRow).where(
+                    AuthorRow.id == author_id,
+                    ~select(BookAuthorRow.author_id)
+                    .where(BookAuthorRow.author_id == AuthorRow.id)
+                    .exists(),
+                ),
             )
-        except DatabaseError as e:
+        except DBAPIError as e:
             # A book being added at this moment uses it: keep it.
-            if FOREIGN_KEY_VIOLATION not in e.gds_codes:
+            if not has_gds_code(e, FOREIGN_KEY_VIOLATION):
                 raise
             logger.info(
-                "Author %s kept: a book being saved at this moment uses it",
-                UUID(bytes=author_id),
+                "Author %s kept: a book being saved at this moment uses it", author_id
             )
             continue
-        if cur.affected_rows > 0:
-            deleted.append(UUID(bytes=author_id))
+        if result.rowcount > 0:
+            deleted.append(author_id)
     return deleted
 
 
+def _insert_categories(
+    session: Session, book_id: UUID, categories: tuple[str, ...]
+) -> None:
+    for category in unique_categories(categories):
+        execute_change(
+            session,
+            insert(BookCategoryRow).values(book_id=book_id, category=category),
+        )
+
+
 def _insert_book(
-    cur: Cursor,
+    session: Session,
     user_id: UUID,
     book_id: UUID,
     book: NewBook,
@@ -150,40 +181,36 @@ def _insert_book(
     read: bool,
 ) -> None:
     try:
-        cur.execute(
-            "INSERT INTO BOOKS (ID, TITLE, ISBN, PUBLISHER, PUBLICATION_YEAR, "
-            "SERIES, VOLUME, PLOT) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                book_id.bytes,
-                book.title.strip(),
-                isbn,
-                book.publisher,
-                book.publication_year,
-                book.series,
-                book.volume,
-                book.plot,
+        execute_change(
+            session,
+            insert(BookRow).values(
+                id=book_id,
+                title=book.title.strip(),
+                isbn=isbn,
+                publisher=book.publisher,
+                publication_year=book.publication_year,
+                series=book.series,
+                volume=book.volume,
+                plot=book.plot,
             ),
         )
-    except DatabaseError as e:
+    except DBAPIError as e:
         # The ID is new, so the only key that can clash is the ISBN.
-        if isbn is not None and UNIQUE_KEY_VIOLATION in e.gds_codes:
+        if isbn is not None and has_gds_code(e, UNIQUE_KEY_VIOLATION):
             raise BookExistsError(isbn) from e
         raise
-    _insert_authors(cur, book_id, book.authors)
-    for category in unique_categories(book.categories):
-        cur.execute(
-            "INSERT INTO BOOK_CATEGORIES (BOOK_ID, CATEGORY) VALUES (?, ?)",
-            (book_id.bytes, category),
-        )
-    cur.execute(
-        "INSERT INTO COLLECTION_BOOKS (USER_ID, BOOK_ID, COPIES, IS_READ) "
-        "VALUES (?, ?, ?, ?)",
-        (user_id.bytes, book_id.bytes, copies, read),
+    _insert_authors(session, book_id, book.authors)
+    _insert_categories(session, book_id, book.categories)
+    execute_change(
+        session,
+        insert(CollectionBookRow).values(
+            user_id=user_id, book_id=book_id, copies=copies, is_read=read
+        ),
     )
 
 
 def add_book(
-    conn: Connection,
+    session: Session,
     user_id: UUID,
     book: NewBook,
     copies: int = 1,
@@ -197,56 +224,52 @@ def add_book(
     Raises InvalidIsbnError for a bad ISBN and BookExistsError if the ISBN
     is already in the catalogue.
 
-    The transaction is its own, read committed, and leaves the connection's
-    main one alone. A snapshot transaction could not use an author committed
-    by someone else after it started: neither its lookup nor the foreign key
-    check on BOOK_AUTHORS would see that author, though its insert clashes.
+    The transaction is its own and read committed (see read_committed), so
+    it can use an author committed by someone else after the request began.
     """
     isbn = normalise_isbn(book.isbn) if book.isbn else None
     book_id = uuid4()
-    with (
-        conn.transaction_manager(
-            tpb(Isolation.READ_COMMITTED_RECORD_VERSION),
-            default_action=DefaultAction.ROLLBACK,
-        ) as transaction,
-        transaction.cursor() as cur,
-    ):
-        _insert_book(cur, user_id, book_id, book, isbn, copies, read)
-        transaction.commit()
+    with read_committed(session):
+        _insert_book(session, user_id, book_id, book, isbn, copies, read)
+        session.commit()
     return book_id
 
 
-def _set_isbn(cur: Cursor, book_id: UUID, isbn: str) -> None:
+def _set_isbn(session: Session, book_id: UUID, isbn: str) -> None:
     """
     Give a book without an ISBN this one. The ISBN IS NULL condition keeps
     an ISBN from changing, even when the caller's view of the book is out of
     date: only _replace_isbn (admins) changes one.
     """
     try:
-        cur.execute(
-            "UPDATE BOOKS SET ISBN = ? WHERE ID = ? AND ISBN IS NULL",
-            (isbn, book_id.bytes),
+        result = execute_change(
+            session,
+            update(BookRow)
+            .where(BookRow.id == book_id, BookRow.isbn.is_(None))
+            .values(isbn=isbn),
         )
-    except DatabaseError as e:
-        if UNIQUE_KEY_VIOLATION in e.gds_codes:
+    except DBAPIError as e:
+        if has_gds_code(e, UNIQUE_KEY_VIOLATION):
             raise BookExistsError(isbn) from e
         raise
-    if cur.affected_rows == 0:
+    if result.rowcount == 0:
         raise IsbnAlreadySetError(book_id)
 
 
-def _replace_isbn(cur: Cursor, book_id: UUID, isbn: str | None) -> None:
+def _replace_isbn(session: Session, book_id: UUID, isbn: str | None) -> None:
     """Set a book's ISBN, whatever it was, or remove it (None)."""
     try:
-        cur.execute("UPDATE BOOKS SET ISBN = ? WHERE ID = ?", (isbn, book_id.bytes))
-    except DatabaseError as e:
-        if isbn is not None and UNIQUE_KEY_VIOLATION in e.gds_codes:
+        execute_change(
+            session, update(BookRow).where(BookRow.id == book_id).values(isbn=isbn)
+        )
+    except DBAPIError as e:
+        if isbn is not None and has_gds_code(e, UNIQUE_KEY_VIOLATION):
             raise BookExistsError(isbn) from e
         raise
 
 
 def update_book(
-    conn: Connection,
+    session: Session,
     book_id: UUID,
     *,
     authors: tuple[Author, ...],
@@ -273,35 +296,34 @@ def update_book(
     The transaction is its own and read committed, as in add_book.
     """
     new_isbn = normalise_isbn(isbn) if isbn else None
-    with (
-        conn.transaction_manager(
-            tpb(Isolation.READ_COMMITTED_RECORD_VERSION),
-            default_action=DefaultAction.ROLLBACK,
-        ) as transaction,
-        transaction.cursor() as cur,
-    ):
-        cur.execute(
-            "UPDATE BOOKS SET PUBLISHER = ?, PUBLICATION_YEAR = ?, SERIES = ?, "
-            "VOLUME = ?, PLOT = ? WHERE ID = ?",
-            (publisher, publication_year, series, volume, plot, book_id.bytes),
+    with read_committed(session):
+        result = execute_change(
+            session,
+            update(BookRow)
+            .where(BookRow.id == book_id)
+            .values(
+                publisher=publisher,
+                publication_year=publication_year,
+                series=series,
+                volume=volume,
+                plot=plot,
+            ),
         )
-        if cur.affected_rows == 0:
+        if result.rowcount == 0:
             raise UnknownBookError(book_id)
-        _replace_authors(cur, book_id, authors)
-        cur.execute("DELETE FROM BOOK_CATEGORIES WHERE BOOK_ID = ?", (book_id.bytes,))
-        for category in unique_categories(categories):
-            cur.execute(
-                "INSERT INTO BOOK_CATEGORIES (BOOK_ID, CATEGORY) VALUES (?, ?)",
-                (book_id.bytes, category),
-            )
+        _replace_authors(session, book_id, authors)
+        execute_change(
+            session, delete(BookCategoryRow).where(BookCategoryRow.book_id == book_id)
+        )
+        _insert_categories(session, book_id, categories)
         if replace_isbn:
-            _replace_isbn(cur, book_id, new_isbn)
+            _replace_isbn(session, book_id, new_isbn)
         elif new_isbn is not None:
-            _set_isbn(cur, book_id, new_isbn)
-        transaction.commit()
+            _set_isbn(session, book_id, new_isbn)
+        session.commit()
 
 
-def delete_book(conn: Connection, book_id: UUID) -> DeletedBook:
+def delete_book(session: Session, book_id: UUID) -> DeletedBook:
     """
     Delete a book for good, with its author links and categories. An author it
     leaves without books is deleted too, as when editing.
@@ -311,33 +333,27 @@ def delete_book(conn: Connection, book_id: UUID) -> DeletedBook:
 
     The transaction is its own and read committed, as in update_book.
     """
-    return retry_after_concurrent_delete(lambda: _delete_book(conn, book_id))
+    return retry_after_concurrent_delete(lambda: _delete_book(session, book_id))
 
 
-def _delete_book(conn: Connection, book_id: UUID) -> DeletedBook:
-    with (
-        conn.transaction_manager(
-            tpb(Isolation.READ_COMMITTED_RECORD_VERSION),
-            default_action=DefaultAction.ROLLBACK,
-        ) as transaction,
-        transaction.cursor() as cur,
-    ):
-        cur.execute("SELECT TITLE FROM BOOKS WHERE ID = ?", (book_id.bytes,))
-        row = cur.fetchone()
-        if row is None:
+def _delete_book(session: Session, book_id: UUID) -> DeletedBook:
+    with read_committed(session):
+        title = session.scalar(select(BookRow.title).where(BookRow.id == book_id))
+        if title is None:
             raise UnknownBookError(book_id)
-        (title,) = row
-        authors = _author_ids(cur, book_id)
+        authors = _author_ids(session, book_id)
         try:
             # Its BOOK_AUTHORS and BOOK_CATEGORIES rows go with it (ON DELETE CASCADE).
-            cur.execute("DELETE FROM BOOKS WHERE ID = ?", (book_id.bytes,))
-        except DatabaseError as e:
+            result = execute_change(
+                session, delete(BookRow).where(BookRow.id == book_id)
+            )
+        except DBAPIError as e:
             # FK_COLLECTION_BOOKS_BOOK: someone owns it.
-            if FOREIGN_KEY_VIOLATION in e.gds_codes:
+            if has_gds_code(e, FOREIGN_KEY_VIOLATION):
                 raise BookInCollectionError(title) from e
             raise
-        if cur.affected_rows == 0:
+        if result.rowcount == 0:
             raise UnknownBookError(book_id)
-        deleted = _delete_unused_authors(cur, authors)
-        transaction.commit()
+        deleted = _delete_unused_authors(session, authors)
+        session.commit()
     return DeletedBook(title, tuple(deleted))

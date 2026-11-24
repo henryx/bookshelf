@@ -1,12 +1,19 @@
+import itertools
 import os
+import shutil
+import sys
 import time
+import types
 from collections.abc import Callable, Iterator, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Protocol
 from uuid import uuid4
 
 import pytest
 import requests
+from alembic.script import ScriptDirectory
 from firebird.driver import (
     Connection,
     Cursor,
@@ -17,11 +24,14 @@ from firebird.driver import (
 )
 from flask import Flask
 from flask.testing import FlaskClient
+from raw_db import raw
+from sqlalchemy import Connection as SAConnection
+from sqlalchemy.orm import Session
 from testcontainers.core.container import DockerContainer, Reaper
 from testcontainers.core.wait_strategies import LogMessageWaitStrategy
 
 from bookshelf import create_app
-from bookshelf.db import close_pool, get_db
+from bookshelf.db import close_pool, create_db_engine, get_session, schema
 from bookshelf.db.schema import init_db
 from bookshelf.models.users import User, create_user
 
@@ -56,10 +66,9 @@ def firebird() -> Iterator[None]:
         mp.setenv("APP_DB_DSN", dsn)
         mp.setenv("APP_DB_USER", "SYSDBA")
         mp.setenv("APP_DB_PASSWORD", FIREBIRD_PASSWORD)
-        with connect(
-            dsn, user="SYSDBA", password=FIREBIRD_PASSWORD, charset="UTF8"
-        ) as conn:
-            init_db(conn)
+        engine = create_db_engine(dsn, "SYSDBA", FIREBIRD_PASSWORD, pool_size=1)
+        init_db(engine)
+        engine.dispose()
         yield
     # testcontainers stops its reaper container at exit, when pytest has
     # closed the stream our log handler writes to ("--- Logging error ---"):
@@ -123,7 +132,7 @@ def other_conn(app: Flask) -> Iterator[Connection]:
 @pytest.fixture
 def race(app: Flask, other_conn: Connection) -> Callable[..., object]:
     """
-    Run `change(conn)` on the app's connection, in another thread, until its
+    Run `change(session)` on the app's session, in another thread, until its
     statement containing `waits_on` waits for other_conn's uncommitted work;
     then commit that work (roll it back with commit=False) and return what
     `change` returns (or raise what it raises). other_conn's work is done by
@@ -131,7 +140,7 @@ def race(app: Flask, other_conn: Connection) -> Callable[..., object]:
     """
 
     def blocked(waits_on: str) -> bool:
-        with app.app_context(), get_db().cursor() as cur:
+        with app.app_context(), raw(get_session()).cursor() as cur:
             # A new transaction each time, so it sees fresh monitoring data.
             cur.execute(
                 "SELECT COUNT(*) FROM MON$STATEMENTS WHERE MON$STATE = 1 "
@@ -151,11 +160,11 @@ def race(app: Flask, other_conn: Connection) -> Callable[..., object]:
         pytest.fail(f"No statement containing {waits_on!r} started waiting")
 
     def run(
-        change: Callable[[Connection], object], waits_on: str, *, commit: bool = True
+        change: Callable[[Session], object], waits_on: str, *, commit: bool = True
     ) -> object:
         def in_app() -> object:
             with app.app_context():
-                return change(get_db())
+                return change(get_session())
 
         with ThreadPoolExecutor(max_workers=1) as executor:
             result = executor.submit(in_app)
@@ -175,9 +184,10 @@ def race(app: Flask, other_conn: Connection) -> Callable[..., object]:
 @pytest.fixture
 def fail_statement(monkeypatch: pytest.MonkeyPatch) -> Callable[[str], None]:
     """
-    Make every statement starting with the given SQL fail with a deadlock, a
-    database error no model handles: it must reach the caller, not be taken
-    for one of the errors the model expects there.
+    Make every statement starting with the given SQL (ignoring case: the ORM
+    writes names in lower case) fail with a deadlock, a database error no
+    model handles: it must reach the caller, not be taken for one of the
+    errors the model expects there.
     """
 
     def fail(sql: str) -> None:
@@ -188,7 +198,7 @@ def fail_statement(monkeypatch: pytest.MonkeyPatch) -> Callable[[str], None]:
             operation: str | Statement,
             parameters: Sequence[object] | None = None,
         ) -> Cursor:
-            if isinstance(operation, str) and operation.startswith(sql):
+            if isinstance(operation, str) and operation.upper().startswith(sql.upper()):
                 error = DatabaseError("deadlock")
                 error.gds_codes = (DEADLOCK,)
                 raise error
@@ -264,14 +274,14 @@ def client(app: Flask) -> FlaskClient:
 def db_app(app: Flask) -> Iterator[Flask]:
     """App with every table empty."""
     with app.app_context():
-        conn = get_db()
-        with conn.cursor() as cur:
+        session = get_session()
+        with raw(session).cursor() as cur:
             # Users first: their collections go with them, so books can go too.
             cur.execute("DELETE FROM USERS")
             cur.execute("DELETE FROM LOGIN_FAILURES")
             cur.execute("DELETE FROM BOOKS")
             cur.execute("DELETE FROM AUTHORS")
-        conn.commit()
+        session.commit()
     yield app
 
 
@@ -283,7 +293,7 @@ def db_client(db_app: Flask) -> FlaskClient:
 @pytest.fixture
 def user(db_app: Flask) -> User:
     with db_app.app_context():
-        return create_user(get_db(), "Reader@Example.com", PASSWORD)
+        return create_user(get_session(), "Reader@Example.com", PASSWORD)
 
 
 @pytest.fixture
@@ -295,11 +305,72 @@ def password() -> str:
 def lock_user(db_app: Flask) -> Callable[[User], None]:
     def lock(user: User) -> None:
         with db_app.app_context():
-            conn = get_db()
-            with conn.cursor() as cur:
+            session = get_session()
+            with raw(session).cursor() as cur:
                 cur.execute(
                     "UPDATE USERS SET IS_LOCKED = TRUE WHERE ID = ?", (user.id.bytes,)
                 )
-            conn.commit()
+            session.commit()
 
     return lock
+
+
+class MigrationStep(Protocol):
+    """What a test revision does: see the migrations fixture."""
+
+    def upgrade(self, conn: SAConnection) -> None: ...
+
+    def rollback(self, conn: SAConnection) -> None: ...
+
+
+# A test revision, running a MigrationStep registered under its ID.
+_TEST_REVISION = """
+from alembic import op
+
+import test_revision_steps
+
+revision = {revision!r}
+down_revision = {down_revision!r}
+
+
+def upgrade() -> None:
+    test_revision_steps.STEPS[revision].upgrade(op.get_bind())
+
+
+def downgrade() -> None:
+    test_revision_steps.STEPS[revision].rollback(op.get_bind())
+"""
+
+
+@pytest.fixture
+def migrations(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Callable[..., None]:
+    """
+    Set the revisions init_db knows: the real ones up to `last`, then one
+    per step given (t001, t002, ...), each running that step's upgrade and
+    rollback.
+    """
+    real = ScriptDirectory(str(schema.MIGRATIONS))
+    registry = types.ModuleType("test_revision_steps")
+    steps_by_revision: dict[str, MigrationStep] = {}
+    registry.__dict__["STEPS"] = steps_by_revision
+    monkeypatch.setitem(sys.modules, "test_revision_steps", registry)
+    # A new folder each time: Alembic would reuse a module compiled from
+    # the same path.
+    folders = itertools.count()
+
+    def use(*steps: MigrationStep, last: str = "0002") -> None:
+        versions = tmp_path / f"migrations{next(folders)}" / "versions"
+        versions.mkdir(parents=True)
+        for revision in real.iterate_revisions(last, "base"):
+            shutil.copy(revision.path, versions)
+        previous = last
+        for number, step in enumerate(steps, start=1):
+            revision = f"t{number:03}"
+            steps_by_revision[revision] = step
+            (versions / f"{revision}.py").write_text(
+                _TEST_REVISION.format(revision=revision, down_revision=previous)
+            )
+            previous = revision
+        monkeypatch.setattr(schema, "MIGRATIONS", versions.parent)
+
+    return use

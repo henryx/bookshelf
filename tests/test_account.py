@@ -6,7 +6,7 @@ import pytest
 from flask import Flask
 from flask.testing import FlaskClient
 
-from bookshelf.db import get_db
+from bookshelf.db import get_session
 from bookshelf.models.users import (
     AuthMethod,
     Role,
@@ -29,7 +29,7 @@ def client(db_client: FlaskClient, user: User, password: str) -> FlaskClient:
 
 def _saved(app: Flask, email: str) -> User:
     with app.app_context():
-        found = find_by_email(get_db(), email)
+        found = find_by_email(get_session(), email)
     assert found is not None
     return found
 
@@ -127,9 +127,9 @@ def test_change_password_with_current_one(
 
     assert rv.status_code == 302
     with db_app.app_context():
-        conn = get_db()
-        assert authenticate(conn, user.email, NEW_PASSWORD) is not None
-        assert authenticate(conn, user.email, password) is None
+        session = get_session()
+        assert authenticate(session, user.email, NEW_PASSWORD) is not None
+        assert authenticate(session, user.email, password) is None
     # The new password ends other sessions, but renews this one.
     assert client.get("/account").status_code == 200
 
@@ -184,7 +184,11 @@ def _avatar(html: str) -> str:
 def test_avatar_shows_initials_and_full_name(db_client: FlaskClient, db_app: Flask):
     with db_app.app_context():
         create_user(
-            get_db(), "ada@example.com", NEW_PASSWORD, name="Ada", surname="Lovelace"
+            get_session(),
+            "ada@example.com",
+            NEW_PASSWORD,
+            name="Ada",
+            surname="Lovelace",
         )
     db_client.post(
         "/login", data={"email": "ada@example.com", "password": NEW_PASSWORD}
@@ -220,7 +224,7 @@ def google_client(db_app: Flask, db_client: FlaskClient) -> FlaskClient:
     """Logged in as a Google user: their session, as a Google login leaves it."""
     with db_app.app_context():
         google = create_user(
-            get_db(), "gina@example.com", None, auth_method=AuthMethod.GOOGLE
+            get_session(), "gina@example.com", None, auth_method=AuthMethod.GOOGLE
         )
     with db_client.session_transaction() as session:
         session["_user_id"] = google.get_id()
@@ -241,7 +245,7 @@ def test_google_user_saves_their_name(google_client: FlaskClient, db_app: Flask)
 
     assert rv.status_code == 302
     with db_app.app_context():
-        saved = find_by_email(get_db(), "gina@example.com")
+        saved = find_by_email(get_session(), "gina@example.com")
     assert saved is not None
     assert (saved.name, saved.surname) == ("Gina", "Rossi")
     assert google_client.get("/account").status_code == 200  # still logged in

@@ -14,7 +14,7 @@ from flask_login import current_user, login_required
 from werkzeug.datastructures import MultiDict
 from werkzeug.wrappers import Response as BaseResponse
 
-from bookshelf.db import get_db
+from bookshelf.db import get_session
 from bookshelf.models.authors import AuthorEntry, find_author
 from bookshelf.models.books import (
     SEARCH_MAX_LENGTH,
@@ -87,7 +87,7 @@ def author_filter(values: MultiDict[str, str]) -> AuthorEntry | None:
     if not values.get("author"):
         return None
     author_id = _author_param(values)
-    entry = find_author(get_db(), author_id) if author_id else None
+    entry = find_author(get_session(), author_id) if author_id else None
     if entry is None:
         abort(404)
     return entry
@@ -119,7 +119,7 @@ def render_catalogue(
     search, sort, page = list_state(values)
     author = author_filter(values)
     books = list_books(
-        get_db(),
+        get_session(),
         current_user.id,
         search,
         sort,
@@ -200,8 +200,8 @@ def _render_picked(text: str) -> str:
         book_id = UUID(text)
     except ValueError:
         abort(404)
-    details = find_book_details(get_db(), book_id)
-    book = find_book(get_db(), current_user.id, book_id)
+    details = find_book_details(get_session(), book_id)
+    book = find_book(get_session(), current_user.id, book_id)
     if details is None or book is None:
         abort(404)
     form = BookForm(formdata=None, data={**_book_data(details), "title": details.title})
@@ -244,10 +244,12 @@ def new_book() -> BaseResponse | str:
         return _render_add(form)
     book = form.to_book()
     try:
-        add_book(get_db(), current_user.id, book, copies=form.copies.data or 1)
+        add_book(get_session(), current_user.id, book, copies=form.copies.data or 1)
     except BookExistsError as e:
         form.form_errors.append(str(e))
-        return _render_add(form, find_book_by_isbn(get_db(), current_user.id, e.isbn))
+        return _render_add(
+            form, find_book_by_isbn(get_session(), current_user.id, e.isbn)
+        )
 
     current_app.logger.info("Book %r added by %s", book.title, current_user.email)
     flash(f"Book “{book.title}” added.")
@@ -264,7 +266,7 @@ def _look_up(form: BookForm) -> str:
     except InvalidIsbnError:
         form.form_errors.append("Enter a valid ISBN to look it up.")
         return _render_add(form)
-    if existing := find_book_by_isbn(get_db(), current_user.id, isbn):
+    if existing := find_book_by_isbn(get_session(), current_user.id, isbn):
         return _render_add(form, existing)
     try:
         found = look_up_isbn(
@@ -394,10 +396,10 @@ def book(book_id: UUID) -> BaseResponse | str:
     remove an ISBN already set. Saving goes back to the list the book was
     opened from, as it was.
     """
-    details = find_book_details(get_db(), book_id)
+    details = find_book_details(get_session(), book_id)
     if details is None:
         abort(404)
-    owned = find_book(get_db(), current_user.id, book_id)
+    owned = find_book(get_session(), current_user.id, book_id)
     copies = owned.copies if owned else None
     form = EditBookForm(data={**_book_data(details), "copies": copies})
     # Once set, an ISBN is shown, not a field, except to admins; a posted one
@@ -415,7 +417,7 @@ def book(book_id: UUID) -> BaseResponse | str:
     isbn, replace_isbn = _isbn_change(details, form)
     try:
         update_book(
-            get_db(),
+            get_session(),
             book_id,
             authors=form.author_list(),
             publisher=form.publisher.data,
@@ -456,7 +458,7 @@ def _save_copies(form: EditBookForm, book: BookDetails, owned: int | None) -> No
     copies = form.copies.data if "copies" in form else None
     if copies is None or copies == owned:
         return
-    if set_copies(get_db(), current_user.id, book.id, copies):
+    if set_copies(get_session(), current_user.id, book.id, copies):
         current_app.logger.info(
             "Copies of %r set to %d by %s", book.title, copies, current_user.email
         )
@@ -491,7 +493,7 @@ def delete(book_id: UUID) -> BaseResponse:
     if not current_user.is_admin:
         abort(403)
     try:
-        deleted = delete_book(get_db(), book_id)
+        deleted = delete_book(get_session(), book_id)
     except UnknownBookError:
         current_app.logger.info(
             "Delete of unknown book %s by %s", book_id, current_user.email

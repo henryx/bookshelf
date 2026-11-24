@@ -1,9 +1,9 @@
-from firebird.driver import Connection
 from flask import Blueprint, abort, current_app, render_template, request, url_for
 from flask_login import login_user
+from sqlalchemy.orm import Session
 from werkzeug.wrappers import Response as BaseResponse
 
-from bookshelf.db import get_db
+from bookshelf.db import get_engine, get_session
 from bookshelf.db.catalog import table_exists
 from bookshelf.db.schema import init_db, schema_behind
 from bookshelf.models.users import (
@@ -25,16 +25,16 @@ _DONE_KEY = "bookshelf.setup_done"
 _SCHEMA_CURRENT_KEY = "bookshelf.schema_current"
 
 
-def setup_needed(conn: Connection) -> bool:
+def setup_needed(session: Session) -> bool:
     """True until the schema exists and holds an admin."""
-    return not table_exists(conn, "USERS") or not admin_exists(conn)
+    return not table_exists(session.connection(), "USERS") or not admin_exists(session)
 
 
 def setup_done() -> bool:
     """True once an admin exists; cached per process after that."""
     if current_app.extensions.get(_DONE_KEY):
         return True
-    if setup_needed(get_db()):
+    if setup_needed(get_session()):
         return False
     current_app.extensions[_DONE_KEY] = True
     return True
@@ -53,7 +53,7 @@ def require_current_schema() -> None:
     """
     if current_app.extensions.get(_SCHEMA_CURRENT_KEY) or _serves_without_database():
         return
-    if schema_behind(get_db()):
+    if schema_behind(get_session().connection()):
         current_app.logger.error("Database schema is behind the code: run init-db")
         abort(503, description="The database needs upgrading: run init-db.")
     current_app.extensions[_SCHEMA_CURRENT_KEY] = True
@@ -90,14 +90,16 @@ def wizard() -> BaseResponse | str:
     if not form.validate_on_submit():
         return _render_setup(form)
 
-    conn = get_db()
-    init_db(conn)
-    if admin_exists(conn):
+    init_db(get_engine())
+    session = get_session()
+    # A new transaction: this request's began before init_db created the schema.
+    session.rollback()
+    if admin_exists(session):
         # Another visitor finished setup after this request passed the check.
         return htmx_redirect(url_for("auth.login"))
     try:
         admin = create_user(
-            conn,
+            session,
             form.email.data or "",
             form.password.data or "",
             role=Role.ADMIN,

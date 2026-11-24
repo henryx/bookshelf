@@ -13,7 +13,7 @@ from flask_login import current_user, login_required, login_user
 from werkzeug.wrappers import Response as BaseResponse
 from wtforms import SelectChoice
 
-from bookshelf.db import get_db
+from bookshelf.db import get_session
 from bookshelf.models.books import CopyMode, copy_collection
 from bookshelf.models.users import (
     AuthMethod,
@@ -56,7 +56,7 @@ def _min_password_length() -> int:
 
 
 def _user_or_404(user_id: UUID) -> User:
-    user = find_by_id(get_db(), user_id)
+    user = find_by_id(get_session(), user_id)
     if user is None:
         abort(404)
     return user
@@ -69,7 +69,9 @@ def _is_self(user: User) -> bool:
 def _render_users(form: NewUserForm) -> str:
     if is_htmx():
         return render_template("admin/_create_user_form.html", form=form)
-    return render_template("admin/users.html", form=form, users=list_users(get_db()))
+    return render_template(
+        "admin/users.html", form=form, users=list_users(get_session())
+    )
 
 
 @admin_route.route("/users", methods=("GET", "POST"))
@@ -80,7 +82,7 @@ def users() -> BaseResponse | str:
         return _render_users(form)
     try:
         user = create_user(
-            get_db(),
+            get_session(),
             form.email.data or "",
             form.password.data or None,
             name=form.name.data,
@@ -118,7 +120,7 @@ def _copy_form(user: User, *, from_request: bool = True) -> CopyCollectionForm:
     form = CopyCollectionForm() if from_request else CopyCollectionForm(formdata=None)
     form.target.choices = [SelectChoice("", "Choose a user…")] + [
         SelectChoice(str(other.id), other.email)
-        for other in list_users(get_db())
+        for other in list_users(get_session())
         if other.id != user.id
     ]
     return form
@@ -199,7 +201,7 @@ def user_details(user_id: UUID) -> BaseResponse | str:
 
     try:
         update_user(
-            get_db(),
+            get_session(),
             user,
             name=name,
             surname=surname,
@@ -236,7 +238,7 @@ def delete(user_id: UUID) -> BaseResponse:
     if _is_self(user):
         abort(400, description="You cannot delete your own account.")
     try:
-        delete_user(get_db(), user)
+        delete_user(get_session(), user)
     except LastAdminError as e:
         current_app.logger.warning("Refused to delete %s: %s", user.email, e)
         abort(409, description=f"{e}: it cannot be deleted.")
@@ -257,14 +259,14 @@ def copy_user_collection(user_id: UUID) -> BaseResponse | str:
     form = _copy_form(user)
     if not form.validate_on_submit():
         return _render_user(_user_form(user, from_request=False), user, form)
-    target = find_by_id(get_db(), UUID(form.target.data))
+    target = find_by_id(get_session(), UUID(form.target.data))
     if target is None:
         # Deleted since the form was shown.
         form.form_errors.append("That user no longer exists.")
         return _render_user(_user_form(user, from_request=False), user, form)
 
     mode = CopyMode(form.mode.data)
-    copied = copy_collection(get_db(), user.id, target.id, mode)
+    copied = copy_collection(get_session(), user.id, target.id, mode)
     current_app.logger.info(
         "Collection of %s copied to %s (%s) by admin %s: %s",
         user.email,

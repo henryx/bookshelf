@@ -7,7 +7,7 @@ import pytest
 from flask import Flask
 from playwright.sync_api import Page, expect
 
-from bookshelf.db import get_db
+from bookshelf.db import get_session
 from bookshelf.models.books import NewBook, add_book
 from bookshelf.models.users import User, create_user
 
@@ -18,16 +18,16 @@ EMMA_ISBN = "9780141439587"
 def emma(db_app: Flask, password: str) -> UUID:
     """A catalogue book in another user's collection only."""
     with db_app.app_context():
-        conn = get_db()
-        other = create_user(conn, "other@example.com", password)
-        return add_book(conn, other.id, NewBook("Emma", isbn=EMMA_ISBN))
+        session = get_session()
+        other = create_user(session, "other@example.com", password)
+        return add_book(session, other.id, NewBook("Emma", isbn=EMMA_ISBN))
 
 
 @pytest.fixture
 def dune(db_app: Flask, user: User) -> UUID:
     """A catalogue book in the reader's collection, with 2 copies."""
     with db_app.app_context():
-        return add_book(get_db(), user.id, NewBook("Dune"), copies=2)
+        return add_book(get_session(), user.id, NewBook("Dune"), copies=2)
 
 
 def test_add_from_the_catalogue_updates_the_row_in_place(reader_page: Page, emma):

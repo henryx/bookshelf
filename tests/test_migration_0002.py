@@ -1,16 +1,23 @@
-"""Upgrade step 1: how a user logs in, locally (with a password) or with Google."""
+"""Revision 0002: how a user logs in, locally (with a password) or with Google."""
 
+from collections.abc import Callable, Iterator
+from types import ModuleType
 from uuid import uuid4
 
 import pytest
+from alembic.operations import Operations
+from alembic.runtime.migration import MigrationContext
+from alembic.script import ScriptDirectory
 from firebird.driver import Connection, DatabaseError
 from flask import Flask
+from raw_db import raw
 
-from bookshelf.db import get_db, upgrades
-from bookshelf.db.schema import init_db
-from bookshelf.db.upgrades import USERS_AUTH_METHOD
+from bookshelf.db import get_engine, get_session
+from bookshelf.db.schema import MIGRATIONS, init_db
 
-# USERS at version 0: its columns and constraints.
+REVISION: ModuleType = ScriptDirectory(str(MIGRATIONS)).get_revision("0002").module
+
+# USERS at revision 0001: its columns and constraints.
 V0_COLUMNS = ["ID", "EMAIL", "PASSWORD_HASH", "ROLE", "IS_LOCKED", "NAME", "SURNAME"]
 V0_CONSTRAINTS = {
     "PK_USERS",
@@ -51,12 +58,14 @@ def _password_hash_nullable(conn: Connection) -> bool:
 
 
 @pytest.fixture
-def v0_conn(empty_db_app: Flask, monkeypatch: pytest.MonkeyPatch):
-    """A connection to a database at version 0, holding a user."""
-    monkeypatch.setattr(upgrades, "UPGRADES", [])
+def v0_conn(
+    empty_db_app: Flask, migrations: Callable[..., None]
+) -> Iterator[Connection]:
+    """A connection to a database at revision 0001, holding a user."""
+    migrations(last="0001")
     with empty_db_app.app_context():
-        conn = get_db()
-        init_db(conn)
+        init_db(get_engine())
+        conn = raw(get_session())
         with conn.cursor() as cur:
             cur.execute(
                 "INSERT INTO USERS (ID, EMAIL, PASSWORD_HASH) "
@@ -64,12 +73,33 @@ def v0_conn(empty_db_app: Flask, monkeypatch: pytest.MonkeyPatch):
                 (uuid4().bytes,),
             )
         conn.commit()
-        monkeypatch.undo()
+        migrations()
         yield conn
 
 
+def _refresh(conn: Connection) -> None:
+    """End `conn`'s transaction, if any: its next one sees what others did."""
+    if conn.is_active():
+        conn.commit()
+
+
+def _upgrade_to_head(conn: Connection) -> None:
+    """init_db, then a new transaction of `conn`, which sees its changes."""
+    init_db(get_engine())
+    _refresh(conn)
+
+
+def _run_revision(apply: Callable[[], None]) -> None:
+    """Run the revision's upgrade or downgrade as init_db does, then end its work."""
+    with (
+        get_engine().connect() as conn,
+        Operations.context(MigrationContext.configure(conn)),
+    ):
+        apply()
+
+
 def test_existing_users_log_in_locally(v0_conn: Connection):
-    init_db(v0_conn)
+    _upgrade_to_head(v0_conn)
 
     with v0_conn.cursor() as cur:
         cur.execute(
@@ -85,14 +115,16 @@ def test_existing_users_log_in_locally(v0_conn: Connection):
     }
 
 
-@pytest.mark.parametrize("applied", range(len(USERS_AUTH_METHOD)))
+@pytest.mark.parametrize("applied", range(len(REVISION.CHANGES)))
 def test_rollback_after_failing_at_each_change(v0_conn: Connection, applied: int):
-    """`upgrade` stopped after `applied` changes: rollback restores version 0."""
-    for change in USERS_AUTH_METHOD[:applied]:
-        change.apply(v0_conn)
+    """`upgrade` stopped after `applied` changes: downgrade restores revision 0001."""
+    with get_engine().connect() as conn:
+        for change in REVISION.CHANGES[:applied]:
+            change.apply(conn)
 
-    upgrades.UPGRADES[0].rollback(v0_conn)
-    upgrades.UPGRADES[0].rollback(v0_conn)  # a second time changes nothing more
+    _run_revision(REVISION.downgrade)
+    _run_revision(REVISION.downgrade)  # a second time changes nothing more
+    _refresh(v0_conn)
 
     assert _columns(v0_conn) == V0_COLUMNS
     assert not _password_hash_nullable(v0_conn)
@@ -103,8 +135,9 @@ def test_rollback_after_failing_at_each_change(v0_conn: Connection, applied: int
 
 
 def test_upgrade_run_twice_changes_nothing_more(v0_conn: Connection):
-    upgrades.UPGRADES[0].upgrade(v0_conn)
-    upgrades.UPGRADES[0].upgrade(v0_conn)
+    _run_revision(REVISION.upgrade)
+    _run_revision(REVISION.upgrade)
+    _refresh(v0_conn)
 
     assert _columns(v0_conn) == [*V0_COLUMNS, "AUTH_METHOD", "GOOGLE_SUBJECT"]
 
@@ -134,11 +167,11 @@ def test_credentials_match_the_auth_method(
     subject: str | None,
     allowed: bool,
 ):
-    init_db(v0_conn)
+    _upgrade_to_head(v0_conn)
     try:
         with v0_conn.cursor() as cur:
             cur.execute(_INSERT, (uuid4().bytes, method, password_hash, subject))
-        v0_conn.commit()
+        _refresh(v0_conn)
         inserted = True
     except DatabaseError:  # a check constraint refusing the row
         v0_conn.rollback()

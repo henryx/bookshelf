@@ -1,20 +1,18 @@
 """Rules the database itself enforces on the books tables."""
 
-from collections.abc import Iterator
 from uuid import uuid4
 
 import pytest
 from firebird.driver import Connection, DatabaseError
 from flask import Flask
 
-from bookshelf.db import get_db
 from bookshelf.models.users import User
 
 
 @pytest.fixture
-def conn(db_app: Flask) -> Iterator[Connection]:
-    with db_app.app_context():
-        yield get_db()
+def conn(db_app: Flask, other_conn: Connection) -> Connection:
+    """A plain connection to the emptied database: these tests run its SQL."""
+    return other_conn
 
 
 def _run(conn: Connection, sql: str, params: tuple[object, ...] = ()) -> None:

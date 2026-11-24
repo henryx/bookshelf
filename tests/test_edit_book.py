@@ -9,11 +9,13 @@ from dataclasses import replace
 from uuid import UUID, uuid4
 
 import pytest
-from firebird.driver import Connection, DatabaseError
+from firebird.driver import Connection
 from flask import Flask
 from flask.testing import FlaskClient
+from raw_db import raw
+from sqlalchemy.exc import DBAPIError
 
-from bookshelf.db import get_db
+from bookshelf.db import get_session
 from bookshelf.models.books import (
     Author,
     BookDetails,
@@ -45,12 +47,12 @@ def client(db_client: FlaskClient, user: User, password: str) -> FlaskClient:
 
 def _book(db_app: Flask, user: User, book: NewBook) -> UUID:
     with db_app.app_context():
-        return add_book(get_db(), user.id, book)
+        return add_book(get_session(), user.id, book)
 
 
 def _details(db_app: Flask, book_id: UUID) -> BookDetails:
     with db_app.app_context():
-        details = find_book_details(get_db(), book_id)
+        details = find_book_details(get_session(), book_id)
     assert details is not None
     return details
 
@@ -71,7 +73,7 @@ def _update(
 ) -> None:
     with db_app.app_context():
         update_book(
-            get_db(),
+            get_session(),
             book_id,
             authors=authors,
             publisher=publisher,
@@ -120,7 +122,7 @@ def test_find_book_details_has_every_field(db_app, user):
 
 def test_find_book_details_of_an_unknown_book(db_app):
     with db_app.app_context():
-        assert find_book_details(get_db(), uuid4()) is None
+        assert find_book_details(get_session(), uuid4()) is None
 
 
 def test_update_book_saves_volume_plot_and_categories(db_app, user):
@@ -183,7 +185,7 @@ def test_update_book_saves_authors_publisher_and_year(db_app, user):
 
 
 def _author_names(db_app: Flask) -> list[str]:
-    with db_app.app_context(), get_db().cursor() as cur:
+    with db_app.app_context(), raw(get_session()).cursor() as cur:
         cur.execute("SELECT NAME || '/' || SURNAME FROM AUTHORS ORDER BY SURNAME, NAME")
         return [name for (name,) in cur.fetchall()]
 
@@ -303,7 +305,7 @@ def test_update_book_passes_on_unexpected_errors_saving_the_isbn(
     book_id = _book(db_app, user, NewBook("Emma"))
     fail_statement("UPDATE BOOKS SET ISBN")
 
-    with pytest.raises(DatabaseError, match="deadlock"):
+    with pytest.raises(DBAPIError, match="deadlock"):
         _update(db_app, book_id, isbn=EMMA_ISBN, replace_isbn=replace_isbn, volume="2")
 
     details = _details(db_app, book_id)
@@ -317,7 +319,7 @@ def test_update_book_passes_on_unexpected_errors_deleting_unused_authors(
     book_id = _book(db_app, user, DUNE)
     fail_statement("DELETE FROM AUTHORS")
 
-    with pytest.raises(DatabaseError, match="deadlock"):
+    with pytest.raises(DBAPIError, match="deadlock"):
         _update(db_app, book_id, authors=(Author("Brian", "Herbert"),))
 
     assert _details(db_app, book_id).authors == DUNE.authors
@@ -431,14 +433,14 @@ def test_save_goes_back_only_to_a_book_list(db_app, client, user):
 
 def _copies(db_app: Flask, user: User, book_id: UUID) -> int | None:
     with db_app.app_context():
-        book = find_book(get_db(), user.id, book_id)
+        book = find_book(get_session(), user.id, book_id)
     assert book is not None
     return book.copies
 
 
 def test_book_in_the_collection_has_a_copies_field(db_app, client, user):
     with db_app.app_context():
-        book_id = add_book(get_db(), user.id, DUNE, copies=2)
+        book_id = add_book(get_session(), user.id, DUNE, copies=2)
 
     html = client.get(_url(book_id), headers=HTMX).get_data(as_text=True)
 
@@ -451,7 +453,7 @@ def test_book_in_the_collection_has_a_copies_field(db_app, client, user):
 
 def test_book_not_in_the_collection_has_no_copies_field(db_app, client, password):
     with db_app.app_context():
-        other = create_user(get_db(), "other@example.com", password)
+        other = create_user(get_session(), "other@example.com", password)
     book_id = _book(db_app, other, DUNE)
 
     html = client.get(_url(book_id), headers=HTMX).get_data(as_text=True)
@@ -475,9 +477,9 @@ def test_save_copies_of_a_book_that_left_the_collection_meanwhile(
     """The rest is saved; the book is not put back in the collection."""
     book_id = _book(db_app, user, DUNE)
 
-    def removed_first(conn, user_id, book_id, copies):
-        remove_from_collection(conn, user_id, book_id)
-        return set_copies(conn, user_id, book_id, copies)
+    def removed_first(session, user_id, book_id, copies):
+        remove_from_collection(session, user_id, book_id)
+        return set_copies(session, user_id, book_id, copies)
 
     monkeypatch.setattr("bookshelf.routes.main.set_copies", removed_first)
 
@@ -489,7 +491,7 @@ def test_save_copies_of_a_book_that_left_the_collection_meanwhile(
     assert rv.status_code == 204
     assert _details(db_app, book_id).volume == "2"
     with db_app.app_context():
-        book = find_book(get_db(), user.id, book_id)
+        book = find_book(get_session(), user.id, book_id)
     assert book is not None and book.copies is None
     assert (
         f"Book 'Dune' left the collection of {user.email} before its copies "
@@ -499,7 +501,7 @@ def test_save_copies_of_a_book_that_left_the_collection_meanwhile(
 
 def test_save_without_copies_keeps_them(db_app, client, user):
     with db_app.app_context():
-        book_id = add_book(get_db(), user.id, DUNE, copies=3)
+        book_id = add_book(get_session(), user.id, DUNE, copies=3)
 
     client.post(_url(book_id), data={"volume": "2"}, headers=HTMX)
 
@@ -713,7 +715,7 @@ def test_list_titles_open_the_book(db_app, client, user, list_url, book_url):
 @pytest.fixture
 def admin_client(db_app: Flask, db_client: FlaskClient, password: str) -> FlaskClient:
     with db_app.app_context():
-        create_user(get_db(), "boss@example.com", password, role=Role.ADMIN)
+        create_user(get_session(), "boss@example.com", password, role=Role.ADMIN)
     rv = db_client.post(
         "/login", data={"email": "boss@example.com", "password": password}
     )

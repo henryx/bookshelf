@@ -8,7 +8,7 @@ import pytest
 from flask import Flask
 from playwright.sync_api import Page, expect
 
-from bookshelf.db import get_db
+from bookshelf.db import get_session
 from bookshelf.models.books import NewBook, add_book
 from bookshelf.models.users import User
 
@@ -22,7 +22,7 @@ pytestmark = pytest.mark.skip_browser("firefox")
 def dune(db_app: Flask, user: User) -> UUID:
     """A book in the reader's collection."""
     with db_app.app_context():
-        return add_book(get_db(), user.id, NewBook("Dune"))
+        return add_book(get_session(), user.id, NewBook("Dune"))
 
 
 def _visit_through_worker(page: Page, url: str) -> None:

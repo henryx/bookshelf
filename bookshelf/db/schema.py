@@ -1,251 +1,47 @@
-from firebird.driver import Connection, DefaultAction
+"""
+Creating and upgrading the schema: init_db applies the migrations'
+revisions (bookshelf/migrations/versions/) with Alembic, then creates or
+replaces the PSQL functions. README "Migrations" has the design.
+"""
 
+import logging
+from pathlib import Path
+
+from alembic.ddl.impl import DefaultImpl
+from alembic.operations import Operations
+from alembic.runtime.migration import MigrationContext
+from alembic.script import Script, ScriptDirectory
+from alembic.script.revision import RevisionError
+from alembic.util import CommandError
+from sqlalchemy import Connection, Engine, text
+
+from bookshelf.db.baseline import create_settings
 from bookshelf.db.catalog import table_exists
-from bookshelf.db.upgrades import apply_upgrades, upgrades_pending
 
-__all__ = ["init_db", "schema_behind"]
+__all__ = ["FUNCTIONS", "SchemaTooNewError", "init_db", "schema_behind"]
 
-# Frozen since 1.0.0: never edit a released definition in place. New ones are
-# created by init_db; changes to released ones need their own upgrade steps.
+logger = logging.getLogger(__name__)
 
-# Created before TABLES, which use them.
-DOMAINS: dict[str, str] = {
-    # UUIDs stored as 16 raw bytes (uuid.UUID.bytes); UUID_TO_CHAR() shows them as text.
-    "UUID": "CREATE DOMAIN UUID AS CHAR(16) CHARACTER SET OCTETS",
-}
+MIGRATIONS = Path(__file__).parent.parent / "migrations"
 
-# Columns only: constraints are in CONSTRAINTS.
-TABLES: dict[str, str] = {
-    # NAME (the given name) and SURNAME are optional: NULL when not given.
-    "USERS": """
-        CREATE TABLE USERS (
-            ID UUID NOT NULL,
-            EMAIL VARCHAR(254) NOT NULL,
-            PASSWORD_HASH VARCHAR(255) NOT NULL,
-            ROLE VARCHAR(16) DEFAULT 'REGULAR' NOT NULL,
-            IS_LOCKED BOOLEAN DEFAULT FALSE NOT NULL,
-            NAME VARCHAR(127),
-            SURNAME VARCHAR(127)
-        )
-    """,
-    # One row per failed login, with no key of its own. ID is the user the
-    # email belongs to, or NULL for an unknown email.
-    "LOGIN_FAILURES": """
-        CREATE TABLE LOGIN_FAILURES (
-            ID UUID,
-            EMAIL VARCHAR(254) NOT NULL,
-            IP_ADDRESS VARCHAR(45) NOT NULL,
-            ATTEMPTED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
-        )
-    """,
-    # The shared catalogue: one row per title, however many copies users own.
-    # TITLE, PUBLISHER and SERIES ignore case (UNICODE_CI) when compared and sorted. ISBN
-    # is 13 digits, ISBN-10 converted by the app. SERIES is free text, the series
-    # the book belongs to; VOLUME is free text too ("2", "II", "3/4"), its place
-    # in the series. CREATED_AT is the date added.
-    "BOOKS": """
-        CREATE TABLE BOOKS (
-            ID UUID NOT NULL,
-            TITLE VARCHAR(255) NOT NULL COLLATE UNICODE_CI,
-            ISBN CHAR(13),
-            PUBLISHER VARCHAR(255) COLLATE UNICODE_CI,
-            PUBLICATION_YEAR SMALLINT,
-            SERIES VARCHAR(255) COLLATE UNICODE_CI,
-            VOLUME VARCHAR(32),
-            PLOT VARCHAR(4000),
-            CREATED_AT TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
-        )
-    """,
-    # Authors are shared between books; a name and surname pair is unique,
-    # ignoring case. NAME (the given name) is '' when there is only a
-    # surname ("Homer"), never NULL, so the pair stays unique. 127 characters
-    # each is what fits in one UNICODE_CI index key on 8 KB pages.
-    "AUTHORS": """
-        CREATE TABLE AUTHORS (
-            ID UUID NOT NULL,
-            NAME VARCHAR(127) DEFAULT '' NOT NULL COLLATE UNICODE_CI,
-            SURNAME VARCHAR(127) NOT NULL COLLATE UNICODE_CI
-        )
-    """,
-    # A book's authors, in order from 1 (POSITION is a reserved word).
-    "BOOK_AUTHORS": """
-        CREATE TABLE BOOK_AUTHORS (
-            BOOK_ID UUID NOT NULL,
-            AUTHOR_ID UUID NOT NULL,
-            SORT_ORDER SMALLINT NOT NULL
-        )
-    """,
-    # A book's categories, free text stored on each book (so a category exists
-    # while a book has it); unique per book, ignoring case.
-    "BOOK_CATEGORIES": """
-        CREATE TABLE BOOK_CATEGORIES (
-            BOOK_ID UUID NOT NULL,
-            CATEGORY VARCHAR(64) NOT NULL COLLATE UNICODE_CI
-        )
-    """,
-    # Each user's collection: the books they own, how many copies, and whether
-    # they have read it (not read until they say so).
-    "COLLECTION_BOOKS": """
-        CREATE TABLE COLLECTION_BOOKS (
-            USER_ID UUID NOT NULL,
-            BOOK_ID UUID NOT NULL,
-            COPIES SMALLINT DEFAULT 1 NOT NULL,
-            IS_READ BOOLEAN DEFAULT FALSE NOT NULL
-        )
-    """,
-    # The app's own settings, by name, each value as text. VALUE is a reserved
-    # word: always write it quoted. init_db keeps SCHEMA_VERSION (the last
-    # upgrade step applied), SCHEMA_UPGRADE_STEP (the step in progress; only
-    # while one runs, or was left halfway) and SCHEMA_UPGRADE_LOCK (locked
-    # while init_db runs).
-    "SETTINGS": """
-        CREATE TABLE SETTINGS (
-            NAME VARCHAR(64) NOT NULL,
-            "VALUE" VARCHAR(255) NOT NULL
-        )
-    """,
-}
+# The revision matching each SCHEMA_VERSION of the upgrade steps of releases
+# before 1.5.0 (version n is after step n): version 0 is the 1.0.0 schema.
+LEGACY_REVISIONS = ("0001", "0002")
 
-# Named table constraints, added after TABLES in this order (a foreign key
-# needs the key it references). Each is defined here only, never in CREATE
-# TABLE, so every constraint has a name of our choosing.
-CONSTRAINTS: dict[str, str] = {
-    "PK_USERS": "ALTER TABLE USERS ADD CONSTRAINT PK_USERS PRIMARY KEY (ID)",
-    "UQ_USERS_EMAIL": "ALTER TABLE USERS ADD CONSTRAINT UQ_USERS_EMAIL UNIQUE (EMAIL)",
-    "CHK_USERS_ROLE": (
-        "ALTER TABLE USERS ADD CONSTRAINT CHK_USERS_ROLE "
-        "CHECK (ROLE IN ('ADMIN', 'REGULAR'))"
-    ),
-    # Emails are lowercase and trimmed, so UQ_USERS_EMAIL also holds ignoring
-    # case. Lengths are compared because Firebird ignores trailing spaces in
-    # string equality.
-    "CHK_USERS_EMAIL_NORMALISED": (
-        "ALTER TABLE USERS ADD CONSTRAINT CHK_USERS_EMAIL_NORMALISED CHECK ("
-        "EMAIL = LOWER(EMAIL) AND CHAR_LENGTH(EMAIL) = CHAR_LENGTH(TRIM(EMAIL)))"
-    ),
-    # Non-blank and trimmed when given (see CHK_USERS_EMAIL_NORMALISED on lengths).
-    "CHK_USERS_NAME": (
-        "ALTER TABLE USERS ADD CONSTRAINT CHK_USERS_NAME CHECK (NAME IS NULL OR ("
-        "NAME <> '' AND CHAR_LENGTH(NAME) = CHAR_LENGTH(TRIM(NAME))))"
-    ),
-    "CHK_USERS_SURNAME": (
-        "ALTER TABLE USERS ADD CONSTRAINT CHK_USERS_SURNAME CHECK (SURNAME IS NULL OR ("
-        "SURNAME <> '' AND CHAR_LENGTH(SURNAME) = CHAR_LENGTH(TRIM(SURNAME))))"
-    ),
-    # Deleting a user deletes their login failures.
-    "FK_LOGIN_FAILURES_USER": (
-        "ALTER TABLE LOGIN_FAILURES ADD CONSTRAINT FK_LOGIN_FAILURES_USER "
-        "FOREIGN KEY (ID) REFERENCES USERS (ID) ON DELETE CASCADE"
-    ),
-    "PK_BOOKS": "ALTER TABLE BOOKS ADD CONSTRAINT PK_BOOKS PRIMARY KEY (ID)",
-    # Any number of books may have no ISBN: UNIQUE ignores NULLs.
-    "UQ_BOOKS_ISBN": "ALTER TABLE BOOKS ADD CONSTRAINT UQ_BOOKS_ISBN UNIQUE (ISBN)",
-    "CHK_BOOKS_ISBN": (
-        "ALTER TABLE BOOKS ADD CONSTRAINT CHK_BOOKS_ISBN "
-        "CHECK (ISBN SIMILAR TO '[0-9]{13}')"
-    ),
-    # Non-blank and trimmed (see CHK_USERS_EMAIL_NORMALISED on lengths).
-    "CHK_BOOKS_TITLE": (
-        "ALTER TABLE BOOKS ADD CONSTRAINT CHK_BOOKS_TITLE CHECK ("
-        "TITLE <> '' AND CHAR_LENGTH(TITLE) = CHAR_LENGTH(TRIM(TITLE)))"
-    ),
-    "PK_AUTHORS": "ALTER TABLE AUTHORS ADD CONSTRAINT PK_AUTHORS PRIMARY KEY (ID)",
-    # Surname first: it also serves the book list sorted by author.
-    "UQ_AUTHORS_SURNAME_NAME": (
-        "ALTER TABLE AUTHORS ADD CONSTRAINT UQ_AUTHORS_SURNAME_NAME "
-        "UNIQUE (SURNAME, NAME)"
-    ),
-    # Trimmed; may be empty.
-    "CHK_AUTHORS_NAME": (
-        "ALTER TABLE AUTHORS ADD CONSTRAINT CHK_AUTHORS_NAME CHECK ("
-        "CHAR_LENGTH(NAME) = CHAR_LENGTH(TRIM(NAME)))"
-    ),
-    "CHK_AUTHORS_SURNAME": (
-        "ALTER TABLE AUTHORS ADD CONSTRAINT CHK_AUTHORS_SURNAME CHECK ("
-        "SURNAME <> '' AND CHAR_LENGTH(SURNAME) = CHAR_LENGTH(TRIM(SURNAME)))"
-    ),
-    "PK_BOOK_AUTHORS": (
-        "ALTER TABLE BOOK_AUTHORS ADD CONSTRAINT PK_BOOK_AUTHORS "
-        "PRIMARY KEY (BOOK_ID, AUTHOR_ID)"
-    ),
-    # Checked row by row, so a book's authors are replaced, not reordered in place.
-    "UQ_BOOK_AUTHORS_SORT_ORDER": (
-        "ALTER TABLE BOOK_AUTHORS ADD CONSTRAINT UQ_BOOK_AUTHORS_SORT_ORDER "
-        "UNIQUE (BOOK_ID, SORT_ORDER)"
-    ),
-    "CHK_BOOK_AUTHORS_SORT_ORDER": (
-        "ALTER TABLE BOOK_AUTHORS ADD CONSTRAINT CHK_BOOK_AUTHORS_SORT_ORDER "
-        "CHECK (SORT_ORDER >= 1)"
-    ),
-    # Deleting a book deletes its author links; an author with books cannot be deleted.
-    "FK_BOOK_AUTHORS_BOOK": (
-        "ALTER TABLE BOOK_AUTHORS ADD CONSTRAINT FK_BOOK_AUTHORS_BOOK "
-        "FOREIGN KEY (BOOK_ID) REFERENCES BOOKS (ID) ON DELETE CASCADE"
-    ),
-    "FK_BOOK_AUTHORS_AUTHOR": (
-        "ALTER TABLE BOOK_AUTHORS ADD CONSTRAINT FK_BOOK_AUTHORS_AUTHOR "
-        "FOREIGN KEY (AUTHOR_ID) REFERENCES AUTHORS (ID)"
-    ),
-    "PK_BOOK_CATEGORIES": (
-        "ALTER TABLE BOOK_CATEGORIES ADD CONSTRAINT PK_BOOK_CATEGORIES "
-        "PRIMARY KEY (BOOK_ID, CATEGORY)"
-    ),
-    "CHK_BOOK_CATEGORIES_CATEGORY": (
-        "ALTER TABLE BOOK_CATEGORIES ADD CONSTRAINT CHK_BOOK_CATEGORIES_CATEGORY "
-        "CHECK ("
-        "CATEGORY <> '' AND CHAR_LENGTH(CATEGORY) = CHAR_LENGTH(TRIM(CATEGORY)))"
-    ),
-    "FK_BOOK_CATEGORIES_BOOK": (
-        "ALTER TABLE BOOK_CATEGORIES ADD CONSTRAINT FK_BOOK_CATEGORIES_BOOK "
-        "FOREIGN KEY (BOOK_ID) REFERENCES BOOKS (ID) ON DELETE CASCADE"
-    ),
-    "PK_COLLECTION_BOOKS": (
-        "ALTER TABLE COLLECTION_BOOKS ADD CONSTRAINT PK_COLLECTION_BOOKS "
-        "PRIMARY KEY (USER_ID, BOOK_ID)"
-    ),
-    "CHK_COLLECTION_BOOKS_COPIES": (
-        "ALTER TABLE COLLECTION_BOOKS ADD CONSTRAINT CHK_COLLECTION_BOOKS_COPIES "
-        "CHECK (COPIES >= 1)"
-    ),
-    # Deleting a user deletes their collection.
-    "FK_COLLECTION_BOOKS_USER": (
-        "ALTER TABLE COLLECTION_BOOKS ADD CONSTRAINT FK_COLLECTION_BOOKS_USER "
-        "FOREIGN KEY (USER_ID) REFERENCES USERS (ID) ON DELETE CASCADE"
-    ),
-    # A book in anyone's collection cannot be deleted.
-    "FK_COLLECTION_BOOKS_BOOK": (
-        "ALTER TABLE COLLECTION_BOOKS ADD CONSTRAINT FK_COLLECTION_BOOKS_BOOK "
-        "FOREIGN KEY (BOOK_ID) REFERENCES BOOKS (ID)"
-    ),
-    "PK_SETTINGS": "ALTER TABLE SETTINGS ADD CONSTRAINT PK_SETTINGS PRIMARY KEY (NAME)",
-}
 
-# Created after TABLES and CONSTRAINTS.
-INDEXES: dict[str, str] = {
-    # Login-failure count and clear: filter by email, then by time.
-    "IDX_LOGIN_FAILURES_EMAIL_AT": (
-        "CREATE INDEX IDX_LOGIN_FAILURES_EMAIL_AT ON LOGIN_FAILURES (EMAIL, ATTEMPTED_AT)"
-    ),
-    # Per-IP failure count: filter by IP, then by time.
-    "IDX_LOGIN_FAILURES_IP_AT": (
-        "CREATE INDEX IDX_LOGIN_FAILURES_IP_AT ON LOGIN_FAILURES (IP_ADDRESS, ATTEMPTED_AT)"
-    ),
-    # Book list sorted by title, or by date added (newest first).
-    "IDX_BOOKS_TITLE": "CREATE INDEX IDX_BOOKS_TITLE ON BOOKS (TITLE)",
-    # Publisher suggestions: publishers starting with the typed text.
-    "IDX_BOOKS_PUBLISHER": "CREATE INDEX IDX_BOOKS_PUBLISHER ON BOOKS (PUBLISHER)",
-    "IDX_BOOKS_CREATED_AT": (
-        "CREATE DESCENDING INDEX IDX_BOOKS_CREATED_AT ON BOOKS (CREATED_AT)"
-    ),
-    # Books in a category, and category suggestions (categories starting with
-    # the typed text).
-    "IDX_BOOK_CATEGORIES_CATEGORY": (
-        "CREATE INDEX IDX_BOOK_CATEGORIES_CATEGORY ON BOOK_CATEGORIES (CATEGORY)"
-    ),
-}
+class FirebirdImpl(DefaultImpl):
+    """
+    Alembic's support for the firebird-driver dialect, which has none of its
+    own; registered by being defined. Alembic's defaults, with DDL outside
+    transactions: each change commits on its own (see SchemaChange).
+    """
 
-# PSQL functions, created after INDEXES. Each is created or replaced on every
-# init_db, so its body can change without an upgrade step.
+    __dialect__ = "firebird.firebird"
+    transactional_ddl = False
+
+
+# PSQL functions, created after the revisions are applied. Each is created or
+# replaced on every init_db, so its body can change without a revision.
 FUNCTIONS: dict[str, str] = {
     # The book lists' search: the title, an ISBN text or any author's
     # "name surname" contains the text, ignoring case (CONTAINING always does).
@@ -287,27 +83,43 @@ FUNCTIONS: dict[str, str] = {
 }
 
 
-def init_db(conn: Connection) -> None:
-    """
-    Create missing domains, tables, constraints and indexes, apply pending
-    upgrade steps, and create or replace the functions. Safe to run more
-    than once; a second run waits for one running meanwhile.
+class SchemaTooNewError(RuntimeError):
+    """The database has revisions this release does not know: it is newer."""
 
-    A step that fails is rolled back and its error raised; one left halfway
-    (by a crash, or a failed rollback) is rolled back, then applied again.
+    def __init__(self, revision: str) -> None:
+        super().__init__(
+            f"The database schema is at revision {revision}, unknown to this "
+            "release: run init-db from a release at least as new"
+        )
+
+
+def init_db(engine: Engine) -> None:
     """
-    _create_missing(conn)
-    _add_settings(conn)
-    with conn.transaction_manager(default_action=DefaultAction.ROLLBACK) as lock:
+    Apply the pending revisions in order, after rolling back one left
+    halfway, then create or replace the functions. Safe to run more than
+    once; a second run waits for one running meanwhile. A database from
+    before Alembic is first stamped with the revision matching its
+    SCHEMA_VERSION.
+
+    A revision that fails is rolled back (its downgrade) and its error
+    raised; one left halfway (by a crash, or a failed rollback) is rolled
+    back, then applied again. SchemaTooNewError when the database has
+    revisions this release does not know.
+    """
+    with engine.connect() as conn:
+        create_settings(conn)
+        _add_lock(conn)
+    with engine.connect() as lock, engine.connect() as conn:
+        # Written nowhere else: holding it keeps other runs waiting until
+        # this one ends. Always rolled back.
+        lock.execute(
+            text(
+                'UPDATE SETTINGS SET "VALUE" = "VALUE" '
+                "WHERE NAME = 'SCHEMA_UPGRADE_LOCK'"
+            )
+        )
         try:
-            with lock.cursor() as cur:
-                # Written nowhere else: holding it keeps other runs waiting
-                # until this one ends.
-                cur.execute(
-                    'UPDATE SETTINGS SET "VALUE" = "VALUE" '
-                    "WHERE NAME = 'SCHEMA_UPGRADE_LOCK'"
-                )
-            apply_upgrades(conn)
+            _upgrade(conn)
             _create_functions(conn)
         finally:
             lock.rollback()
@@ -316,56 +128,179 @@ def init_db(conn: Connection) -> None:
 def schema_behind(conn: Connection) -> bool:
     """
     True when the database has a schema, but older than this release's: it
-    needs init-db. No schema at all is not behind: setup creates it.
+    needs init-db. No schema at all is not behind: setup creates it; nor is
+    one at a revision this release does not know (newer).
     """
     if not table_exists(conn, "USERS"):
         return False
-    return upgrades_pending(conn)
+    script = _scripts()
+    heads = MigrationContext.configure(conn).get_current_heads()
+    if not heads:
+        return True
+    if any(_known(script, head) is None for head in heads):
+        return False
+    return heads != (script.get_current_head(),)
 
 
-def _create_missing(conn: Connection) -> None:
-    with conn.cursor() as cur:
-        for name, ddl in DOMAINS.items():
-            cur.execute("SELECT 1 FROM RDB$FIELDS WHERE RDB$FIELD_NAME = ?", (name,))
-            if cur.fetchone() is None:
-                cur.execute(ddl)
-        for name, ddl in TABLES.items():
-            if not table_exists(conn, name):
-                cur.execute(ddl)
-        for name, ddl in CONSTRAINTS.items():
-            cur.execute(
-                "SELECT 1 FROM RDB$RELATION_CONSTRAINTS WHERE RDB$CONSTRAINT_NAME = ?",
-                (name,),
-            )
-            if cur.fetchone() is None:
-                cur.execute(ddl)
-        for name, ddl in INDEXES.items():
-            cur.execute("SELECT 1 FROM RDB$INDICES WHERE RDB$INDEX_NAME = ?", (name,))
-            if cur.fetchone() is None:
-                cur.execute(ddl)
-    conn.commit()
+def _scripts() -> ScriptDirectory:
+    return ScriptDirectory(str(MIGRATIONS))
 
 
-def _add_settings(conn: Connection) -> None:
-    """
-    Add the settings init_db needs, unless already there: SCHEMA_VERSION
-    starts at 0, the 1.0.0 schema.
-    """
-    with conn.cursor() as cur:
-        cur.execute(
-            "MERGE INTO SETTINGS s USING RDB$DATABASE ON s.NAME = 'SCHEMA_VERSION' "
-            "WHEN NOT MATCHED THEN INSERT (NAME, \"VALUE\") VALUES ('SCHEMA_VERSION', '0')"
-        )
-        cur.execute(
+def _known(script: ScriptDirectory, revision: str) -> Script | None:
+    try:
+        return script.get_revision(revision)
+    except CommandError, RevisionError:
+        return None
+
+
+def _add_lock(conn: Connection) -> None:
+    conn.execute(
+        text(
             "MERGE INTO SETTINGS s USING RDB$DATABASE ON s.NAME = 'SCHEMA_UPGRADE_LOCK' "
             'WHEN NOT MATCHED THEN INSERT (NAME, "VALUE") '
             "VALUES ('SCHEMA_UPGRADE_LOCK', 'init-db')"
         )
+    )
     conn.commit()
 
 
+def _upgrade(conn: Connection) -> None:
+    script = _scripts()
+    context = MigrationContext.configure(conn)
+    _stamp_legacy(conn, context, script)
+    _finish_interrupted(conn, context, script)
+    heads = context.get_current_heads()
+    for head in heads:
+        if _known(script, head) is None:
+            raise SchemaTooNewError(head)
+    current = heads[0] if heads else "base"
+    pending = reversed(list(script.iterate_revisions("heads", current)))
+    for revision in pending:
+        _apply(conn, context, script, revision)
+
+
+def _stamp_legacy(
+    conn: Connection, context: MigrationContext, script: ScriptDirectory
+) -> None:
+    """
+    Give a database from before Alembic (tables, but no version table) the
+    revision matching its SCHEMA_VERSION; a 1.0.x one has none: 0. A step
+    left halfway by those releases is marked as its revision, to be rolled
+    back like one.
+    """
+    if not table_exists(conn, "USERS") or table_exists(conn, "ALEMBIC_VERSION"):
+        return
+    version = _legacy_setting(conn, "SCHEMA_VERSION") or 0
+    if version >= len(LEGACY_REVISIONS):
+        raise SchemaTooNewError(f"(upgrade step {version})")
+    step = _legacy_setting(conn, "SCHEMA_UPGRADE_STEP")
+    if step is not None:
+        if step >= len(LEGACY_REVISIONS):
+            raise SchemaTooNewError(f"(upgrade step {step})")
+        conn.execute(
+            text(
+                'UPDATE SETTINGS SET "VALUE" = :rev '
+                "WHERE NAME = 'SCHEMA_UPGRADE_STEP'"
+            ),
+            {"rev": LEGACY_REVISIONS[step]},
+        )
+        conn.commit()
+    _stamp(conn, context, script, LEGACY_REVISIONS[version])
+    logger.info(
+        "Schema version %d stamped as revision %s", version, LEGACY_REVISIONS[version]
+    )
+
+
+def _legacy_setting(conn: Connection, name: str) -> int | None:
+    value = conn.execute(
+        text('SELECT "VALUE" FROM SETTINGS WHERE NAME = :name'), {"name": name}
+    ).scalar()
+    return None if value is None else int(value)
+
+
+def _finish_interrupted(
+    conn: Connection, context: MigrationContext, script: ScriptDirectory
+) -> None:
+    """Roll back the revision a crash or a failed rollback left halfway, if any."""
+    marked = conn.execute(
+        text("SELECT \"VALUE\" FROM SETTINGS WHERE NAME = 'SCHEMA_UPGRADE_STEP'")
+    ).scalar()
+    conn.commit()
+    if marked is None:
+        return
+    revision = _known(script, marked)
+    if revision is None:
+        raise SchemaTooNewError(marked)
+    logger.warning("Revision %s was left halfway: rolling it back", marked)
+    _roll_back(conn, context, revision)
+
+
+def _apply(
+    conn: Connection,
+    context: MigrationContext,
+    script: ScriptDirectory,
+    revision: Script,
+) -> None:
+    _set_marker(conn, revision.revision)
+    logger.info("Applying revision %s", revision.revision)
+    try:
+        with Operations.context(context):
+            revision.module.upgrade()
+    except Exception:
+        logger.exception("Revision %s failed: rolling it back", revision.revision)
+        conn.rollback()
+        _roll_back(conn, context, revision)
+        raise
+    _stamp(conn, context, script, revision.revision, commit=False)
+    conn.execute(text("DELETE FROM SETTINGS WHERE NAME = 'SCHEMA_UPGRADE_STEP'"))
+    conn.commit()
+    logger.info("Revision %s applied", revision.revision)
+
+
+def _roll_back(conn: Connection, context: MigrationContext, revision: Script) -> None:
+    """Undo a revision; if this fails, it stays marked and the next run tries again."""
+    with Operations.context(context):
+        revision.module.downgrade()
+    conn.execute(text("DELETE FROM SETTINGS WHERE NAME = 'SCHEMA_UPGRADE_STEP'"))
+    conn.commit()
+    logger.info("Revision %s rolled back", revision.revision)
+
+
+def _set_marker(conn: Connection, revision: str) -> None:
+    conn.execute(
+        text(
+            "INSERT INTO SETTINGS (NAME, \"VALUE\") VALUES ('SCHEMA_UPGRADE_STEP', :rev)"
+        ),
+        {"rev": revision},
+    )
+    conn.commit()
+
+
+def _stamp(
+    conn: Connection,
+    context: MigrationContext,
+    script: ScriptDirectory,
+    revision: str,
+    *,
+    commit: bool = True,
+) -> None:
+    """
+    Record the database as at `revision`. The version table is created
+    first, committed on its own: Firebird can use a table only once its
+    creation is committed.
+    """
+    if not context.get_current_heads():
+        # Stamping the base creates the version table and adds no row.
+        context.stamp(script, "base")
+        conn.commit()
+    context.stamp(script, revision)
+    if commit:
+        conn.commit()
+
+
 def _create_functions(conn: Connection) -> None:
-    with conn.cursor() as cur:
-        for ddl in FUNCTIONS.values():
-            cur.execute(ddl)
+    for ddl in FUNCTIONS.values():
+        # As the driver's own SQL: in text(), PSQL's :VARIABLE references
+        # would be taken for bound parameters.
+        conn.exec_driver_sql(ddl)
     conn.commit()

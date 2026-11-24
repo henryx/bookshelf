@@ -12,7 +12,7 @@ from flask import Flask
 from playwright.sync_api import Page, expect
 from werkzeug.serving import make_server
 
-from bookshelf.db import get_db
+from bookshelf.db import get_session
 from bookshelf.models.users import Role, User, create_user
 
 
@@ -48,7 +48,9 @@ def reader_page(page: Page, live_server: str, user: User, password: str) -> Page
 @pytest.fixture
 def admin(db_app: Flask, password: str) -> User:
     with db_app.app_context():
-        return create_user(get_db(), "admin@example.com", password, role=Role.ADMIN)
+        return create_user(
+            get_session(), "admin@example.com", password, role=Role.ADMIN
+        )
 
 
 @pytest.fixture

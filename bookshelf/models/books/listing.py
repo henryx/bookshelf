@@ -1,11 +1,31 @@
 """The catalogue and collection lists, and finding one book."""
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import replace
+from datetime import datetime
 from uuid import UUID
 
-from firebird.driver import Connection, Cursor
+from sqlalchemy import (
+    Boolean,
+    ColumnElement,
+    Select,
+    String,
+    and_,
+    func,
+    literal,
+    select,
+)
+from sqlalchemy.orm import InstrumentedAttribute, Session, selectinload
+from sqlalchemy.sql.elements import Label, UnaryExpression
+from sqlalchemy.sql.selectable import ScalarSelect
 
+from bookshelf.db.orm import (
+    AuthorRow,
+    BookAuthorRow,
+    BookRow,
+    CollectionBookRow,
+    UUIDBytes,
+)
 from bookshelf.models.books.isbn import isbn_searches
 from bookshelf.models.books.model import (
     PAGE_SIZE,
@@ -14,230 +34,234 @@ from bookshelf.models.books.model import (
     Book,
     BookDetails,
     BookPage,
-    Query,
     Sort,
 )
 
-# Search: title, any author's "name surname" or ISBN contains the text,
-# ignoring case; the BOOK_MATCHES function (db/schema.py) holds the
-# condition, with the parameters from _search_params. The list queries count
-# the matches themselves: this one is only for a page past the last.
-_COUNT_QUERY = """
-    SELECT COUNT(*) FROM BOOKS b
-    WHERE BOOK_MATCHES(b.ID, b.TITLE, b.ISBN, ?, ?, ?, ?)
-"""
-
-# One page of books, then a row per author (one with NULL for a book without
-# authors), in the page's order and each book's author order, with the
-# current user's copies (NULL when the book is not in their collection) and,
-# last, the number of books matching the search on every page (TOTAL), so
-# the one scan the search needs also counts them.
-_LIST_QUERIES: dict[Sort, str] = {
-    Sort.TITLE: """
-        SELECT p.ID, p.TITLE, p.PUBLICATION_YEAR, cb.COPIES, cb.IS_READ, a.NAME, a.SURNAME, a.ID, p.TOTAL
-        FROM (
-            SELECT b.ID, b.TITLE, b.PUBLICATION_YEAR, COUNT(*) OVER () AS TOTAL
-            FROM BOOKS b
-            WHERE BOOK_MATCHES(b.ID, b.TITLE, b.ISBN, ?, ?, ?, ?)
-            ORDER BY b.TITLE, b.ID
-            OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
-        ) p
-        LEFT JOIN COLLECTION_BOOKS cb ON cb.BOOK_ID = p.ID AND cb.USER_ID = ?
-        LEFT JOIN BOOK_AUTHORS ba ON ba.BOOK_ID = p.ID
-        LEFT JOIN AUTHORS a ON a.ID = ba.AUTHOR_ID
-        ORDER BY p.TITLE, p.ID, ba.SORT_ORDER
-    """,
-    # By first author's surname, then name; books without authors last.
-    Sort.AUTHOR: """
-        SELECT p.ID, p.TITLE, p.PUBLICATION_YEAR, cb.COPIES, cb.IS_READ, a.NAME, a.SURNAME, a.ID, p.TOTAL
-        FROM (
-            SELECT b.ID, b.TITLE, b.PUBLICATION_YEAR, COUNT(*) OVER () AS TOTAL,
-                   (SELECT FIRST 1 fa.SURNAME
-                    FROM BOOK_AUTHORS fba JOIN AUTHORS fa ON fa.ID = fba.AUTHOR_ID
-                    WHERE fba.BOOK_ID = b.ID ORDER BY fba.SORT_ORDER) AS FIRST_SURNAME,
-                   (SELECT FIRST 1 fa.NAME
-                    FROM BOOK_AUTHORS fba JOIN AUTHORS fa ON fa.ID = fba.AUTHOR_ID
-                    WHERE fba.BOOK_ID = b.ID ORDER BY fba.SORT_ORDER) AS FIRST_NAME
-            FROM BOOKS b
-            WHERE BOOK_MATCHES(b.ID, b.TITLE, b.ISBN, ?, ?, ?, ?)
-            ORDER BY FIRST_SURNAME NULLS LAST, FIRST_NAME, b.TITLE, b.ID
-            OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
-        ) p
-        LEFT JOIN COLLECTION_BOOKS cb ON cb.BOOK_ID = p.ID AND cb.USER_ID = ?
-        LEFT JOIN BOOK_AUTHORS ba ON ba.BOOK_ID = p.ID
-        LEFT JOIN AUTHORS a ON a.ID = ba.AUTHOR_ID
-        ORDER BY p.FIRST_SURNAME NULLS LAST, p.FIRST_NAME, p.TITLE, p.ID, ba.SORT_ORDER
-    """,
-    # Newest first.
-    Sort.ADDED: """
-        SELECT p.ID, p.TITLE, p.PUBLICATION_YEAR, cb.COPIES, cb.IS_READ, a.NAME, a.SURNAME, a.ID, p.TOTAL
-        FROM (
-            SELECT b.ID, b.TITLE, b.PUBLICATION_YEAR, b.CREATED_AT,
-                   COUNT(*) OVER () AS TOTAL
-            FROM BOOKS b
-            WHERE BOOK_MATCHES(b.ID, b.TITLE, b.ISBN, ?, ?, ?, ?)
-            ORDER BY b.CREATED_AT DESC, b.ID
-            OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
-        ) p
-        LEFT JOIN COLLECTION_BOOKS cb ON cb.BOOK_ID = p.ID AND cb.USER_ID = ?
-        LEFT JOIN BOOK_AUTHORS ba ON ba.BOOK_ID = p.ID
-        LEFT JOIN AUTHORS a ON a.ID = ba.AUTHOR_ID
-        ORDER BY p.CREATED_AT DESC, p.ID, ba.SORT_ORDER
-    """,
-}
-
-# The same search as _COUNT_QUERY, in one user's collection; also only for a
-# page past the last.
-_COLLECTION_COUNT_QUERY = """
-    SELECT COUNT(*) FROM BOOKS b
-    JOIN COLLECTION_BOOKS cb ON cb.BOOK_ID = b.ID
-    WHERE cb.USER_ID = ?
-      AND BOOK_MATCHES(b.ID, b.TITLE, b.ISBN, ?, ?, ?, ?)
-"""
-
-# As _LIST_QUERIES, in one user's collection. "Date added" is the date the
-# book entered the catalogue: collections do not record when a book joined.
-_COLLECTION_QUERIES: dict[Sort, str] = {
-    Sort.TITLE: """
-        SELECT p.ID, p.TITLE, p.PUBLICATION_YEAR, p.COPIES, p.IS_READ, a.NAME, a.SURNAME, a.ID, p.TOTAL
-        FROM (
-            SELECT b.ID, b.TITLE, b.PUBLICATION_YEAR, cb.COPIES, cb.IS_READ,
-                   COUNT(*) OVER () AS TOTAL
-            FROM BOOKS b
-            JOIN COLLECTION_BOOKS cb ON cb.BOOK_ID = b.ID
-            WHERE cb.USER_ID = ?
-              AND BOOK_MATCHES(b.ID, b.TITLE, b.ISBN, ?, ?, ?, ?)
-            ORDER BY b.TITLE, b.ID
-            OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
-        ) p
-        LEFT JOIN BOOK_AUTHORS ba ON ba.BOOK_ID = p.ID
-        LEFT JOIN AUTHORS a ON a.ID = ba.AUTHOR_ID
-        ORDER BY p.TITLE, p.ID, ba.SORT_ORDER
-    """,
-    Sort.AUTHOR: """
-        SELECT p.ID, p.TITLE, p.PUBLICATION_YEAR, p.COPIES, p.IS_READ, a.NAME, a.SURNAME, a.ID, p.TOTAL
-        FROM (
-            SELECT b.ID, b.TITLE, b.PUBLICATION_YEAR, cb.COPIES, cb.IS_READ,
-                   COUNT(*) OVER () AS TOTAL,
-                   (SELECT FIRST 1 fa.SURNAME
-                    FROM BOOK_AUTHORS fba JOIN AUTHORS fa ON fa.ID = fba.AUTHOR_ID
-                    WHERE fba.BOOK_ID = b.ID ORDER BY fba.SORT_ORDER) AS FIRST_SURNAME,
-                   (SELECT FIRST 1 fa.NAME
-                    FROM BOOK_AUTHORS fba JOIN AUTHORS fa ON fa.ID = fba.AUTHOR_ID
-                    WHERE fba.BOOK_ID = b.ID ORDER BY fba.SORT_ORDER) AS FIRST_NAME
-            FROM BOOKS b
-            JOIN COLLECTION_BOOKS cb ON cb.BOOK_ID = b.ID
-            WHERE cb.USER_ID = ?
-              AND BOOK_MATCHES(b.ID, b.TITLE, b.ISBN, ?, ?, ?, ?)
-            ORDER BY FIRST_SURNAME NULLS LAST, FIRST_NAME, b.TITLE, b.ID
-            OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
-        ) p
-        LEFT JOIN BOOK_AUTHORS ba ON ba.BOOK_ID = p.ID
-        LEFT JOIN AUTHORS a ON a.ID = ba.AUTHOR_ID
-        ORDER BY p.FIRST_SURNAME NULLS LAST, p.FIRST_NAME, p.TITLE, p.ID, ba.SORT_ORDER
-    """,
-    Sort.ADDED: """
-        SELECT p.ID, p.TITLE, p.PUBLICATION_YEAR, p.COPIES, p.IS_READ, a.NAME, a.SURNAME, a.ID, p.TOTAL
-        FROM (
-            SELECT b.ID, b.TITLE, b.PUBLICATION_YEAR, b.CREATED_AT, cb.COPIES, cb.IS_READ,
-                   COUNT(*) OVER () AS TOTAL
-            FROM BOOKS b
-            JOIN COLLECTION_BOOKS cb ON cb.BOOK_ID = b.ID
-            WHERE cb.USER_ID = ?
-              AND BOOK_MATCHES(b.ID, b.TITLE, b.ISBN, ?, ?, ?, ?)
-            ORDER BY b.CREATED_AT DESC, b.ID
-            OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
-        ) p
-        LEFT JOIN BOOK_AUTHORS ba ON ba.BOOK_ID = p.ID
-        LEFT JOIN AUTHORS a ON a.ID = ba.AUTHOR_ID
-        ORDER BY p.CREATED_AT DESC, p.ID, ba.SORT_ORDER
-    """,
-}
-
-# One book, a row per author as in the lists, with the user's copies.
-_FIND_BOOK_QUERY = """
-    SELECT b.ID, b.TITLE, b.PUBLICATION_YEAR, cb.COPIES, cb.IS_READ, a.NAME, a.SURNAME, a.ID
-    FROM BOOKS b
-    LEFT JOIN COLLECTION_BOOKS cb ON cb.BOOK_ID = b.ID AND cb.USER_ID = ?
-    LEFT JOIN BOOK_AUTHORS ba ON ba.BOOK_ID = b.ID
-    LEFT JOIN AUTHORS a ON a.ID = ba.AUTHOR_ID
-    WHERE b.ID = ?
-    ORDER BY ba.SORT_ORDER
-"""
-
-_FIND_BOOK_BY_ISBN_QUERY = """
-    SELECT b.ID, b.TITLE, b.PUBLICATION_YEAR, cb.COPIES, cb.IS_READ, a.NAME, a.SURNAME, a.ID
-    FROM BOOKS b
-    LEFT JOIN COLLECTION_BOOKS cb ON cb.BOOK_ID = b.ID AND cb.USER_ID = ?
-    LEFT JOIN BOOK_AUTHORS ba ON ba.BOOK_ID = b.ID
-    LEFT JOIN AUTHORS a ON a.ID = ba.AUTHOR_ID
-    WHERE b.ISBN = ?
-    ORDER BY ba.SORT_ORDER
-"""
-
-
-def _search_params(
-    search: str, author_id: UUID | None
-) -> tuple[str, str, str, bytes | None]:
-    """BOOK_MATCHES's search parameters: the text, the ISBN texts, the author."""
-    return search, *isbn_searches(search), author_id.bytes if author_id else None
-
-
-# ID, TITLE, PUBLICATION_YEAR, the user's COPIES and IS_READ, then one author's
-# NAME, SURNAME, ID.
+# A book list's row: ID, TITLE, PUBLICATION_YEAR, the user's COPIES and
+# IS_READ, then one author's NAME, SURNAME, ID (all None for a book without
+# authors).
 type _BookRow = tuple[
-    bytes,
-    str,
-    int | None,
-    int | None,
-    bool | None,
-    str | None,
-    str | None,
-    bytes | None,
+    UUID, str, int | None, int | None, bool | None, str | None, str | None, UUID | None
 ]
+# A list page's query: _BookRow's columns, then the total. The author's
+# columns are None for a book without authors (an outer join), which their
+# types cannot tell.
+type _PageQuery = Select[
+    UUID, str, int | None, int | None, bool | None, str, str, UUID, int
+]
+# A column a list is sorted by, and one in its order.
+type _SortColumn = (
+    ColumnElement[str]
+    | ColumnElement[str | None]
+    | ColumnElement[datetime]
+    | ColumnElement[UUID]
+)
+type _SortKey = (
+    _SortColumn
+    | UnaryExpression[str]
+    | UnaryExpression[str | None]
+    | UnaryExpression[datetime]
+    | UnaryExpression[UUID]
+)
 
 
-def _books(rows: list[_BookRow]) -> list[Book]:
+def _matches(search: str, author_id: UUID | None) -> ColumnElement[bool]:
+    """
+    The search: title, any author's "name surname" or ISBN contains the
+    text, ignoring case, and, with `author_id`, only that author's books. The
+    BOOK_MATCHES function (db/schema.py) holds the condition.
+    """
+    isbn, isbn_13 = isbn_searches(search)
+    return func.BOOK_MATCHES(
+        BookRow.id,
+        BookRow.title,
+        BookRow.isbn,
+        literal(search, String(SEARCH_MAX_LENGTH)),
+        literal(isbn, String(SEARCH_MAX_LENGTH)),
+        literal(isbn_13, String(SEARCH_MAX_LENGTH)),
+        literal(author_id, UUIDBytes),
+        type_=Boolean,
+    )
+
+
+def _first_author(column: InstrumentedAttribute[str]) -> ScalarSelect[str]:
+    """The book's first author's `column` (NAME or SURNAME); None without authors."""
+    return (
+        select(column)
+        .select_from(BookAuthorRow)
+        .join(AuthorRow, AuthorRow.id == BookAuthorRow.author_id)
+        .where(BookAuthorRow.book_id == BookRow.id)
+        .order_by(BookAuthorRow.sort_order)
+        .limit(1)
+        .scalar_subquery()
+    )
+
+
+def _sort_columns(sort: Sort) -> list[Label[str] | Label[datetime]]:
+    """The columns a page of books adds for `sort`, labelled."""
+    match sort:
+        case Sort.TITLE:
+            return []
+        case Sort.AUTHOR:
+            return [
+                _first_author(AuthorRow.surname).label("first_surname"),
+                _first_author(AuthorRow.name).label("first_name"),
+            ]
+        case Sort.ADDED:
+            return [BookRow.created_at.label("created_at")]
+
+
+def _order(sort: Sort, column: Callable[[str], _SortColumn]) -> list[_SortKey]:
+    """The order of `sort`, on the columns `column` gives by name."""
+    match sort:
+        case Sort.TITLE:
+            return [column("title"), column("id")]
+        case Sort.AUTHOR:
+            # By first author's surname, then name; books without authors last.
+            return [
+                column("first_surname").nulls_last(),
+                column("first_name"),
+                column("title"),
+                column("id"),
+            ]
+        case Sort.ADDED:
+            # Newest first.
+            return [column("created_at").desc(), column("id")]
+
+
+def _list_query(
+    user_id: UUID,
+    search: str,
+    sort: Sort,
+    author_id: UUID | None,
+    *,
+    collection: bool,
+) -> Callable[[int, int], _PageQuery]:
+    """
+    The query for one page of books at an offset: a page of books, then a
+    row per author, in the page's order and each book's author order, with
+    the current user's copies and, last, the number of books matching the
+    search on every page (TOTAL), so the one scan the search needs also
+    counts them. With `collection`, only the books in the user's collection.
+    """
+
+    def query(offset: int, page_size: int) -> _PageQuery:
+        sort_columns = {column.name: column for column in _sort_columns(sort)}
+        page_query = select(
+            BookRow.id,
+            BookRow.title,
+            BookRow.publication_year,
+            func.count().over().label("total"),
+            *sort_columns.values(),
+        ).where(_matches(search, author_id))
+        if collection:
+            page_query = (
+                page_query.add_columns(
+                    CollectionBookRow.copies, CollectionBookRow.is_read
+                )
+                .join(CollectionBookRow, CollectionBookRow.book_id == BookRow.id)
+                .where(CollectionBookRow.user_id == user_id)
+            )
+        page = (
+            page_query.order_by(
+                *_order(
+                    sort,
+                    lambda name: (
+                        sort_columns[name]
+                        if name in sort_columns
+                        else getattr(BookRow, name)
+                    ),
+                )
+            )
+            .offset(offset)
+            .limit(page_size)
+            .subquery("p")
+        )
+        copies, is_read = (
+            (page.c.copies, page.c.is_read)
+            if collection
+            else (CollectionBookRow.copies, CollectionBookRow.is_read)
+        )
+        rows = select(
+            page.c.id,
+            page.c.title,
+            page.c.publication_year,
+            copies,
+            is_read,
+            AuthorRow.name,
+            AuthorRow.surname,
+            AuthorRow.id,
+            page.c.total,
+        ).select_from(page)
+        if not collection:
+            rows = rows.outerjoin(
+                CollectionBookRow,
+                and_(
+                    CollectionBookRow.book_id == page.c.id,
+                    CollectionBookRow.user_id == user_id,
+                ),
+            )
+        return (
+            rows.outerjoin(BookAuthorRow, BookAuthorRow.book_id == page.c.id)
+            .outerjoin(AuthorRow, AuthorRow.id == BookAuthorRow.author_id)
+            .order_by(
+                *_order(sort, lambda name: page.c[name]), BookAuthorRow.sort_order
+            )
+        )
+
+    return query
+
+
+def _count_query(
+    user_id: UUID, search: str, author_id: UUID | None, *, collection: bool
+) -> Select[int]:
+    """The number of books a list's search matches: only for a page past the last."""
+    query = select(func.count()).select_from(BookRow).where(_matches(search, author_id))
+    if collection:
+        query = query.join(
+            CollectionBookRow, CollectionBookRow.book_id == BookRow.id
+        ).where(CollectionBookRow.user_id == user_id)
+    return query
+
+
+def _books(rows: Iterable[_BookRow]) -> list[Book]:
     """Group the per-author rows into books, keeping their order."""
-    books: dict[bytes, Book] = {}
+    books: dict[UUID, Book] = {}
     for book_id, title, year, copies, read, name, surname, author_id in rows:
         book = books.get(book_id) or Book(
-            UUID(bytes=book_id), title, (), year, copies, read=bool(read)
+            book_id, title, (), year, copies, read=bool(read)
         )
         if surname is not None and author_id is not None:
-            author = Author(name or "", surname, id=UUID(bytes=author_id))
+            author = Author(name or "", surname, id=author_id)
             book = replace(book, authors=(*book.authors, author))
         books[book_id] = book
     return list(books.values())
 
 
 def _book_page(
-    cur: Cursor,
-    list_query: Callable[[int], Query],
-    count_query: Query,
+    session: Session,
+    list_query: Callable[[int, int], _PageQuery],
+    count_query: Select[int],
     page: int,
     page_size: int,
 ) -> BookPage:
     """
-    One page of books from `list_query` (the query and its parameters for an
-    offset), whose rows end with the total. A page out of range gives the
-    nearest existing page; only then is `count_query` run, to find it.
+    One page of books from `list_query` (the query for an offset), whose rows
+    end with the total. A page out of range gives the nearest existing page;
+    only then is `count_query` run, to find it.
     """
     page = max(page, 1)
-    cur.execute(*list_query((page - 1) * page_size))
-    rows = cur.fetchall()
+    rows = session.execute(list_query((page - 1) * page_size, page_size)).all()
     if not rows and page > 1:
-        cur.execute(*count_query)
-        (total,) = cur.fetchone()
+        total = session.scalar(count_query) or 0
         page = BookPage([], total, 1, page_size).pages
-        cur.execute(*list_query((page - 1) * page_size))
-        rows = cur.fetchall()
+        rows = session.execute(list_query((page - 1) * page_size, page_size)).all()
     total = rows[0][-1] if rows else 0
     return BookPage(_books([row[:-1] for row in rows]), total, page, page_size)
 
 
 def list_books(
-    conn: Connection,
+    session: Session,
     user_id: UUID,
     search: str = "",
     sort: Sort = Sort.TITLE,
@@ -252,25 +276,11 @@ def list_books(
     with the copies `user_id` owns of each book. A page out of range gives
     the nearest existing page.
     """
-    search = search.strip()
-    if len(search) > SEARCH_MAX_LENGTH:
-        return BookPage([], 0, 1, page_size)
-    params = _search_params(search, author_id)
-    with conn.cursor() as cur:
-        return _book_page(
-            cur,
-            lambda offset: (
-                _LIST_QUERIES[sort],
-                (*params, offset, page_size, user_id.bytes),
-            ),
-            (_COUNT_QUERY, params),
-            page,
-            page_size,
-        )
+    return _list(session, user_id, search, sort, page, author_id, page_size, False)
 
 
 def list_collection(
-    conn: Connection,
+    session: Session,
     user_id: UUID,
     search: str = "",
     sort: Sort = Sort.TITLE,
@@ -279,73 +289,99 @@ def list_collection(
     author_id: UUID | None = None,
     page_size: int = PAGE_SIZE,
 ) -> BookPage:
-    """One page of the books in `user_id`'s collection, as list_books."""
+    """
+    One page of the books in `user_id`'s collection, as list_books. "Date
+    added" is the date the book entered the catalogue: collections do not
+    record when a book joined.
+    """
+    return _list(session, user_id, search, sort, page, author_id, page_size, True)
+
+
+def _list(
+    session: Session,
+    user_id: UUID,
+    search: str,
+    sort: Sort,
+    page: int,
+    author_id: UUID | None,
+    page_size: int,
+    collection: bool,
+) -> BookPage:
     search = search.strip()
     if len(search) > SEARCH_MAX_LENGTH:
         return BookPage([], 0, 1, page_size)
-    params = (user_id.bytes, *_search_params(search, author_id))
-    with conn.cursor() as cur:
-        return _book_page(
-            cur,
-            lambda offset: (_COLLECTION_QUERIES[sort], (*params, offset, page_size)),
-            (_COLLECTION_COUNT_QUERY, params),
-            page,
-            page_size,
-        )
-
-
-def find_book(conn: Connection, user_id: UUID, book_id: UUID) -> Book | None:
-    """The catalogue book `book_id`, with the copies `user_id` owns; None if unknown."""
-    with conn.cursor() as cur:
-        cur.execute(_FIND_BOOK_QUERY, (user_id.bytes, book_id.bytes))
-        books = _books(cur.fetchall())
-    return books[0] if books else None
-
-
-def find_book_details(conn: Connection, book_id: UUID) -> BookDetails | None:
-    """Every field of the catalogue book `book_id`; None if unknown."""
-    with conn.cursor() as cur:
-        cur.execute(
-            "SELECT b.TITLE, b.ISBN, b.PUBLISHER, b.PUBLICATION_YEAR, b.SERIES, "
-            "b.VOLUME, b.PLOT, "
-            "(SELECT COUNT(*) FROM COLLECTION_BOOKS cb WHERE cb.BOOK_ID = b.ID) "
-            "FROM BOOKS b WHERE b.ID = ?",
-            (book_id.bytes,),
-        )
-        row = cur.fetchone()
-        if row is None:
-            return None
-        title, isbn, publisher, year, series, volume, plot, collections = row
-        cur.execute(
-            "SELECT a.NAME, a.SURNAME FROM BOOK_AUTHORS ba "
-            "JOIN AUTHORS a ON a.ID = ba.AUTHOR_ID "
-            "WHERE ba.BOOK_ID = ? ORDER BY ba.SORT_ORDER",
-            (book_id.bytes,),
-        )
-        authors = tuple(Author(name, surname) for name, surname in cur.fetchall())
-        cur.execute(
-            "SELECT CATEGORY FROM BOOK_CATEGORIES WHERE BOOK_ID = ? ORDER BY CATEGORY",
-            (book_id.bytes,),
-        )
-        categories = tuple(category for (category,) in cur.fetchall())
-    return BookDetails(
-        id=book_id,
-        title=title,
-        authors=authors,
-        isbn=isbn,
-        publisher=publisher,
-        publication_year=year,
-        series=series,
-        volume=volume,
-        plot=plot,
-        categories=categories,
-        collections=collections,
+    return _book_page(
+        session,
+        _list_query(user_id, search, sort, author_id, collection=collection),
+        _count_query(user_id, search, author_id, collection=collection),
+        page,
+        page_size,
     )
 
 
-def find_book_by_isbn(conn: Connection, user_id: UUID, isbn: str) -> Book | None:
-    """The catalogue book with this ISBN-13, as find_book; None if there is none."""
-    with conn.cursor() as cur:
-        cur.execute(_FIND_BOOK_BY_ISBN_QUERY, (user_id.bytes, isbn))
-        books = _books(cur.fetchall())
+def _one_book(
+    session: Session, user_id: UUID, condition: ColumnElement[bool]
+) -> Book | None:
+    """The book matching `condition`, a row per author as in the lists."""
+    rows = session.execute(
+        select(
+            BookRow.id,
+            BookRow.title,
+            BookRow.publication_year,
+            CollectionBookRow.copies,
+            CollectionBookRow.is_read,
+            AuthorRow.name,
+            AuthorRow.surname,
+            AuthorRow.id,
+        )
+        .outerjoin(
+            CollectionBookRow,
+            and_(
+                CollectionBookRow.book_id == BookRow.id,
+                CollectionBookRow.user_id == user_id,
+            ),
+        )
+        .outerjoin(BookAuthorRow, BookAuthorRow.book_id == BookRow.id)
+        .outerjoin(AuthorRow, AuthorRow.id == BookAuthorRow.author_id)
+        .where(condition)
+        .order_by(BookAuthorRow.sort_order)
+    )
+    books = _books(rows)
     return books[0] if books else None
+
+
+def find_book(session: Session, user_id: UUID, book_id: UUID) -> Book | None:
+    """The catalogue book `book_id`, with the copies `user_id` owns; None if unknown."""
+    return _one_book(session, user_id, BookRow.id == book_id)
+
+
+def find_book_details(session: Session, book_id: UUID) -> BookDetails | None:
+    """Every field of the catalogue book `book_id`; None if unknown."""
+    book = session.scalars(
+        select(BookRow)
+        .where(BookRow.id == book_id)
+        .options(selectinload(BookRow.authors), selectinload(BookRow.categories))
+    ).one_or_none()
+    if book is None:
+        return None
+    collections = session.scalar(
+        select(func.count()).where(CollectionBookRow.book_id == book_id)
+    )
+    return BookDetails(
+        id=book_id,
+        title=book.title,
+        authors=tuple(Author(ba.author.name, ba.author.surname) for ba in book.authors),
+        isbn=book.isbn,
+        publisher=book.publisher,
+        publication_year=book.publication_year,
+        series=book.series,
+        volume=book.volume,
+        plot=book.plot,
+        categories=tuple(category.category for category in book.categories),
+        collections=collections or 0,
+    )
+
+
+def find_book_by_isbn(session: Session, user_id: UUID, isbn: str) -> Book | None:
+    """The catalogue book with this ISBN-13, as find_book; None if there is none."""
+    return _one_book(session, user_id, BookRow.isbn == isbn)

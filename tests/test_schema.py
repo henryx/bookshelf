@@ -1,8 +1,11 @@
 from firebird.driver import Connection
 from flask import Flask
+from raw_db import raw
 
-from bookshelf.db import get_db
-from bookshelf.db.schema import CONSTRAINTS, TABLES, init_db
+from bookshelf.db import get_engine, get_session
+from bookshelf.db.baseline import CONSTRAINTS, TABLES
+from bookshelf.db.orm import Base
+from bookshelf.db.schema import init_db
 
 
 def _columns(conn: Connection, table: str) -> list[str]:
@@ -242,26 +245,32 @@ def _function_arguments(conn: Connection, function: str) -> list[str]:
 
 def test_session_database_has_complete_schema(db_app: Flask):
     with db_app.app_context():
-        _assert_complete_schema(get_db())
+        _assert_complete_schema(raw(get_session()))
 
 
 def test_init_db_creates_complete_schema_in_empty_database(empty_db_app: Flask):
     with empty_db_app.app_context():
-        conn = get_db()
+        init_db(get_engine())
 
-        init_db(conn)
-
-        _assert_complete_schema(conn)
+        _assert_complete_schema(raw(get_session()))
 
 
 def test_init_db_can_run_again(empty_db_app: Flask):
     with empty_db_app.app_context():
-        conn = get_db()
-        init_db(conn)
+        init_db(get_engine())
 
-        init_db(conn)
+        init_db(get_engine())
 
-        _assert_complete_schema(conn)
+        _assert_complete_schema(raw(get_session()))
+
+
+def test_orm_mapping_matches_the_schema(db_app: Flask):
+    """Every mapped table and column is in the schema the migrations make."""
+    with db_app.app_context():
+        conn = raw(get_session())
+        for table in Base.metadata.sorted_tables:
+            columns = _columns(conn, table.name.upper())
+            assert sorted(c.name.upper() for c in table.columns) == sorted(columns)
 
 
 def test_constraints_are_kept_out_of_table_creation():

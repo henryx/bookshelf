@@ -7,11 +7,13 @@ from concurrent.futures import ThreadPoolExecutor
 from uuid import uuid4
 
 import pytest
-from firebird.driver import DatabaseError, connect
+from firebird.driver import connect
 from flask import Flask
 from flask.testing import FlaskClient
+from raw_db import raw
+from sqlalchemy.exc import DBAPIError
 
-from bookshelf.db import get_db
+from bookshelf.db import get_session
 from bookshelf.models.books import (
     Author,
     InvalidIsbnError,
@@ -54,14 +56,14 @@ def _post(client: FlaskClient, **fields: str):
 
 
 def _scalar(app: Flask, sql: str, params: tuple[object, ...] = ()) -> object:
-    with app.app_context(), get_db().cursor() as cur:
+    with app.app_context(), raw(get_session()).cursor() as cur:
         cur.execute(sql, params)
         row = cur.fetchone()
     return row[0] if row else None
 
 
 def _rows(app: Flask, sql: str, params: tuple[object, ...] = ()) -> list[tuple]:
-    with app.app_context(), get_db().cursor() as cur:
+    with app.app_context(), raw(get_session()).cursor() as cur:
         cur.execute(sql, params)
         return cur.fetchall()
 
@@ -375,11 +377,13 @@ def test_add_book_explains_an_isbn_in_scientific_notation(db_app, client):
 
 def test_add_book_model_returns_id_listed_in_catalogue(db_app, user):
     with db_app.app_context():
-        conn = get_db()
+        session = get_session()
         book_id = add_book(
-            conn, user.id, NewBook(title="Dune", authors=(Author("Frank", "Herbert"),))
+            session,
+            user.id,
+            NewBook(title="Dune", authors=(Author("Frank", "Herbert"),)),
         )
-        books = list_books(conn, user.id).books
+        books = list_books(session, user.id).books
 
     assert [(b.id, b.title, b.authors) for b in books] == [
         (book_id, "Dune", (Author("Frank", "Herbert"),))
@@ -393,8 +397,8 @@ def test_add_book_uses_author_added_concurrently(db_app, user):
     """
     cfg = db_app.config
     with db_app.app_context():
-        conn = get_db()
-        with conn.cursor() as cur:
+        session = get_session()
+        with raw(session).cursor() as cur:
             # Start this request's transaction, as loading the user does.
             cur.execute("SELECT COUNT(*) FROM AUTHORS")
             cur.fetchone()
@@ -414,11 +418,13 @@ def test_add_book_uses_author_added_concurrently(db_app, user):
             other.commit()
 
         add_book(
-            conn, user.id, NewBook(title="Dune", authors=(Author("FRANK", "HERBERT"),))
+            session,
+            user.id,
+            NewBook(title="Dune", authors=(Author("FRANK", "HERBERT"),)),
         )
         # The book was added in its own transaction: end the old snapshot.
-        conn.rollback()
-        books = list_books(conn, user.id).books
+        session.rollback()
+        books = list_books(session, user.id).books
 
     assert [(b.title, b.authors) for b in books] == [
         ("Dune", (Author("Frank", "Herbert"),))
@@ -462,7 +468,7 @@ def test_add_book_uses_author_committed_while_inserting(db_app, user, other_conn
     def add() -> None:
         with db_app.app_context():
             add_book(
-                get_db(),
+                get_session(),
                 user.id,
                 NewBook(title="Dune", authors=(Author("FRANK", "HERBERT"),)),
             )
@@ -490,8 +496,8 @@ def test_add_book_passes_on_unexpected_database_errors(
     fail_statement(statement)
     book = NewBook("Dune", (Author("Frank", "Herbert"),), isbn="9780441172719")
 
-    with db_app.app_context(), pytest.raises(DatabaseError, match="deadlock"):
-        add_book(get_db(), user.id, book)
+    with db_app.app_context(), pytest.raises(DBAPIError, match="deadlock"):
+        add_book(get_session(), user.id, book)
 
     assert _scalar(db_app, "SELECT COUNT(*) FROM BOOKS") == 0
     assert _scalar(db_app, "SELECT COUNT(*) FROM AUTHORS") == 0

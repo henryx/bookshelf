@@ -2,8 +2,9 @@ from collections.abc import Callable
 
 import pytest
 from flask import Flask
+from raw_db import raw
 
-from bookshelf.db import get_db
+from bookshelf.db import get_session
 from bookshelf.models.books import NewBook, add_book
 from bookshelf.models.users import (
     AuthMethod,
@@ -31,7 +32,7 @@ def test_create_admin(db_app: Flask):
 
     assert rv.exit_code == 0, rv.output
     with db_app.app_context():
-        admin = find_by_email(get_db(), "admin@example.com")
+        admin = find_by_email(get_session(), "admin@example.com")
     assert admin is not None
     assert admin.role is Role.ADMIN
 
@@ -44,7 +45,7 @@ def test_create_admin_does_not_accept_password_option(db_app: Flask):
     assert rv.exit_code != 0
     assert "No such option" in rv.output
     with db_app.app_context():
-        assert find_by_email(get_db(), "admin@example.com") is None
+        assert find_by_email(get_session(), "admin@example.com") is None
 
 
 def test_create_admin_rejects_existing_email(db_app: Flask, user: User):
@@ -89,7 +90,7 @@ NEW_PASSWORD = "new-password-1"
 @pytest.fixture
 def admin(db_app: Flask) -> User:
     with db_app.app_context():
-        return create_user(get_db(), ADMIN_EMAIL, ADMIN_PASSWORD, role=Role.ADMIN)
+        return create_user(get_session(), ADMIN_EMAIL, ADMIN_PASSWORD, role=Role.ADMIN)
 
 
 def _reset(
@@ -106,9 +107,9 @@ def test_reset_user_password(db_app: Flask, admin: User, user: User, password: s
 
     assert rv.exit_code == 0, rv.output
     with db_app.app_context():
-        conn = get_db()
-        assert authenticate(conn, user.email, NEW_PASSWORD) is not None
-        assert authenticate(conn, user.email, password) is None
+        session = get_session()
+        assert authenticate(session, user.email, NEW_PASSWORD) is not None
+        assert authenticate(session, user.email, password) is None
 
 
 def test_reset_user_password_prompts_for_admin_email(
@@ -130,7 +131,7 @@ def test_reset_user_password_rejects_wrong_admin_password(
     assert rv.exit_code != 0
     assert "Invalid admin credentials" in rv.output
     with db_app.app_context():
-        assert authenticate(get_db(), user.email, password) is not None
+        assert authenticate(get_session(), user.email, password) is not None
 
 
 def test_reset_user_password_rejects_non_admin(
@@ -178,11 +179,11 @@ def test_lock_user(db_app: Flask, admin: User, user: User, password: str):
 
     assert rv.exit_code == 0, rv.output
     with db_app.app_context():
-        conn = get_db()
-        locked = find_by_email(conn, user.email)
+        session = get_session()
+        locked = find_by_email(session, user.email)
         assert locked is not None
         assert locked.is_locked
-        assert authenticate(conn, user.email, password) is None
+        assert authenticate(session, user.email, password) is None
 
 
 def test_unlock_user(
@@ -198,7 +199,7 @@ def test_unlock_user(
 
     assert rv.exit_code == 0, rv.output
     with db_app.app_context():
-        assert authenticate(get_db(), user.email, password) is not None
+        assert authenticate(get_session(), user.email, password) is not None
 
 
 @pytest.mark.parametrize("command", ["lock-user", "unlock-user"])
@@ -216,7 +217,7 @@ def test_lock_commands_reject_non_admin(
     db_app: Flask, user: User, password: str, command: str
 ):
     with db_app.app_context():
-        other = create_user(get_db(), "other@example.com", NEW_PASSWORD)
+        other = create_user(get_session(), "other@example.com", NEW_PASSWORD)
 
     rv = db_app.test_cli_runner().invoke(
         args=[command, other.email, "--admin-email", user.email],
@@ -241,7 +242,7 @@ def test_admin_cannot_lock_themselves(db_app: Flask, admin: User):
     assert rv.exit_code != 0
     assert "cannot lock your own account" in rv.output
     with db_app.app_context():
-        assert authenticate(get_db(), ADMIN_EMAIL, ADMIN_PASSWORD) is not None
+        assert authenticate(get_session(), ADMIN_EMAIL, ADMIN_PASSWORD) is not None
 
 
 def test_list_users(
@@ -290,7 +291,7 @@ def _delete(db_app: Flask, email: str, admin_password: str, confirm: str = "y"):
 
 def _exists(db_app: Flask, email: str) -> bool:
     with db_app.app_context():
-        return find_by_email(get_db(), email) is not None
+        return find_by_email(get_session(), email) is not None
 
 
 def test_delete_user(db_app: Flask, admin: User, user: User):
@@ -329,7 +330,7 @@ def test_delete_user_rejects_wrong_admin_password(
 
 def test_delete_user_rejects_non_admin(db_app: Flask, user: User, password: str):
     with db_app.app_context():
-        other = create_user(get_db(), "other@example.com", NEW_PASSWORD)
+        other = create_user(get_session(), "other@example.com", NEW_PASSWORD)
 
     rv = db_app.test_cli_runner().invoke(
         args=["delete-user", other.email, "--admin-email", user.email],
@@ -370,8 +371,8 @@ def test_create_user(db_app: Flask, admin: User):
 
     assert rv.exit_code == 0, rv.output
     with db_app.app_context():
-        conn = get_db()
-        created = authenticate(conn, "new.reader@example.com", "user-password")
+        session = get_session()
+        created = authenticate(session, "new.reader@example.com", "user-password")
     assert created is not None
     assert created.role is Role.REGULAR
 
@@ -407,7 +408,7 @@ def test_promote_user(db_app: Flask, admin: User, user: User, password: str):
 
     assert rv.exit_code == 0, rv.output
     with db_app.app_context():
-        promoted = find_by_email(get_db(), user.email)
+        promoted = find_by_email(get_session(), user.email)
     assert promoted is not None
     assert promoted.role is Role.ADMIN
 
@@ -433,7 +434,7 @@ def test_promote_user_rejects_wrong_admin_password(
     assert rv.exit_code != 0
     assert "Invalid admin credentials" in rv.output
     with db_app.app_context():
-        unchanged = find_by_email(get_db(), user.email)
+        unchanged = find_by_email(get_session(), user.email)
     assert unchanged is not None
     assert unchanged.role is Role.REGULAR
 
@@ -457,7 +458,7 @@ def test_promote_user_rejects_unknown_email(db_app: Flask, admin: User):
 
 def _role(db_app: Flask, email: str) -> Role:
     with db_app.app_context():
-        found = find_by_email(get_db(), email)
+        found = find_by_email(get_session(), email)
     assert found is not None
     return found.role
 
@@ -465,7 +466,7 @@ def _role(db_app: Flask, email: str) -> Role:
 def test_demote_user(db_app: Flask, admin: User, password: str):
     with db_app.app_context():
         other = create_user(
-            get_db(), "other.admin@example.com", password, role=Role.ADMIN
+            get_session(), "other.admin@example.com", password, role=Role.ADMIN
         )
 
     rv = _run_as_admin(db_app, "demote-user", other.email, ADMIN_PASSWORD)
@@ -494,7 +495,7 @@ def test_demote_user_rejects_wrong_admin_password(
 ):
     with db_app.app_context():
         other = create_user(
-            get_db(), "other.admin@example.com", password, role=Role.ADMIN
+            get_session(), "other.admin@example.com", password, role=Role.ADMIN
         )
 
     rv = _run_as_admin(db_app, "demote-user", other.email, "wrong")
@@ -526,7 +527,7 @@ def test_demote_user_rejects_unknown_email(db_app: Flask, admin: User):
 
 def _skip_existence_check(monkeypatch: pytest.MonkeyPatch) -> None:
     """Simulate a user created by someone else after the CLI checked."""
-    monkeypatch.setattr("bookshelf.cli.find_by_email", lambda conn, email: None)
+    monkeypatch.setattr("bookshelf.cli.find_by_email", lambda session, email: None)
 
 
 def test_create_user_reports_user_created_concurrently(
@@ -574,18 +575,18 @@ def test_create_user_rejects_invalid_email(db_app: Flask, admin: User):
 
 def _add_failure(app: Flask, email: str, minutes_ago: int) -> None:
     with app.app_context():
-        conn = get_db()
-        with conn.cursor() as cur:
+        session = get_session()
+        with raw(session).cursor() as cur:
             cur.execute(
                 "INSERT INTO LOGIN_FAILURES (EMAIL, IP_ADDRESS, ATTEMPTED_AT) "
                 "VALUES (?, ?, DATEADD(? MINUTE TO CURRENT_TIMESTAMP))",
                 (email, "192.0.2.1", -minutes_ago),
             )
-        conn.commit()
+        session.commit()
 
 
 def _failure_emails(app: Flask) -> list[str]:
-    with app.app_context(), get_db().cursor() as cur:
+    with app.app_context(), raw(get_session()).cursor() as cur:
         cur.execute("SELECT EMAIL FROM LOGIN_FAILURES ORDER BY EMAIL")
         return [email for (email,) in cur.fetchall()]
 
@@ -625,7 +626,9 @@ def test_create_admin_reprompts_for_short_password(db_app: Flask):
     assert rv.exit_code == 0, rv.output
     assert "at least 12 characters" in rv.output
     with db_app.app_context():
-        assert authenticate(get_db(), "admin@example.com", NEW_PASSWORD) is not None
+        assert (
+            authenticate(get_session(), "admin@example.com", NEW_PASSWORD) is not None
+        )
 
 
 def test_create_user_refuses_short_password(db_app: Flask, admin: User):
@@ -644,7 +647,7 @@ def test_reset_user_password_refuses_short_password(
     assert rv.exit_code != 0
     assert "at least 12 characters" in rv.output
     with db_app.app_context():
-        assert authenticate(get_db(), user.email, password) is not None
+        assert authenticate(get_session(), user.email, password) is not None
 
 
 def test_new_password_uses_configured_min_length(db_app: Flask, admin: User):
@@ -674,7 +677,9 @@ def test_removing_the_only_admin_left_is_refused(
     target: str,
 ):
     with db_app.app_context():
-        other = create_user(get_db(), "second@example.com", password, role=Role.ADMIN)
+        other = create_user(
+            get_session(), "second@example.com", password, role=Role.ADMIN
+        )
     monkeypatch.setattr(f"bookshelf.cli.{target}", _last_admin)
 
     args = [command, other.email, "--admin-email", ADMIN_EMAIL]
@@ -691,12 +696,12 @@ def test_removing_the_only_admin_left_is_refused(
 
 def _google_user(db_app: Flask, email: str = "gina@example.com") -> User:
     with db_app.app_context():
-        return create_user(get_db(), email, None, auth_method=AuthMethod.GOOGLE)
+        return create_user(get_session(), email, None, auth_method=AuthMethod.GOOGLE)
 
 
 def _find(db_app: Flask, email: str) -> User:
     with db_app.app_context():
-        user = find_by_email(get_db(), email)
+        user = find_by_email(get_session(), email)
     assert user is not None
     return user
 
@@ -751,7 +756,7 @@ def test_set_auth_method_to_local_asks_for_a_password(db_app: Flask, admin: User
     assert rv.exit_code == 0, rv.output
     assert f"{google.email} now logs in with a password" in rv.output
     with db_app.app_context():
-        assert authenticate(get_db(), google.email, NEW_PASSWORD) is not None
+        assert authenticate(get_session(), google.email, NEW_PASSWORD) is not None
 
 
 def test_set_auth_method_requires_admin(db_app: Flask, user: User, password: str):
@@ -793,8 +798,8 @@ def test_list_users_shows_google_users(db_app: Flask, admin: User):
 def target(db_app: Flask) -> User:
     """A user owning Ulysses, to copy collections to."""
     with db_app.app_context():
-        target = create_user(get_db(), "target@example.com", NEW_PASSWORD)
-        add_book(get_db(), target.id, NewBook("Ulysses"))
+        target = create_user(get_session(), "target@example.com", NEW_PASSWORD)
+        add_book(get_session(), target.id, NewBook("Ulysses"))
     return target
 
 
@@ -802,13 +807,13 @@ def target(db_app: Flask) -> User:
 def user_books(db_app: Flask, user: User) -> None:
     """`user` owns Dune (2 copies) and Emma."""
     with db_app.app_context():
-        add_book(get_db(), user.id, NewBook("Dune"), copies=2)
-        add_book(get_db(), user.id, NewBook("Emma"))
+        add_book(get_session(), user.id, NewBook("Dune"), copies=2)
+        add_book(get_session(), user.id, NewBook("Emma"))
 
 
 def _owned(app: Flask, user: User) -> dict[str, int]:
     """The titles in the user's collection, with their copies."""
-    with app.app_context(), get_db().cursor() as cur:
+    with app.app_context(), raw(get_session()).cursor() as cur:
         cur.execute(
             "SELECT b.TITLE, cb.COPIES FROM COLLECTION_BOOKS cb "
             "JOIN BOOKS b ON b.ID = cb.BOOK_ID WHERE cb.USER_ID = ?",

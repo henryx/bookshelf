@@ -6,7 +6,7 @@ import pytest
 from flask import Flask
 from playwright.sync_api import Locator, Page, expect
 
-from bookshelf.db import get_db
+from bookshelf.db import get_session
 from bookshelf.models.books import Author, NewBook, add_book
 from bookshelf.models.users import User, create_user
 
@@ -15,20 +15,20 @@ from bookshelf.models.users import User, create_user
 def books(db_app: Flask, user: User, password: str) -> None:
     """Penguin's "101 storie zen", and two catalogue books called "Dune"."""
     with db_app.app_context():
-        conn = get_db()
+        session = get_session()
         add_book(
-            conn,
+            session,
             user.id,
             NewBook(
                 "101 storie zen", (Author("Nyogen", "Senzaki"),), publisher="Penguin"
             ),
         )
-        other = create_user(conn, "other@example.com", password)
+        other = create_user(session, "other@example.com", password)
         for author, isbn in [
             (Author("Frank", "Herbert"), "9780441172719"),
             (Author("Brian", "Herbert"), "9780765312884"),
         ]:
-            add_book(conn, other.id, NewBook("Dune", (author,), isbn=isbn))
+            add_book(session, other.id, NewBook("Dune", (author,), isbn=isbn))
 
 
 def _open_add_book(page: Page) -> Locator:

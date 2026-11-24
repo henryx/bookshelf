@@ -10,7 +10,7 @@ import pytest
 from flask import Flask
 from flask.testing import FlaskClient
 
-from bookshelf.db import get_db
+from bookshelf.db import get_session
 from bookshelf.models.books import NewBook, add_book
 from bookshelf.models.users import User, create_user
 
@@ -42,8 +42,10 @@ def test_add_form_has_a_scan_button_and_its_dialog(client, path):
 
 def test_a_picked_book_has_no_scan_button(db_app: Flask, client, password):
     with db_app.app_context():
-        other = create_user(get_db(), "other@example.com", password)
-        book_id = add_book(get_db(), other.id, NewBook("Dune", isbn="9780441172719"))
+        other = create_user(get_session(), "other@example.com", password)
+        book_id = add_book(
+            get_session(), other.id, NewBook("Dune", isbn="9780441172719")
+        )
 
     html = client.get(f"/books/new?book={book_id}", headers=HTMX).get_data(as_text=True)
 

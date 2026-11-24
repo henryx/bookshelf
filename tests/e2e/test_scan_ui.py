@@ -10,7 +10,7 @@ import pytest
 from flask import Flask
 from playwright.sync_api import ConsoleMessage, Page, Request, expect
 
-from bookshelf.db import get_db
+from bookshelf.db import get_session
 from bookshelf.models.books import NewBook, add_book
 from bookshelf.models.users import User
 
@@ -116,7 +116,7 @@ def _expect_camera_stopped(page: Page) -> None:
 def dune(db_app: Flask, user: User) -> None:
     """Dune is in the user's collection: looking its ISBN up says so, offline."""
     with db_app.app_context():
-        add_book(get_db(), user.id, NewBook("Dune", isbn=DUNE_ISBN))
+        add_book(get_session(), user.id, NewBook("Dune", isbn=DUNE_ISBN))
 
 
 def test_zxing_reads_the_isbn_and_looks_it_up(reader_page: Page, dune):

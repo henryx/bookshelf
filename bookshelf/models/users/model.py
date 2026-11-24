@@ -7,9 +7,6 @@ from uuid import UUID
 
 from bookshelf.config import MIN_PASSWORD_LENGTH
 
-# Firebird GDS code for "violation of PRIMARY or UNIQUE KEY constraint".
-UNIQUE_KEY_VIOLATION = 335544665
-
 
 class Role(StrEnum):
     """Values allowed by the CHK_USERS_ROLE constraint on USERS.ROLE."""

@@ -9,7 +9,7 @@ from flask import Flask
 from flask.testing import FlaskClient
 
 from bookshelf import create_app
-from bookshelf.db import close_pool, get_db
+from bookshelf.db import close_pool, get_session
 from bookshelf.models.users import (
     AuthMethod,
     User,
@@ -38,7 +38,7 @@ def google_app(db_app: Flask) -> Iterator[Flask]:
 def google_user(google_app: Flask) -> User:
     with google_app.app_context():
         return create_user(
-            get_db(), "gina@example.com", None, auth_method=AuthMethod.GOOGLE
+            get_session(), "gina@example.com", None, auth_method=AuthMethod.GOOGLE
         )
 
 
@@ -120,7 +120,7 @@ def test_a_google_user_logs_in_and_is_bound(
     assert rv.headers["Location"] == "/"
     assert _logged_in(client)
     with google_app.app_context():
-        bound = find_by_id(get_db(), google_user.id)
+        bound = find_by_id(get_session(), google_user.id)
     assert bound is not None and bound.google_subject == "google-sub-1"
 
 
@@ -165,7 +165,7 @@ def test_a_locked_google_user_is_refused(
     google_app: Flask, google_user: User, google_answers: Answer
 ):
     with google_app.app_context():
-        set_locked(get_db(), google_user, locked=True)
+        set_locked(get_session(), google_user, locked=True)
     google_answers(_claims())
     client = google_app.test_client()
 

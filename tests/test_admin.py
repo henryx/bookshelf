@@ -5,8 +5,9 @@ from uuid import uuid4
 import pytest
 from flask import Flask
 from flask.testing import FlaskClient
+from raw_db import raw
 
-from bookshelf.db import get_db
+from bookshelf.db import get_session
 from bookshelf.models.books import NewBook, add_book
 from bookshelf.models.users import (
     AuthMethod,
@@ -29,7 +30,7 @@ NEW_PASSWORD = "a-new-password"
 @pytest.fixture
 def admin(db_app: Flask) -> User:
     with db_app.app_context():
-        return create_user(get_db(), ADMIN_EMAIL, ADMIN_PASSWORD, role=Role.ADMIN)
+        return create_user(get_session(), ADMIN_EMAIL, ADMIN_PASSWORD, role=Role.ADMIN)
 
 
 @pytest.fixture
@@ -43,7 +44,7 @@ def admin_client(db_client: FlaskClient, admin: User) -> FlaskClient:
 
 def _user(app: Flask, email: str) -> User | None:
     with app.app_context():
-        return find_by_email(get_db(), email)
+        return find_by_email(get_session(), email)
 
 
 def _existing(app: Flask, email: str) -> User:
@@ -89,12 +90,12 @@ def test_demoted_admin_loses_access(
     admin_client: FlaskClient, db_app: Flask, admin: User
 ):
     with db_app.app_context():
-        conn = get_db()
-        with conn.cursor() as cur:
+        session = get_session()
+        with raw(session).cursor() as cur:
             cur.execute(
                 "UPDATE USERS SET ROLE = 'REGULAR' WHERE ID = ?", (admin.id.bytes,)
             )
-        conn.commit()
+        session.commit()
 
     assert admin_client.get("/admin/users").status_code == 403
 
@@ -127,7 +128,11 @@ def test_users_page_lists_users_linking_to_details(
 def test_users_page_shows_names(admin_client: FlaskClient, db_app: Flask):
     with db_app.app_context():
         create_user(
-            get_db(), "ada@example.com", NEW_PASSWORD, name="Ada", surname="Lovelace"
+            get_session(),
+            "ada@example.com",
+            NEW_PASSWORD,
+            name="Ada",
+            surname="Lovelace",
         )
 
     html = admin_client.get("/admin/users").get_data(as_text=True)
@@ -331,7 +336,11 @@ def test_details_page_shows_name_and_surname_filled_in(
 ):
     with db_app.app_context():
         named = create_user(
-            get_db(), "ada@example.com", NEW_PASSWORD, name="Ada", surname="Lovelace"
+            get_session(),
+            "ada@example.com",
+            NEW_PASSWORD,
+            name="Ada",
+            surname="Lovelace",
         )
 
     html = admin_client.get(_detail(named)).get_data(as_text=True)
@@ -403,9 +412,9 @@ def test_save_with_new_password(
     _save(admin_client, user, password=NEW_PASSWORD, confirm=NEW_PASSWORD)
 
     with db_app.app_context():
-        conn = get_db()
-        assert authenticate(conn, user.email, NEW_PASSWORD) is not None
-        assert authenticate(conn, user.email, password) is None
+        session = get_session()
+        assert authenticate(session, user.email, NEW_PASSWORD) is not None
+        assert authenticate(session, user.email, password) is None
 
 
 @pytest.mark.parametrize(
@@ -437,7 +446,7 @@ def test_save_rejects_bad_password_and_changes_nothing(
     unchanged = _existing(db_app, user.email)
     assert unchanged.role is Role.REGULAR
     with db_app.app_context():
-        assert authenticate(get_db(), user.email, password) is not None
+        assert authenticate(get_session(), user.email, password) is not None
 
 
 def test_save_rejects_invalid_role(
@@ -472,7 +481,7 @@ def test_own_password_change_keeps_session(
     assert rv.status_code == 302
     assert admin_client.get("/admin/users").status_code == 200
     with db_app.app_context():
-        assert authenticate(get_db(), ADMIN_EMAIL, NEW_PASSWORD) is not None
+        assert authenticate(get_session(), ADMIN_EMAIL, NEW_PASSWORD) is not None
 
 
 # Delete
@@ -552,7 +561,9 @@ def test_demotion_refused_when_no_other_admin_would_remain(
     monkeypatch: pytest.MonkeyPatch,
 ):
     with db_app.app_context():
-        other = create_user(get_db(), "second@example.com", password, role=Role.ADMIN)
+        other = create_user(
+            get_session(), "second@example.com", password, role=Role.ADMIN
+        )
     monkeypatch.setattr("bookshelf.routes.admin.update_user", _last_admin)
 
     rv = admin_client.post(_detail(other), data={"role": "REGULAR"}, headers=HTMX)
@@ -566,7 +577,7 @@ def test_demotion_refused_when_no_other_admin_would_remain(
 
 def _google_user(app: Flask, email: str = "gina@example.com") -> User:
     with app.app_context():
-        return create_user(get_db(), email, None, auth_method=AuthMethod.GOOGLE)
+        return create_user(get_session(), email, None, auth_method=AuthMethod.GOOGLE)
 
 
 def test_create_user_form_offers_google(admin_client: FlaskClient):
@@ -648,7 +659,7 @@ def test_switch_a_google_user_to_local_needs_a_password(
     )
     assert rv.status_code == 302
     with db_app.app_context():
-        assert authenticate(get_db(), google.email, NEW_PASSWORD) is not None
+        assert authenticate(get_session(), google.email, NEW_PASSWORD) is not None
 
 
 def test_editing_a_google_user_keeps_them_google(
@@ -708,8 +719,8 @@ def test_admin_cannot_switch_own_login(
 def reader(db_app: Flask, password: str) -> User:
     """Another regular user, owning Ulysses, to copy collections to."""
     with db_app.app_context():
-        reader = create_user(get_db(), "target@example.com", password)
-        add_book(get_db(), reader.id, NewBook("Ulysses", ()))
+        reader = create_user(get_session(), "target@example.com", password)
+        add_book(get_session(), reader.id, NewBook("Ulysses", ()))
     return reader
 
 
@@ -717,13 +728,13 @@ def reader(db_app: Flask, password: str) -> User:
 def user_books(db_app: Flask, user: User) -> None:
     """`user` owns Dune (2 copies) and Emma."""
     with db_app.app_context():
-        add_book(get_db(), user.id, NewBook("Dune", ()), copies=2)
-        add_book(get_db(), user.id, NewBook("Emma", ()))
+        add_book(get_session(), user.id, NewBook("Dune", ()), copies=2)
+        add_book(get_session(), user.id, NewBook("Emma", ()))
 
 
 def _owned(app: Flask, user: User) -> dict[str, int]:
     """The titles in the user's collection, with their copies."""
-    with app.app_context(), get_db().cursor() as cur:
+    with app.app_context(), raw(get_session()).cursor() as cur:
         cur.execute(
             "SELECT b.TITLE, cb.COPIES FROM COLLECTION_BOOKS cb "
             "JOIN BOOKS b ON b.ID = cb.BOOK_ID WHERE cb.USER_ID = ?",
@@ -750,9 +761,9 @@ def test_copy_collection_to_a_user_deleted_meanwhile(
 ):
     """The target is deleted after the form offering it was checked."""
 
-    def listed_then_deleted(conn):
-        users = list_users(conn)
-        delete_user(conn, reader)
+    def listed_then_deleted(session):
+        users = list_users(session)
+        delete_user(session, reader)
         return users
 
     monkeypatch.setattr("bookshelf.routes.admin.list_users", listed_then_deleted)

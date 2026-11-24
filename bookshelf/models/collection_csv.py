@@ -6,8 +6,16 @@ import re
 from dataclasses import dataclass, field
 from uuid import UUID
 
-from firebird.driver import Connection
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
+from bookshelf.db.orm import (
+    AuthorRow,
+    BookAuthorRow,
+    BookCategoryRow,
+    BookRow,
+    CollectionBookRow,
+)
 from bookshelf.models.books import (
     CATEGORY_MAX_LENGTH,
     Author,
@@ -107,39 +115,6 @@ class _Row:
     read: bool
 
 
-# Export: the user's books, then the authors and categories of all of them.
-_EXPORT_BOOKS_QUERY = """
-    SELECT b.ID, b.TITLE, b.ISBN, b.PUBLISHER, b.PUBLICATION_YEAR, b.SERIES,
-        b.VOLUME, b.PLOT, cb.COPIES, cb.IS_READ
-    FROM COLLECTION_BOOKS cb
-    JOIN BOOKS b ON b.ID = cb.BOOK_ID
-    WHERE cb.USER_ID = ?
-    ORDER BY b.TITLE, b.ID
-"""
-
-_EXPORT_AUTHORS_QUERY = """
-    SELECT ba.BOOK_ID, a.NAME, a.SURNAME
-    FROM COLLECTION_BOOKS cb
-    JOIN BOOK_AUTHORS ba ON ba.BOOK_ID = cb.BOOK_ID
-    JOIN AUTHORS a ON a.ID = ba.AUTHOR_ID
-    WHERE cb.USER_ID = ?
-    ORDER BY ba.BOOK_ID, ba.SORT_ORDER
-"""
-
-_EXPORT_CATEGORIES_QUERY = """
-    SELECT bc.BOOK_ID, bc.CATEGORY
-    FROM COLLECTION_BOOKS cb
-    JOIN BOOK_CATEGORIES bc ON bc.BOOK_ID = cb.BOOK_ID
-    WHERE cb.USER_ID = ?
-    ORDER BY bc.BOOK_ID, bc.CATEGORY
-"""
-
-# Books with this title (ignoring case: UNICODE_CI), oldest first.
-_BOOKS_BY_TITLE_QUERY = """
-    SELECT ID FROM BOOKS WHERE TITLE = ? ORDER BY CREATED_AT, ID
-"""
-
-
 def _guard(text: str) -> str:
     return f"'{text}" if text.startswith(_FORMULA_STARTS) else text
 
@@ -150,23 +125,49 @@ def _unguard(text: str) -> str:
     )
 
 
-def export_collection(conn: Connection, user_id: UUID) -> str:
+def export_collection(session: Session, user_id: UUID) -> str:
     """
     The user's collection as CSV text with COLUMNS, by title, starting with a
     byte order mark so that spreadsheets read it as UTF-8.
     """
-    with conn.cursor() as cur:
-        cur.execute(_EXPORT_BOOKS_QUERY, (user_id.bytes,))
-        books = cur.fetchall()
-        authors: dict[bytes, list[str]] = {}
-        cur.execute(_EXPORT_AUTHORS_QUERY, (user_id.bytes,))
-        for book_id, name, surname in cur.fetchall():
-            author = str(Author(name or "", surname))
-            authors.setdefault(book_id, []).append(author)
-        categories: dict[bytes, list[str]] = {}
-        cur.execute(_EXPORT_CATEGORIES_QUERY, (user_id.bytes,))
-        for book_id, category in cur.fetchall():
-            categories.setdefault(book_id, []).append(category)
+    # The user's books, then the authors and categories of all of them.
+    owned = CollectionBookRow.user_id == user_id
+    books = session.execute(
+        select(
+            BookRow.id,
+            BookRow.title,
+            BookRow.isbn,
+            BookRow.publisher,
+            BookRow.publication_year,
+            BookRow.series,
+            BookRow.volume,
+            BookRow.plot,
+            CollectionBookRow.copies,
+            CollectionBookRow.is_read,
+        )
+        .join(BookRow, BookRow.id == CollectionBookRow.book_id)
+        .where(owned)
+        .order_by(BookRow.title, BookRow.id)
+    ).all()
+    authors: dict[UUID, list[str]] = {}
+    for book_id, name, surname in session.execute(
+        select(BookAuthorRow.book_id, AuthorRow.name, AuthorRow.surname)
+        .select_from(CollectionBookRow)
+        .join(BookAuthorRow, BookAuthorRow.book_id == CollectionBookRow.book_id)
+        .join(AuthorRow, AuthorRow.id == BookAuthorRow.author_id)
+        .where(owned)
+        .order_by(BookAuthorRow.book_id, BookAuthorRow.sort_order)
+    ):
+        authors.setdefault(book_id, []).append(str(Author(name or "", surname)))
+    categories: dict[UUID, list[str]] = {}
+    for book_id, category in session.execute(
+        select(BookCategoryRow.book_id, BookCategoryRow.category)
+        .select_from(CollectionBookRow)
+        .join(BookCategoryRow, BookCategoryRow.book_id == CollectionBookRow.book_id)
+        .where(owned)
+        .order_by(BookCategoryRow.book_id, BookCategoryRow.category)
+    ):
+        categories.setdefault(book_id, []).append(category)
 
     out = io.StringIO()
     out.write("﻿")
@@ -358,20 +359,23 @@ def _same_authors(book: Book, authors: tuple[Author, ...]) -> bool:
     return keys(book.authors) == keys(authors)
 
 
-def _find_by_title(conn: Connection, user_id: UUID, book: NewBook) -> Book | None:
+def _find_by_title(session: Session, user_id: UUID, book: NewBook) -> Book | None:
     """The oldest catalogue book with the book's title and authors, ignoring case."""
-    with conn.cursor() as cur:
-        cur.execute(_BOOKS_BY_TITLE_QUERY, (book.title,))
-        ids = [UUID(bytes=book_id) for (book_id,) in cur.fetchall()]
+    # Books with this title (ignoring case: UNICODE_CI), oldest first.
+    ids = session.scalars(
+        select(BookRow.id)
+        .where(BookRow.title == book.title)
+        .order_by(BookRow.created_at, BookRow.id)
+    ).all()
     for book_id in ids:
-        found = find_book(conn, user_id, book_id)
+        found = find_book(session, user_id, book_id)
         if found is not None and _same_authors(found, book.authors):
             return found
     return None
 
 
 def _import_row(
-    conn: Connection, user_id: UUID, row: _Row, report: ImportReport
+    session: Session, user_id: UUID, row: _Row, report: ImportReport
 ) -> None:
     """
     Add the row's book to the user's collection: the catalogue book with its
@@ -379,23 +383,23 @@ def _import_row(
     """
     book = row.book
     if book.isbn:
-        found = find_book_by_isbn(conn, user_id, book.isbn)
+        found = find_book_by_isbn(session, user_id, book.isbn)
     else:
-        found = _find_by_title(conn, user_id, book)
+        found = _find_by_title(session, user_id, book)
     if found is None:
-        add_book(conn, user_id, book, row.copies, read=row.read)
+        add_book(session, user_id, book, row.copies, read=row.read)
         report.added += 1
         report.created += 1
         return
     if found.copies is None and add_to_collection(
-        conn, user_id, found.id, row.copies, read=row.read
+        session, user_id, found.id, row.copies, read=row.read
     ):
         report.added += 1
         return
     report.skipped += 1
 
 
-def import_collection(conn: Connection, user_id: UUID, text: str) -> ImportReport:
+def import_collection(session: Session, user_id: UUID, text: str) -> ImportReport:
     """
     Add the books of a CSV text (see COLUMNS) to the user's collection, each
     row on its own: a bad row is reported and the rest still imported. A
@@ -407,12 +411,11 @@ def import_collection(conn: Connection, user_id: UUID, text: str) -> ImportRepor
     report = ImportReport(ignored_columns=ignored)
     for number, values in rows:
         try:
-            _import_row(conn, user_id, _parse_row(values), report)
+            _import_row(session, user_id, _parse_row(values), report)
         except (_RowError, BookExistsError, UnknownBookError) as e:
             # The last two: another user added or deleted the book meanwhile.
             report.errors.append(f"Row {number}: {e}")
         # A new snapshot: the next row's lookups see the books add_book just
-        # committed in its own transaction, and so does the caller.
-        if conn.is_active():
-            conn.commit()
+        # committed, and so does the caller.
+        session.commit()
     return report

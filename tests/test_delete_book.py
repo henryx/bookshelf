@@ -6,11 +6,12 @@ from collections.abc import Callable
 from uuid import UUID, uuid4
 
 import pytest
-from firebird.driver import Connection, DatabaseError
+from firebird.driver import Connection
 from flask import Flask
 from flask.testing import FlaskClient
+from sqlalchemy.exc import DBAPIError
 
-from bookshelf.db import get_db
+from bookshelf.db import get_session
 from bookshelf.models.authors import list_authors
 from bookshelf.models.books import (
     Author,
@@ -35,7 +36,7 @@ JANE = Author("Jane", "Austen")
 @pytest.fixture
 def admin(db_app: Flask, password: str) -> User:
     with db_app.app_context():
-        return create_user(get_db(), "boss@example.com", password, role=Role.ADMIN)
+        return create_user(get_session(), "boss@example.com", password, role=Role.ADMIN)
 
 
 def _log_in(client: FlaskClient, user: User, password: str) -> FlaskClient:
@@ -57,21 +58,21 @@ def reader_client(db_client: FlaskClient, user: User, password: str) -> FlaskCli
 def _book(db_app: Flask, user: User, book: NewBook, *, keep: bool = False) -> UUID:
     """A catalogue book; in nobody's collection unless `keep`."""
     with db_app.app_context():
-        conn = get_db()
-        book_id = add_book(conn, user.id, book)
+        session = get_session()
+        book_id = add_book(session, user.id, book)
         if not keep:
-            remove_from_collection(conn, user.id, book_id)
+            remove_from_collection(session, user.id, book_id)
     return book_id
 
 
 def _exists(db_app: Flask, book_id: UUID) -> bool:
     with db_app.app_context():
-        return find_book_details(get_db(), book_id) is not None
+        return find_book_details(get_session(), book_id) is not None
 
 
 def _authors(db_app: Flask) -> list[Author]:
     with db_app.app_context():
-        return [e.author for e in list_authors(get_db()).authors]
+        return [e.author for e in list_authors(get_session()).authors]
 
 
 # Model
@@ -84,8 +85,8 @@ def test_delete_book_removes_it_and_authors_left_without_books(db_app, user):
     _book(db_app, user, NewBook("Emma", authors=(JANE,)))
 
     with db_app.app_context():
-        (frank,) = list_authors(get_db(), "frank").authors
-        deleted = delete_book(get_db(), dune)
+        (frank,) = list_authors(get_session(), "frank").authors
+        deleted = delete_book(get_session(), dune)
 
     assert deleted == DeletedBook("Dune", authors_deleted=(frank.id,))
     assert not _exists(db_app, dune)
@@ -96,7 +97,7 @@ def test_book_in_a_collection_cannot_be_deleted(db_app, user):
     dune = _book(db_app, user, NewBook("Dune"), keep=True)
 
     with db_app.app_context(), pytest.raises(BookInCollectionError):
-        delete_book(get_db(), dune)
+        delete_book(get_session(), dune)
 
     assert _exists(db_app, dune)
 
@@ -120,7 +121,7 @@ def test_delete_a_book_deleted_after_it_was_looked_up(
     monkeypatch.setattr(editing, "_author_ids", deleted_meanwhile)
 
     with db_app.app_context(), pytest.raises(UnknownBookError):
-        delete_book(get_db(), dune)
+        delete_book(get_session(), dune)
 
 
 def test_delete_book_passes_on_unexpected_database_errors(
@@ -130,8 +131,8 @@ def test_delete_book_passes_on_unexpected_database_errors(
     dune = _book(db_app, user, NewBook("Dune", authors=(FRANK,)))
     fail_statement("DELETE FROM BOOKS")
 
-    with db_app.app_context(), pytest.raises(DatabaseError, match="deadlock"):
-        delete_book(get_db(), dune)
+    with db_app.app_context(), pytest.raises(DBAPIError, match="deadlock"):
+        delete_book(get_session(), dune)
 
     assert _exists(db_app, dune)
     assert _authors(db_app) == [FRANK]
@@ -139,7 +140,7 @@ def test_delete_book_passes_on_unexpected_database_errors(
 
 def test_delete_an_unknown_book(db_app):
     with db_app.app_context(), pytest.raises(UnknownBookError):
-        delete_book(get_db(), uuid4())
+        delete_book(get_session(), uuid4())
 
 
 def test_delete_a_book_deleted_meanwhile_is_unknown(db_app, user, other_conn, race):
@@ -149,7 +150,7 @@ def test_delete_a_book_deleted_meanwhile_is_unknown(db_app, user, other_conn, ra
         cur.execute("DELETE FROM BOOKS WHERE ID = ?", (dune.bytes,))
 
     with pytest.raises(UnknownBookError):
-        race(lambda conn: delete_book(conn, dune), "DELETE FROM BOOKS")
+        race(lambda session: delete_book(session, dune), "DELETE FROM BOOKS")
 
 
 def test_delete_a_book_whose_author_is_removed_meanwhile(
@@ -160,7 +161,7 @@ def test_delete_a_book_whose_author_is_removed_meanwhile(
     with other_conn.cursor() as cur:
         cur.execute("DELETE FROM BOOK_AUTHORS WHERE BOOK_ID = ?", (dune.bytes,))
 
-    deleted = race(lambda conn: delete_book(conn, dune), "DELETE FROM BOOKS")
+    deleted = race(lambda session: delete_book(session, dune), "DELETE FROM BOOKS")
 
     assert deleted == DeletedBook("Dune", ())
     assert not _exists(db_app, dune)
@@ -169,8 +170,8 @@ def test_delete_a_book_whose_author_is_removed_meanwhile(
 def test_book_details_count_the_collections_holding_it(db_app, user, admin):
     dune = _book(db_app, user, NewBook("Dune"), keep=True)
     with db_app.app_context():
-        add_to_collection(get_db(), admin.id, dune)
-        details = find_book_details(get_db(), dune)
+        add_to_collection(get_session(), admin.id, dune)
+        details = find_book_details(get_session(), dune)
 
     assert details is not None
     assert details.collections == 2
@@ -233,7 +234,7 @@ def test_delete_drops_the_filter_of_an_author_now_gone(db_app, admin_client, use
     dune = _book(db_app, user, NewBook("Dune", authors=(FRANK,)))
     _book(db_app, user, NewBook("Emma", authors=(JANE,)))
     with db_app.app_context():
-        (frank,) = list_authors(get_db(), "frank").authors
+        (frank,) = list_authors(get_session(), "frank").authors
 
     rv = admin_client.post(f"/books/{dune}/delete", data={"author": str(frank.id)})
 
@@ -244,7 +245,7 @@ def test_delete_keeps_the_filter_of_an_author_still_there(db_app, admin_client, 
     dune = _book(db_app, user, NewBook("Dune", authors=(FRANK,)))
     _book(db_app, user, NewBook("Dune Messiah", authors=(FRANK,)))
     with db_app.app_context():
-        (frank,) = list_authors(get_db(), "frank").authors
+        (frank,) = list_authors(get_session(), "frank").authors
 
     rv = admin_client.post(f"/books/{dune}/delete", data={"author": str(frank.id)})
 

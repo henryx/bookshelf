@@ -6,8 +6,9 @@ import io
 import pytest
 from flask import Flask
 from flask.testing import FlaskClient
+from raw_db import raw
 
-from bookshelf.db import get_db
+from bookshelf.db import get_session
 from bookshelf.models.books import (
     Author,
     NewBook,
@@ -37,7 +38,7 @@ def client(db_client: FlaskClient, user: User, password: str) -> FlaskClient:
 @pytest.fixture
 def other(db_app: Flask, password: str) -> User:
     with db_app.app_context():
-        return create_user(get_db(), "other@example.com", password)
+        return create_user(get_session(), "other@example.com", password)
 
 
 def _rows(text: str) -> list[dict[str, str]]:
@@ -46,19 +47,19 @@ def _rows(text: str) -> list[dict[str, str]]:
 
 def _collection(app: Flask, user: User) -> list[tuple[str, int | None, bool]]:
     with app.app_context():
-        books = list_collection(get_db(), user.id).books
+        books = list_collection(get_session(), user.id).books
     return [(b.title, b.copies, b.read) for b in books]
 
 
 def _catalogue_size(app: Flask) -> int:
-    with app.app_context(), get_db().cursor() as cur:
+    with app.app_context(), raw(get_session()).cursor() as cur:
         cur.execute("SELECT COUNT(*) FROM BOOKS")
         return cur.fetchone()[0]
 
 
 def _import(app: Flask, user: User, text: str):
     with app.app_context():
-        return import_collection(get_db(), user.id, text)
+        return import_collection(get_session(), user.id, text)
 
 
 # Export
@@ -66,9 +67,9 @@ def _import(app: Flask, user: User, text: str):
 
 def test_export_writes_every_field_of_the_users_books(db_app, user, other):
     with db_app.app_context():
-        conn = get_db()
+        session = get_session()
         book_id = add_book(
-            conn,
+            session,
             user.id,
             NewBook(
                 "Good Omens",
@@ -83,9 +84,9 @@ def test_export_writes_every_field_of_the_users_books(db_app, user, other):
             ),
             copies=2,
         )
-        set_read(conn, user.id, book_id, read=True)
-        add_book(conn, other.id, NewBook("Emma"))
-        text = export_collection(conn, user.id)
+        set_read(session, user.id, book_id, read=True)
+        add_book(session, other.id, NewBook("Emma"))
+        text = export_collection(session, user.id)
 
     assert text.startswith("﻿")
     assert _rows(text) == [
@@ -107,15 +108,15 @@ def test_export_writes_every_field_of_the_users_books(db_app, user, other):
 
 def test_export_of_an_empty_collection_has_only_the_header(db_app, user):
     with db_app.app_context():
-        text = export_collection(get_db(), user.id)
+        text = export_collection(get_session(), user.id)
 
     assert text == "﻿" + HEADER.replace("\n", "\r\n")
 
 
 def test_export_neutralises_spreadsheet_formulas(db_app, user):
     with db_app.app_context():
-        add_book(get_db(), user.id, NewBook("=HYPERLINK(1)", plot="+cmd"))
-        text = export_collection(get_db(), user.id)
+        add_book(get_session(), user.id, NewBook("=HYPERLINK(1)", plot="+cmd"))
+        text = export_collection(get_session(), user.id)
 
     row = _rows(text)[0]
     assert (row["title"], row["plot"]) == ("'=HYPERLINK(1)", "'+cmd")
@@ -123,10 +124,10 @@ def test_export_neutralises_spreadsheet_formulas(db_app, user):
 
 def test_export_then_import_round_trips(db_app, user, other):
     with db_app.app_context():
-        conn = get_db()
-        add_book(conn, user.id, NewBook("=Sum", (Author("Frank", "Herbert"),)))
-        add_book(conn, user.id, NewBook("Dune", isbn="9780441013593"), copies=3)
-        text = export_collection(conn, user.id)
+        session = get_session()
+        add_book(session, user.id, NewBook("=Sum", (Author("Frank", "Herbert"),)))
+        add_book(session, user.id, NewBook("Dune", isbn="9780441013593"), copies=3)
+        text = export_collection(session, user.id)
 
     report = _import(db_app, other, text)
 
@@ -153,9 +154,9 @@ def test_import_creates_books_missing_from_the_catalogue(db_app, user):
     assert (report.added, report.created, report.errors) == (1, 1, [])
     assert _collection(db_app, user) == [("Good Omens", 2, True)]
     with db_app.app_context():
-        conn = get_db()
-        book_id = list_collection(conn, user.id).books[0].id
-        details = find_book_details(conn, book_id)
+        session = get_session()
+        book_id = list_collection(session, user.id).books[0].id
+        details = find_book_details(session, book_id)
     assert details is not None
     assert details.authors == (Author("Terry", "Pratchett"), Author("Neil", "Gaiman"))
     assert (details.isbn, details.publisher, details.publication_year) == (
@@ -168,7 +169,7 @@ def test_import_creates_books_missing_from_the_catalogue(db_app, user):
 
 def test_import_matches_a_catalogue_book_by_isbn(db_app, user, other):
     with db_app.app_context():
-        add_book(get_db(), other.id, NewBook("Dune", isbn="9780441013593"))
+        add_book(get_session(), other.id, NewBook("Dune", isbn="9780441013593"))
 
     report = _import(db_app, user, "title,isbn,copies\nAnother title,9780441013593,2\n")
 
@@ -181,9 +182,9 @@ def test_import_without_isbn_matches_title_and_authors_ignoring_case(
     db_app, user, other
 ):
     with db_app.app_context():
-        conn = get_db()
-        add_book(conn, other.id, NewBook("Dune", (Author("Frank", "Herbert"),)))
-        add_book(conn, other.id, NewBook("Emma", (Author("Jane", "Austen"),)))
+        session = get_session()
+        add_book(session, other.id, NewBook("Dune", (Author("Frank", "Herbert"),)))
+        add_book(session, other.id, NewBook("Emma", (Author("Jane", "Austen"),)))
 
     report = _import(
         db_app, user, "title,authors\nDUNE,frank  HERBERT\nEmma,Emily Brontë\n"
@@ -199,7 +200,9 @@ def test_import_without_isbn_matches_title_and_authors_ignoring_case(
 
 def test_import_skips_books_already_in_the_collection(db_app, user):
     with db_app.app_context():
-        add_book(get_db(), user.id, NewBook("Dune", isbn="9780441013593"), copies=4)
+        add_book(
+            get_session(), user.id, NewBook("Dune", isbn="9780441013593"), copies=4
+        )
 
     report = _import(
         db_app, user, "title,isbn,copies,read\nDune,9780441013593,1,yes\nDune,,,\n"
@@ -267,9 +270,9 @@ def test_import_tolerates_isbns_mangled_by_spreadsheets(db_app, user, isbn):
 
     assert report.errors == []
     with db_app.app_context():
-        conn = get_db()
-        book_id = list_collection(conn, user.id).books[0].id
-        details = find_book_details(conn, book_id)
+        session = get_session()
+        book_id = list_collection(session, user.id).books[0].id
+        details = find_book_details(session, book_id)
     assert details is not None
     assert details.isbn == "9788861924314"
 
@@ -301,7 +304,7 @@ def test_import_takes_the_year_of_a_date(db_app, user, year):
 
     assert report.errors == []
     with db_app.app_context():
-        assert list_collection(get_db(), user.id).books[0].publication_year == 1991
+        assert list_collection(get_session(), user.id).books[0].publication_year == 1991
 
 
 @pytest.mark.parametrize("year", ["12/05/91", "1991-2001", "0000-01-01", "soon"])
@@ -319,9 +322,9 @@ def test_import_takes_the_last_word_as_the_surname(db_app, user):
     )
 
     with db_app.app_context():
-        conn = get_db()
-        book_id = list_collection(conn, user.id).books[0].id
-        details = find_book_details(conn, book_id)
+        session = get_session()
+        book_id = list_collection(session, user.id).books[0].id
+        details = find_book_details(session, book_id)
     assert details is not None
     assert details.authors == (Author("Ursula K. Le", "Guin"), Author("", "Homer"))
 
@@ -329,9 +332,11 @@ def test_import_takes_the_last_word_as_the_surname(db_app, user):
 def test_import_matches_multi_word_surnames_by_full_name(db_app, user, other):
     with db_app.app_context():
         add_book(
-            get_db(), other.id, NewBook("Earthsea", (Author("Ursula K.", "Le Guin"),))
+            get_session(),
+            other.id,
+            NewBook("Earthsea", (Author("Ursula K.", "Le Guin"),)),
         )
-        text = export_collection(get_db(), other.id)
+        text = export_collection(get_session(), other.id)
 
     report = _import(db_app, user, text)
 
@@ -383,7 +388,7 @@ def test_import_refuses_too_many_rows(db_app, user, monkeypatch):
 
 def test_export_route_downloads_the_csv(client, db_app, user):
     with db_app.app_context():
-        add_book(get_db(), user.id, NewBook("Dune"))
+        add_book(get_session(), user.id, NewBook("Dune"))
 
     rv = client.get("/account/export")
 
@@ -445,7 +450,7 @@ def test_import_route_names_the_ignored_columns(client):
 
 def test_import_route_reports_skipped_books(client, db_app, user):
     with db_app.app_context():
-        add_book(get_db(), user.id, NewBook("Dune"))
+        add_book(get_session(), user.id, NewBook("Dune"))
 
     rv = _upload(client, "title\nDune\n", headers=HTMX)
 
@@ -501,7 +506,7 @@ def test_collection_page_has_no_import_or_export(client):
 
 def test_import_does_not_touch_other_users(db_app, user, other):
     with db_app.app_context():
-        add_book(get_db(), other.id, NewBook("Dune"), copies=5)
+        add_book(get_session(), other.id, NewBook("Dune"), copies=5)
 
     _import(db_app, user, "title,copies\nDune,1\n")
 

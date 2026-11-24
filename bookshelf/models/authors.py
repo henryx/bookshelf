@@ -2,16 +2,19 @@ import logging
 from dataclasses import dataclass
 from uuid import UUID
 
-from firebird.driver import (
-    Connection,
-    Cursor,
-    DatabaseError,
-    DefaultAction,
-    Isolation,
-    tpb,
-)
+from sqlalchemy import ColumnElement, Row, String, delete, func, literal, select, update
+from sqlalchemy.exc import DBAPIError
+from sqlalchemy.orm import Session
 
-from bookshelf.db import retry_after_concurrent_delete
+from bookshelf.db import (
+    FOREIGN_KEY_VIOLATION,
+    UNIQUE_KEY_VIOLATION,
+    execute_change,
+    has_gds_code,
+    read_committed,
+    retry_after_concurrent_delete,
+)
+from bookshelf.db.orm import AuthorRow, BookAuthorRow
 from bookshelf.models.books import PAGE_SIZE, SEARCH_MAX_LENGTH, Author
 
 __all__ = [
@@ -24,10 +27,6 @@ __all__ = [
     "rename_author",
 ]
 
-# Firebird GDS codes for "violation of PRIMARY or UNIQUE KEY constraint" and
-# "violation of FOREIGN KEY constraint".
-_UNIQUE_KEY_VIOLATION = 335544665
-_FOREIGN_KEY_VIOLATION = 335544466
 # Renames tried when another author takes the name and gives it up again.
 _RENAME_TRIES = 10
 
@@ -75,31 +74,32 @@ class Renamed:
     merged: bool
 
 
-# Search: the author's "name surname" contains the text, ignoring case.
-_COUNT_QUERY = """
-    SELECT COUNT(*) FROM AUTHORS a
-    WHERE (a.NAME || ' ' || a.SURNAME) CONTAINING CAST(? AS VARCHAR(255))
-"""
-
-_LIST_QUERY = """
-    SELECT a.ID, a.NAME, a.SURNAME,
-           (SELECT COUNT(*) FROM BOOK_AUTHORS ba WHERE ba.AUTHOR_ID = a.ID)
-    FROM AUTHORS a
-    WHERE (a.NAME || ' ' || a.SURNAME) CONTAINING CAST(? AS VARCHAR(255))
-    ORDER BY a.SURNAME, a.NAME, a.ID
-    OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
-"""
-
-type _AuthorRow = tuple[bytes, str, str, int]
+def _matches(search: str) -> ColumnElement[bool]:
+    """The author's "name surname" contains the text, ignoring case."""
+    full_name = AuthorRow.name + literal(" ", String(1)) + AuthorRow.surname
+    return full_name.op("CONTAINING", is_comparison=True)(
+        literal(search, String(SEARCH_MAX_LENGTH))
+    )
 
 
-def _entry(row: _AuthorRow) -> AuthorEntry:
+# An author's ID, NAME, SURNAME and the number of their books.
+_ENTRY_COLUMNS = (
+    AuthorRow.id,
+    AuthorRow.name,
+    AuthorRow.surname,
+    select(func.count())
+    .where(BookAuthorRow.author_id == AuthorRow.id)
+    .scalar_subquery(),
+)
+
+
+def _entry(row: Row[UUID, str, str, int]) -> AuthorEntry:
     author_id, name, surname, books = row
-    return AuthorEntry(UUID(bytes=author_id), Author(name, surname), books)
+    return AuthorEntry(author_id, Author(name, surname), books)
 
 
 def list_authors(
-    conn: Connection, search: str = "", page: int = 1, *, page_size: int = PAGE_SIZE
+    session: Session, search: str = "", page: int = 1, *, page_size: int = PAGE_SIZE
 ) -> AuthorPage:
     """
     One page of the authors, by surname then name, filtered by `search`
@@ -109,49 +109,50 @@ def list_authors(
     search = search.strip()
     if len(search) > SEARCH_MAX_LENGTH:
         return AuthorPage([], 0, 1, page_size)
-    with conn.cursor() as cur:
-        cur.execute(_COUNT_QUERY, (search,))
-        (total,) = cur.fetchone()
-        page = min(max(page, 1), AuthorPage([], total, 1, page_size).pages)
-        cur.execute(_LIST_QUERY, (search, (page - 1) * page_size, page_size))
-        return AuthorPage(
-            [_entry(row) for row in cur.fetchall()], total, page, page_size
-        )
+    total = session.scalar(select(func.count()).where(_matches(search))) or 0
+    page = min(max(page, 1), AuthorPage([], total, 1, page_size).pages)
+    rows = session.execute(
+        select(*_ENTRY_COLUMNS)
+        .where(_matches(search))
+        .order_by(AuthorRow.surname, AuthorRow.name, AuthorRow.id)
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
+    return AuthorPage([_entry(row) for row in rows], total, page, page_size)
 
 
-def find_author(conn: Connection, author_id: UUID) -> AuthorEntry | None:
-    with conn.cursor() as cur:
-        cur.execute(
-            "SELECT a.ID, a.NAME, a.SURNAME, "
-            "(SELECT COUNT(*) FROM BOOK_AUTHORS ba WHERE ba.AUTHOR_ID = a.ID) "
-            "FROM AUTHORS a WHERE a.ID = ?",
-            (author_id.bytes,),
-        )
-        row = cur.fetchone()
+def find_author(session: Session, author_id: UUID) -> AuthorEntry | None:
+    row = session.execute(
+        select(*_ENTRY_COLUMNS).where(AuthorRow.id == author_id)
+    ).one_or_none()
     return _entry(row) if row else None
 
 
 def _namesake(
-    cur: Cursor, author_id: UUID, author: Author
-) -> tuple[bytes, Author] | None:
+    session: Session, author_id: UUID, author: Author
+) -> tuple[UUID, Author] | None:
     """Another author with this name and surname (ignoring case), as stored."""
-    cur.execute(
-        "SELECT ID, NAME, SURNAME FROM AUTHORS WHERE SURNAME = ? AND NAME = ? AND ID <> ?",
-        (author.surname, author.name, author_id.bytes),
-    )
-    row = cur.fetchone()
-    return (row[0], Author(row[1], row[2])) if row else None
+    row = session.execute(
+        select(AuthorRow.id, AuthorRow.name, AuthorRow.surname).where(
+            AuthorRow.surname == author.surname,
+            AuthorRow.name == author.name,
+            AuthorRow.id != author_id,
+        )
+    ).first()
+    return (row.id, Author(row.name, row.surname)) if row else None
 
 
-def _rename(cur: Cursor, author_id: UUID, author: Author) -> bool:
+def _rename(session: Session, author_id: UUID, author: Author) -> bool:
     """Give the author this name; False if another author took it meanwhile."""
     try:
-        cur.execute(
-            "UPDATE AUTHORS SET NAME = ?, SURNAME = ? WHERE ID = ?",
-            (author.name, author.surname, author_id.bytes),
+        result = execute_change(
+            session,
+            update(AuthorRow)
+            .where(AuthorRow.id == author_id)
+            .values(name=author.name, surname=author.surname),
         )
-    except DatabaseError as e:
-        if _UNIQUE_KEY_VIOLATION not in e.gds_codes:
+    except DBAPIError as e:
+        if not has_gds_code(e, UNIQUE_KEY_VIOLATION):
             raise
         logger.info(
             "Author %s: %r was created meanwhile, merging into it",
@@ -159,41 +160,48 @@ def _rename(cur: Cursor, author_id: UUID, author: Author) -> bool:
             str(author),
         )
         return False
-    if cur.affected_rows == 0:
+    if result.rowcount == 0:
         raise UnknownAuthorError(author_id)
     return True
 
 
-def _merge(cur: Cursor, author_id: UUID, into: bytes) -> None:
+def _merge(session: Session, author_id: UUID, into: UUID) -> None:
     """
     Give the author's books to the author `into` and delete the author. A
     book that has both keeps `into`, in its own place.
     """
-    cur.execute(
-        "DELETE FROM BOOK_AUTHORS WHERE AUTHOR_ID = ? AND BOOK_ID IN ("
-        "SELECT BOOK_ID FROM BOOK_AUTHORS WHERE AUTHOR_ID = ?)",
-        (author_id.bytes, into),
+    books_of_into = select(BookAuthorRow.book_id).where(BookAuthorRow.author_id == into)
+    execute_change(
+        session,
+        delete(BookAuthorRow).where(
+            BookAuthorRow.author_id == author_id,
+            BookAuthorRow.book_id.in_(books_of_into),
+        ),
     )
-    cur.execute(
-        "UPDATE BOOK_AUTHORS SET AUTHOR_ID = ? WHERE AUTHOR_ID = ?",
-        (into, author_id.bytes),
+    execute_change(
+        session,
+        update(BookAuthorRow)
+        .where(BookAuthorRow.author_id == author_id)
+        .values(author_id=into),
     )
     try:
-        cur.execute("DELETE FROM AUTHORS WHERE ID = ?", (author_id.bytes,))
-    except DatabaseError as e:
+        result = execute_change(
+            session, delete(AuthorRow).where(AuthorRow.id == author_id)
+        )
+    except DBAPIError as e:
         # A book being added at this moment uses it: keep it, with that book.
-        if _FOREIGN_KEY_VIOLATION not in e.gds_codes:
+        if not has_gds_code(e, FOREIGN_KEY_VIOLATION):
             raise
         logger.info(
             "Author %s kept after merging: a book being saved at this moment uses it",
             author_id,
         )
         return
-    if cur.affected_rows == 0:
+    if result.rowcount == 0:
         raise UnknownAuthorError(author_id)
 
 
-def rename_author(conn: Connection, author_id: UUID, author: Author) -> Renamed:
+def rename_author(session: Session, author_id: UUID, author: Author) -> Renamed:
     """
     Rename an author for every book, name and surname trimmed. When another
     author already has that name (ignoring case) the two are merged: their
@@ -208,27 +216,21 @@ def rename_author(conn: Connection, author_id: UUID, author: Author) -> Renamed:
     """
     author = Author(author.name.strip(), author.surname.strip())
     return retry_after_concurrent_delete(
-        lambda: _rename_author(conn, author_id, author)
+        lambda: _rename_author(session, author_id, author)
     )
 
 
-def _rename_author(conn: Connection, author_id: UUID, author: Author) -> Renamed:
-    with (
-        conn.transaction_manager(
-            tpb(Isolation.READ_COMMITTED_RECORD_VERSION),
-            default_action=DefaultAction.ROLLBACK,
-        ) as transaction,
-        transaction.cursor() as cur,
-    ):
+def _rename_author(session: Session, author_id: UUID, author: Author) -> Renamed:
+    with read_committed(session):
         for _ in range(_RENAME_TRIES):
-            namesake = _namesake(cur, author_id, author)
+            namesake = _namesake(session, author_id, author)
             if namesake is not None:
                 into, existing = namesake
-                _merge(cur, author_id, into)
-                transaction.commit()
+                _merge(session, author_id, into)
+                session.commit()
                 return Renamed(existing, merged=True)
-            if _rename(cur, author_id, author):
-                transaction.commit()
+            if _rename(session, author_id, author):
+                session.commit()
                 return Renamed(author, merged=False)
             # Another author took the name meanwhile: merge into them, or try
             # the rename again if they have already given it up.

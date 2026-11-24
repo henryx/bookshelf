@@ -2,12 +2,15 @@
 
 from uuid import uuid4
 
-from firebird.driver import Connection, Cursor, DatabaseError
+from sqlalchemy import delete, insert, update
+from sqlalchemy.exc import DBAPIError
+from sqlalchemy.orm import Session
 
+from bookshelf.db import UNIQUE_KEY_VIOLATION, execute_change, has_gds_code
+from bookshelf.db.orm import UserRow
 from bookshelf.models.users.listing import row_to_user
 from bookshelf.models.users.model import (
     MIN_PASSWORD_LENGTH,
-    UNIQUE_KEY_VIOLATION,
     AuthMethod,
     LastAdminError,
     NoPasswordError,
@@ -21,7 +24,7 @@ from bookshelf.models.users.passwords import credentials, hash_password
 
 
 def create_user(
-    conn: Connection,
+    session: Session,
     email: str,
     password: str | None,
     *,
@@ -41,35 +44,30 @@ def create_user(
     """
     email = normalise_email(email)
     password_hash = credentials(email, auth_method, password, min_password_length)
-    with conn.cursor() as cur:
-        try:
-            cur.execute(
-                "INSERT INTO USERS "
-                "(ID, EMAIL, PASSWORD_HASH, ROLE, NAME, SURNAME, AUTH_METHOD) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?) "
-                "RETURNING ID, EMAIL, PASSWORD_HASH, ROLE, IS_LOCKED, NAME, SURNAME, "
-                "AUTH_METHOD, GOOGLE_SUBJECT",
-                (
-                    uuid4().bytes,
-                    email,
-                    password_hash,
-                    role.value,
-                    name,
-                    surname,
-                    auth_method.value,
-                ),
+    try:
+        row = session.scalars(
+            insert(UserRow)
+            .values(
+                id=uuid4(),
+                email=email,
+                password_hash=password_hash,
+                role=role.value,
+                name=name,
+                surname=surname,
+                auth_method=auth_method.value,
             )
-        except DatabaseError as e:
-            if UNIQUE_KEY_VIOLATION in e.gds_codes:
-                raise UserExistsError(email) from e
-            raise
-        row = cur.fetchone()
-    conn.commit()
+            .returning(UserRow)
+        ).one()
+    except DBAPIError as e:
+        if has_gds_code(e, UNIQUE_KEY_VIOLATION):
+            raise UserExistsError(email) from e
+        raise
+    session.commit()
     return row_to_user(row)
 
 
 def set_password(
-    conn: Connection,
+    session: Session,
     user: User,
     password: str,
     *,
@@ -82,16 +80,17 @@ def set_password(
     if user.auth_method is AuthMethod.GOOGLE:
         raise NoPasswordError(user.email)
     validate_new_password(password, min_length=min_password_length)
-    with conn.cursor() as cur:
-        cur.execute(
-            "UPDATE USERS SET PASSWORD_HASH = ? WHERE ID = ?",
-            (hash_password(password), user.id.bytes),
-        )
-    conn.commit()
+    execute_change(
+        session,
+        update(UserRow)
+        .where(UserRow.id == user.id)
+        .values(password_hash=hash_password(password)),
+    )
+    session.commit()
 
 
 def set_auth_method(
-    conn: Connection,
+    session: Session,
     user: User,
     auth_method: AuthMethod,
     *,
@@ -105,16 +104,27 @@ def set_auth_method(
     missing).
     """
     password_hash = credentials(user.email, auth_method, password, min_password_length)
-    with conn.cursor() as cur:
-        cur.execute(
-            "UPDATE USERS SET AUTH_METHOD = ?, PASSWORD_HASH = ?, GOOGLE_SUBJECT = NULL "
-            "WHERE ID = ?",
-            (auth_method.value, password_hash, user.id.bytes),
-        )
-    conn.commit()
+    _set_credentials(session, user, auth_method, password_hash)
+    session.commit()
 
 
-def _keep_another_admin(conn: Connection, cur: Cursor, user: User) -> None:
+def _set_credentials(
+    session: Session, user: User, auth_method: AuthMethod, password_hash: str | None
+) -> None:
+    """How the user logs in; a Google user is bound again on their next login."""
+    execute_change(
+        session,
+        update(UserRow)
+        .where(UserRow.id == user.id)
+        .values(
+            auth_method=auth_method.value,
+            password_hash=password_hash,
+            google_subject=None,
+        ),
+    )
+
+
+def _keep_another_admin(session: Session, user: User) -> None:
     """
     Before `user` stops being an admin: raise LastAdminError (rolling back)
     unless another admin exists. The other admins' rows are updated, unchanged,
@@ -122,45 +132,44 @@ def _keep_another_admin(conn: Connection, cur: Cursor, user: User) -> None:
     then conflict, and one of them fails instead of both succeeding.
     Without an admin, the setup wizard would open to anyone.
     """
-    cur.execute(
-        "UPDATE USERS SET ROLE = ROLE WHERE ROLE = ? AND ID <> ?",
-        (Role.ADMIN.value, user.id.bytes),
+    held = execute_change(
+        session,
+        update(UserRow)
+        .where(UserRow.role == Role.ADMIN.value, UserRow.id != user.id)
+        .values(role=UserRow.role),
     )
-    if cur.affected_rows == 0:
-        conn.rollback()
+    if held.rowcount == 0:
+        session.rollback()
         raise LastAdminError(user.email)
 
 
-def delete_user(conn: Connection, user: User) -> None:
+def delete_user(session: Session, user: User) -> None:
     """Raises LastAdminError if `user` is the only admin."""
-    with conn.cursor() as cur:
-        if user.is_admin:
-            _keep_another_admin(conn, cur, user)
-        cur.execute("DELETE FROM USERS WHERE ID = ?", (user.id.bytes,))
-    conn.commit()
+    if user.is_admin:
+        _keep_another_admin(session, user)
+    execute_change(session, delete(UserRow).where(UserRow.id == user.id))
+    session.commit()
 
 
-def set_role(conn: Connection, user: User, role: Role) -> None:
+def set_role(session: Session, user: User, role: Role) -> None:
     """Raises LastAdminError when demoting the only admin."""
-    with conn.cursor() as cur:
-        if user.is_admin and role is not Role.ADMIN:
-            _keep_another_admin(conn, cur, user)
-        cur.execute(
-            "UPDATE USERS SET ROLE = ? WHERE ID = ?", (role.value, user.id.bytes)
-        )
-    conn.commit()
+    if user.is_admin and role is not Role.ADMIN:
+        _keep_another_admin(session, user)
+    execute_change(
+        session, update(UserRow).where(UserRow.id == user.id).values(role=role.value)
+    )
+    session.commit()
 
 
-def set_locked(conn: Connection, user: User, *, locked: bool) -> None:
-    with conn.cursor() as cur:
-        cur.execute(
-            "UPDATE USERS SET IS_LOCKED = ? WHERE ID = ?", (locked, user.id.bytes)
-        )
-    conn.commit()
+def set_locked(session: Session, user: User, *, locked: bool) -> None:
+    execute_change(
+        session, update(UserRow).where(UserRow.id == user.id).values(is_locked=locked)
+    )
+    session.commit()
 
 
 def update_user(
-    conn: Connection,
+    session: Session,
     user: User,
     *,
     name: str | None,
@@ -187,25 +196,21 @@ def update_user(
         if new_credentials
         else None
     )
-    with conn.cursor() as cur:
-        if user.is_admin and role is not Role.ADMIN:
-            _keep_another_admin(conn, cur, user)
-        cur.execute(
-            "UPDATE USERS SET NAME = ?, SURNAME = ?, ROLE = ?, IS_LOCKED = ? "
-            "WHERE ID = ?",
-            (name, surname, role.value, locked, user.id.bytes),
-        )
-        if new_credentials:
-            cur.execute(
-                "UPDATE USERS SET AUTH_METHOD = ?, PASSWORD_HASH = ?, "
-                "GOOGLE_SUBJECT = NULL WHERE ID = ?",
-                (auth_method.value, password_hash, user.id.bytes),
-            )
-    conn.commit()
+    if user.is_admin and role is not Role.ADMIN:
+        _keep_another_admin(session, user)
+    execute_change(
+        session,
+        update(UserRow)
+        .where(UserRow.id == user.id)
+        .values(name=name, surname=surname, role=role.value, is_locked=locked),
+    )
+    if new_credentials:
+        _set_credentials(session, user, auth_method, password_hash)
+    session.commit()
 
 
 def update_account(
-    conn: Connection,
+    session: Session,
     user: User,
     *,
     name: str | None,
@@ -222,19 +227,11 @@ def update_account(
     """
     if password is not None and user.auth_method is AuthMethod.GOOGLE:
         raise NoPasswordError(user.email)
-    if password is None:
-        with conn.cursor() as cur:
-            cur.execute(
-                "UPDATE USERS SET NAME = ?, SURNAME = ? WHERE ID = ?",
-                (name, surname, user.id.bytes),
-            )
-        conn.commit()
-        return
-
-    validate_new_password(password, min_length=min_password_length)
-    with conn.cursor() as cur:
-        cur.execute(
-            "UPDATE USERS SET NAME = ?, SURNAME = ?, PASSWORD_HASH = ? WHERE ID = ?",
-            (name, surname, hash_password(password), user.id.bytes),
-        )
-    conn.commit()
+    changes: dict[str, str | None] = {"name": name, "surname": surname}
+    if password is not None:
+        validate_new_password(password, min_length=min_password_length)
+        changes["password_hash"] = hash_password(password)
+    execute_change(
+        session, update(UserRow).where(UserRow.id == user.id).values(**changes)
+    )
+    session.commit()

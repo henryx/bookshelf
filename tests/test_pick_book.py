@@ -8,7 +8,7 @@ import pytest
 from flask import Flask
 from flask.testing import FlaskClient
 
-from bookshelf.db import get_db
+from bookshelf.db import get_session
 from bookshelf.models.books import Author, NewBook, add_book, find_book
 from bookshelf.models.users import User, create_user
 
@@ -26,12 +26,12 @@ def client(db_client: FlaskClient, user: User, password: str) -> FlaskClient:
 @pytest.fixture
 def other(db_app: Flask, password: str) -> User:
     with db_app.app_context():
-        return create_user(get_db(), "other@example.com", password)
+        return create_user(get_session(), "other@example.com", password)
 
 
 def _book(app: Flask, owner: User, book: NewBook, copies: int = 1) -> UUID:
     with app.app_context():
-        return add_book(get_db(), owner.id, book, copies=copies)
+        return add_book(get_session(), owner.id, book, copies=copies)
 
 
 @pytest.fixture
@@ -228,7 +228,7 @@ def test_posting_the_picked_book_form_adds_it(db_app, client, user, dune):
 
     assert rv.headers["HX-Redirect"] == "/"
     with db_app.app_context():
-        book = find_book(get_db(), user.id, dune)
+        book = find_book(get_session(), user.id, dune)
     assert book is not None
     assert book.copies == 2
 

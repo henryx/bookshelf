@@ -1,7 +1,7 @@
 from flask import Blueprint, abort, render_template, request
 from flask_login import login_required
 
-from bookshelf.db import get_db
+from bookshelf.db import get_session
 from bookshelf.models.books import (
     AuthorField,
     BookField,
@@ -27,7 +27,7 @@ def authors() -> str:
         field = AuthorField(request.args.get("field"))
     except ValueError:
         abort(400, description="Unknown author field.")
-    found = suggest_authors(get_db(), request.args.get("q", ""), field)
+    found = suggest_authors(get_session(), request.args.get("q", ""), field)
     return render_template("_author_suggestions.html", authors=found)
 
 
@@ -43,7 +43,7 @@ def books() -> str:
         field = BookField(request.args.get("field"))
     except ValueError:
         abort(400, description="Unknown book field.")
-    found = suggest_books(get_db(), request.args.get("q", ""), field)
+    found = suggest_books(get_session(), request.args.get("q", ""), field)
     return render_template("_book_suggestions.html", books=found, field=field)
 
 
@@ -51,7 +51,7 @@ def books() -> str:
 @login_required
 def publishers() -> str:
     """The options of the publisher's suggestion list: publishers starting with `q`."""
-    found = suggest_publishers(get_db(), request.args.get("q", ""))
+    found = suggest_publishers(get_session(), request.args.get("q", ""))
     return render_template("_publisher_suggestions.html", publishers=found)
 
 
@@ -59,5 +59,5 @@ def publishers() -> str:
 @login_required
 def categories() -> str:
     """The options of a category row's suggestion list: categories starting with `q`."""
-    found = suggest_categories(get_db(), request.args.get("q", ""))
+    found = suggest_categories(get_session(), request.args.get("q", ""))
     return render_template("_category_suggestions.html", categories=found)

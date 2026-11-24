@@ -4,7 +4,7 @@ import pytest
 from flask import Flask
 from playwright.sync_api import Locator, Page, expect
 
-from bookshelf.db import get_db
+from bookshelf.db import get_session
 from bookshelf.models.books import Author, NewBook, add_book
 from bookshelf.models.users import create_user
 
@@ -15,12 +15,12 @@ DUNE_ISBN = "9780441172719"
 def dune(db_app: Flask, password: str) -> None:
     """A catalogue book in another user's collection only."""
     with db_app.app_context():
-        conn = get_db()
-        other = create_user(conn, "other@example.com", password)
+        session = get_session()
+        other = create_user(session, "other@example.com", password)
         book = NewBook(
             "Dune", (Author("Frank", "Herbert"),), isbn=DUNE_ISBN, publisher="Chilton"
         )
-        add_book(conn, other.id, book)
+        add_book(session, other.id, book)
 
 
 def _open_add_book(page: Page) -> Locator:

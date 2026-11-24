@@ -8,7 +8,7 @@ import pytest
 from flask import Flask
 from playwright.sync_api import Dialog, Page, Route, expect
 
-from bookshelf.db import get_db
+from bookshelf.db import get_session
 from bookshelf.models.books import Author, NewBook, add_book
 from bookshelf.models.users import User
 
@@ -25,7 +25,7 @@ def herbert_book(db_app: Flask, user: User) -> None:
             publisher="Penguin",
             categories=("Science fiction",),
         )
-        add_book(get_db(), user.id, book)
+        add_book(get_session(), user.id, book)
 
 
 def _open_add_book(page: Page) -> None:
@@ -415,8 +415,8 @@ def test_back_after_a_search_shows_the_whole_list_again(
 ):
     """The search pushes its URL (hx-push-url); Back restores the list it replaced."""
     with db_app.app_context():
-        add_book(get_db(), user.id, NewBook("Dune", (Author("Frank", "Herbert"),)))
-        add_book(get_db(), user.id, NewBook("Emma", (Author("Jane", "Austen"),)))
+        add_book(get_session(), user.id, NewBook("Dune", (Author("Frank", "Herbert"),)))
+        add_book(get_session(), user.id, NewBook("Emma", (Author("Jane", "Austen"),)))
     reader_page.reload()
     books = reader_page.locator("#book-list")
     expect(books.get_by_role("link", name="Emma")).to_be_visible()

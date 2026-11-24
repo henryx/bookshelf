@@ -1,11 +1,11 @@
 import click
 from email_validator import EmailNotValidError, validate_email
-from firebird.driver import Connection
 from flask import Flask, current_app
 from flask.cli import with_appcontext
 from prettytable import PrettyTable
+from sqlalchemy.orm import Session
 
-from bookshelf.db import get_db
+from bookshelf.db import get_engine, get_session
 from bookshelf.db.schema import init_db
 from bookshelf.models.books import CopyMode, copy_collection
 from bookshelf.models.users import (
@@ -36,7 +36,7 @@ __all__ = ["init_app"]
 @with_appcontext
 def init_db_command() -> None:
     """Create missing database tables, columns, constraints and indexes."""
-    init_db(get_db())
+    init_db(get_engine())
     click.echo("Database initialised.")
 
 
@@ -45,7 +45,7 @@ def init_db_command() -> None:
 def prune_login_failures_command() -> None:
     """Delete failed logins too old to count towards a block. Safe to run from cron."""
     deleted = prune_login_failures(
-        get_db(), window_minutes=current_app.config["LOGIN_BLOCK_MINUTES"]
+        get_session(), window_minutes=current_app.config["LOGIN_BLOCK_MINUTES"]
     )
     current_app.logger.info("Pruned %d expired login failures", deleted)
     click.echo(f"Removed {deleted} expired login failures.")
@@ -81,16 +81,16 @@ def _prompt_new_password(label: str) -> str:
 @with_appcontext
 def create_admin_command(email: str) -> None:
     """Create the first admin user. Refused once any admin exists."""
-    conn = get_db()
-    if admin_exists(conn):
+    session = get_session()
+    if admin_exists(session):
         raise click.ClickException("An admin already exists")
-    if find_by_email(conn, email) is not None:
+    if find_by_email(session, email) is not None:
         raise click.ClickException(f"User {email} already exists")
 
     password = _prompt_new_password("Password")
     try:
         user = create_user(
-            conn,
+            session,
             email,
             password,
             role=Role.ADMIN,
@@ -101,20 +101,20 @@ def create_admin_command(email: str) -> None:
     click.echo(f"Admin {user.email} created.")
 
 
-def _require_admin(conn: Connection, admin_email: str, action: str) -> User:
+def _require_admin(session: Session, admin_email: str, action: str) -> User:
     """
     Prompt for the admin password and return the admin, or abort.
     """
     admin_password = click.prompt("Admin password", hide_input=True)
-    admin = authenticate(conn, admin_email, admin_password)
+    admin = authenticate(session, admin_email, admin_password)
     if admin is None or not admin.is_admin:
         current_app.logger.warning("%s refused for admin %s", action, admin_email)
         raise click.ClickException("Invalid admin credentials")
     return admin
 
 
-def _require_user(conn: Connection, email: str) -> User:
-    user = find_by_email(conn, email)
+def _require_user(session: Session, email: str) -> User:
+    user = find_by_email(session, email)
     if user is None:
         raise click.ClickException(f"User {email} not found")
     return user
@@ -148,9 +148,9 @@ def _how_they_log_in(auth_method: AuthMethod) -> str:
 @with_appcontext
 def create_user_command(email: str, auth: str, admin_email: str) -> None:
     """Create a regular user. Requires admin credentials."""
-    conn = get_db()
-    admin = _require_admin(conn, admin_email, "Create user")
-    if find_by_email(conn, email) is not None:
+    session = get_session()
+    admin = _require_admin(session, admin_email, "Create user")
+    if find_by_email(session, email) is not None:
         raise click.ClickException(f"User {email} already exists")
 
     auth_method = AuthMethod(auth.upper())
@@ -159,7 +159,7 @@ def create_user_command(email: str, auth: str, admin_email: str) -> None:
     )
     try:
         user = create_user(
-            conn,
+            session,
             email,
             password,
             auth_method=auth_method,
@@ -186,9 +186,9 @@ def set_auth_method_command(email: str, auth: str, admin_email: str) -> None:
     Make a user log in locally (a new password, asked for) or with Google.
     Ends their open sessions. Requires admin credentials.
     """
-    conn = get_db()
-    admin = _require_admin(conn, admin_email, "Set auth method")
-    user = _require_user(conn, email)
+    session = get_session()
+    admin = _require_admin(session, admin_email, "Set auth method")
+    user = _require_user(session, email)
 
     auth_method = AuthMethod(auth.upper())
     password = (
@@ -197,7 +197,7 @@ def set_auth_method_command(email: str, auth: str, admin_email: str) -> None:
         else None
     )
     set_auth_method(
-        conn,
+        session,
         user,
         auth_method,
         password=password,
@@ -218,9 +218,9 @@ def set_auth_method_command(email: str, auth: str, admin_email: str) -> None:
 @with_appcontext
 def reset_user_password_command(email: str, admin_email: str) -> None:
     """Set a new password for a user. Requires admin credentials."""
-    conn = get_db()
-    admin = _require_admin(conn, admin_email, "Password reset")
-    user = _require_user(conn, email)
+    session = get_session()
+    admin = _require_admin(session, admin_email, "Password reset")
+    user = _require_user(session, email)
     if user.auth_method is AuthMethod.GOOGLE:
         raise click.ClickException(
             f"{user.email} logs in with Google and has no password: "
@@ -228,7 +228,7 @@ def reset_user_password_command(email: str, admin_email: str) -> None:
         )
 
     password = _prompt_new_password("New password")
-    set_password(conn, user, password, min_password_length=_min_password_length())
+    set_password(session, user, password, min_password_length=_min_password_length())
     current_app.logger.info(
         "Password for %s reset by admin %s", user.email, admin.email
     )
@@ -241,14 +241,14 @@ def reset_user_password_command(email: str, admin_email: str) -> None:
 @with_appcontext
 def promote_user_command(email: str, admin_email: str) -> None:
     """Give a user the admin role. Requires admin credentials."""
-    conn = get_db()
-    admin = _require_admin(conn, admin_email, "Promote")
-    user = _require_user(conn, email)
+    session = get_session()
+    admin = _require_admin(session, admin_email, "Promote")
+    user = _require_user(session, email)
     if user.is_admin:
         click.echo(f"User {user.email} is already an admin.")
         return
 
-    set_role(conn, user, Role.ADMIN)
+    set_role(session, user, Role.ADMIN)
     current_app.logger.info("User %s promoted by admin %s", user.email, admin.email)
     click.echo(f"User {user.email} is now an admin.")
 
@@ -259,9 +259,9 @@ def promote_user_command(email: str, admin_email: str) -> None:
 @with_appcontext
 def demote_user_command(email: str, admin_email: str) -> None:
     """Remove the admin role from a user. Requires admin credentials."""
-    conn = get_db()
-    admin = _require_admin(conn, admin_email, "Demote")
-    user = _require_user(conn, email)
+    session = get_session()
+    admin = _require_admin(session, admin_email, "Demote")
+    user = _require_user(session, email)
     if user.id == admin.id:
         raise click.ClickException("You cannot demote your own account")
     if not user.is_admin:
@@ -269,7 +269,7 @@ def demote_user_command(email: str, admin_email: str) -> None:
         return
 
     try:
-        set_role(conn, user, Role.REGULAR)
+        set_role(session, user, Role.REGULAR)
     except LastAdminError as e:
         raise click.ClickException(f"{e}: it cannot be demoted") from e
     current_app.logger.info("User %s demoted by admin %s", user.email, admin.email)
@@ -282,13 +282,13 @@ def demote_user_command(email: str, admin_email: str) -> None:
 @with_appcontext
 def lock_user_command(email: str, admin_email: str) -> None:
     """Lock a user so they can no longer log in. Requires admin credentials."""
-    conn = get_db()
-    admin = _require_admin(conn, admin_email, "Lock")
-    user = _require_user(conn, email)
+    session = get_session()
+    admin = _require_admin(session, admin_email, "Lock")
+    user = _require_user(session, email)
     if user.id == admin.id:
         raise click.ClickException("You cannot lock your own account")
 
-    set_locked(conn, user, locked=True)
+    set_locked(session, user, locked=True)
     current_app.logger.info("User %s locked by admin %s", user.email, admin.email)
     click.echo(f"User {user.email} locked.")
 
@@ -299,11 +299,11 @@ def lock_user_command(email: str, admin_email: str) -> None:
 @with_appcontext
 def unlock_user_command(email: str, admin_email: str) -> None:
     """Unlock a user. Requires admin credentials."""
-    conn = get_db()
-    admin = _require_admin(conn, admin_email, "Unlock")
-    user = _require_user(conn, email)
+    session = get_session()
+    admin = _require_admin(session, admin_email, "Unlock")
+    user = _require_user(session, email)
 
-    set_locked(conn, user, locked=False)
+    set_locked(session, user, locked=False)
     current_app.logger.info("User %s unlocked by admin %s", user.email, admin.email)
     click.echo(f"User {user.email} unlocked.")
 
@@ -315,16 +315,16 @@ def unlock_user_command(email: str, admin_email: str) -> None:
 @with_appcontext
 def delete_user_command(email: str, admin_email: str, yes: bool) -> None:
     """Permanently delete a user. Requires admin credentials."""
-    conn = get_db()
-    admin = _require_admin(conn, admin_email, "Delete")
-    user = _require_user(conn, email)
+    session = get_session()
+    admin = _require_admin(session, admin_email, "Delete")
+    user = _require_user(session, email)
     if user.id == admin.id:
         raise click.ClickException("You cannot delete your own account")
     if not yes:
         click.confirm(f"Delete user {user.email}? This cannot be undone", abort=True)
 
     try:
-        delete_user(conn, user)
+        delete_user(session, user)
     except LastAdminError as e:
         raise click.ClickException(f"{e}: it cannot be deleted") from e
     current_app.logger.info("User %s deleted by admin %s", user.email, admin.email)
@@ -355,10 +355,10 @@ def copy_collection_command(
     copies and start unread; the source's collection is unchanged. Requires
     admin credentials.
     """
-    conn = get_db()
-    admin = _require_admin(conn, admin_email, "Copy collection")
-    source = _require_user(conn, source_email)
-    target = _require_user(conn, target_email)
+    session = get_session()
+    admin = _require_admin(session, admin_email, "Copy collection")
+    source = _require_user(session, source_email)
+    target = _require_user(session, target_email)
     if source.id == target.id:
         raise click.ClickException("A collection cannot be copied to its own user")
     copy_mode = CopyMode(mode.upper())
@@ -369,7 +369,7 @@ def copy_collection_command(
             abort=True,
         )
 
-    copied = copy_collection(conn, source.id, target.id, copy_mode)
+    copied = copy_collection(session, source.id, target.id, copy_mode)
     current_app.logger.info(
         "Collection of %s copied to %s (%s) by admin %s: %s",
         source.email,
@@ -389,11 +389,11 @@ def copy_collection_command(
 @with_appcontext
 def list_users_command(admin_email: str) -> None:
     """List all users. Requires admin credentials."""
-    conn = get_db()
-    _require_admin(conn, admin_email, "List users")
+    session = get_session()
+    _require_admin(session, admin_email, "List users")
 
     table = PrettyTable(["Email", "Role", "Login", "Status"], align="l")
-    for user in list_users(conn):
+    for user in list_users(session):
         status = "locked" if user.is_locked else "active"
         table.add_row(
             [user.email, user.role.value, user.auth_method.value.lower(), status]

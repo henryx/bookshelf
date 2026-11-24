@@ -4,7 +4,7 @@ import pytest
 from flask import Flask
 from flask.testing import FlaskClient
 
-from bookshelf.db import get_db
+from bookshelf.db import get_session
 from bookshelf.models.users import Role, User, create_user, find_by_email
 
 HTMX = {"HX-Request": "true"}
@@ -22,7 +22,7 @@ def setup_complete() -> None:
 
 def _admin(app: Flask, email: str = "admin@example.com") -> User | None:
     with app.app_context():
-        return find_by_email(get_db(), email)
+        return find_by_email(get_session(), email)
 
 
 def test_empty_database_redirects_to_setup(empty_db_app: Flask):
@@ -162,7 +162,9 @@ def test_setup_refused_when_admin_created_meanwhile(
     """Another visitor finished setup after this request passed the check."""
     monkeypatch.setattr("bookshelf.routes.setup.setup_needed", lambda _conn: True)
     with db_app.app_context():
-        create_user(get_db(), "first@example.com", "admin-password", role=Role.ADMIN)
+        create_user(
+            get_session(), "first@example.com", "admin-password", role=Role.ADMIN
+        )
 
     rv = db_client.post("/setup", data=ADMIN)
 
@@ -173,7 +175,9 @@ def test_setup_refused_when_admin_created_meanwhile(
 
 def test_app_with_admin_skips_setup(db_client: FlaskClient, db_app: Flask):
     with db_app.app_context():
-        create_user(get_db(), "admin@example.com", "admin-password", role=Role.ADMIN)
+        create_user(
+            get_session(), "admin@example.com", "admin-password", role=Role.ADMIN
+        )
 
     assert db_client.get("/login").status_code == 200
     assert db_client.get("/setup").status_code == 404

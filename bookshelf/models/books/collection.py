@@ -2,19 +2,33 @@
 
 from uuid import UUID
 
-from firebird.driver import (
-    Connection,
-    DatabaseError,
-    DefaultAction,
-    Isolation,
-    tpb,
+from sqlalchemy import (
+    ColumnElement,
+    Executable,
+    SmallInteger,
+    delete,
+    exists,
+    false,
+    func,
+    insert,
+    literal,
+    select,
+    update,
 )
+from sqlalchemy.exc import DBAPIError
+from sqlalchemy.orm import Session, aliased
 
-from bookshelf.db import retry_after_concurrent_delete
-from bookshelf.models.books.model import (
+from bookshelf.db import (
     FOREIGN_KEY_VIOLATION,
-    MAX_COPIES,
     UNIQUE_KEY_VIOLATION,
+    execute_change,
+    has_gds_code,
+    read_committed,
+    retry_after_concurrent_delete,
+)
+from bookshelf.db.orm import CollectionBookRow, UUIDBytes
+from bookshelf.models.books.model import (
+    MAX_COPIES,
     CopiedCollection,
     CopyMode,
     UnknownBookError,
@@ -22,7 +36,7 @@ from bookshelf.models.books.model import (
 
 
 def add_to_collection(
-    conn: Connection,
+    session: Session,
     user_id: UUID,
     book_id: UUID,
     copies: int = 1,
@@ -36,54 +50,56 @@ def add_to_collection(
     the catalogue has no such book.
     """
     try:
-        with conn.cursor() as cur:
-            cur.execute(
-                "INSERT INTO COLLECTION_BOOKS (USER_ID, BOOK_ID, COPIES, IS_READ) "
-                "VALUES (?, ?, ?, ?)",
-                (user_id.bytes, book_id.bytes, copies, read),
-            )
-    except DatabaseError as e:
-        if FOREIGN_KEY_VIOLATION in e.gds_codes:
+        execute_change(
+            session,
+            insert(CollectionBookRow).values(
+                user_id=user_id, book_id=book_id, copies=copies, is_read=read
+            ),
+        )
+    except DBAPIError as e:
+        if has_gds_code(e, FOREIGN_KEY_VIOLATION):
             raise UnknownBookError(book_id) from e
-        if UNIQUE_KEY_VIOLATION not in e.gds_codes:
+        if not has_gds_code(e, UNIQUE_KEY_VIOLATION):
             raise
         return False
-    conn.commit()
+    session.commit()
     return True
 
 
-def set_copies(conn: Connection, user_id: UUID, book_id: UUID, copies: int) -> bool:
+def set_copies(session: Session, user_id: UUID, book_id: UUID, copies: int) -> bool:
     """Set how many copies of a book the user owns; False if it is not in their collection."""
     return _change_entry(
-        conn,
-        "UPDATE COLLECTION_BOOKS SET COPIES = ? WHERE USER_ID = ? AND BOOK_ID = ?",
-        (copies, user_id.bytes, book_id.bytes),
+        session,
+        update(CollectionBookRow).where(_entry(user_id, book_id)).values(copies=copies),
     )
 
 
-def set_read(conn: Connection, user_id: UUID, book_id: UUID, *, read: bool) -> bool:
+def set_read(session: Session, user_id: UUID, book_id: UUID, *, read: bool) -> bool:
     """Mark a book in the user's collection as read or not; False if it is not there."""
     return _change_entry(
-        conn,
-        "UPDATE COLLECTION_BOOKS SET IS_READ = ? WHERE USER_ID = ? AND BOOK_ID = ?",
-        (read, user_id.bytes, book_id.bytes),
+        session,
+        update(CollectionBookRow).where(_entry(user_id, book_id)).values(is_read=read),
     )
 
 
-def remove_from_collection(conn: Connection, user_id: UUID, book_id: UUID) -> bool:
+def remove_from_collection(session: Session, user_id: UUID, book_id: UUID) -> bool:
     """
     Remove a book from the user's collection, leaving it in the catalogue.
     False if it was not there.
     """
     return _change_entry(
-        conn,
-        "DELETE FROM COLLECTION_BOOKS WHERE USER_ID = ? AND BOOK_ID = ?",
-        (user_id.bytes, book_id.bytes),
+        session, delete(CollectionBookRow).where(_entry(user_id, book_id))
+    )
+
+
+def _entry(user_id: UUID, book_id: UUID) -> ColumnElement[bool]:
+    return (CollectionBookRow.user_id == user_id) & (
+        CollectionBookRow.book_id == book_id
     )
 
 
 def copy_collection(
-    conn: Connection, source_id: UUID, target_id: UUID, mode: CopyMode
+    session: Session, source_id: UUID, target_id: UUID, mode: CopyMode
 ) -> CopiedCollection:
     """
     Copy the books of one user's collection, with their copies, into
@@ -97,78 +113,76 @@ def copy_collection(
     """
     if source_id == target_id:
         raise ValueError("A collection cannot be copied to its own user.")
-    source, target = source_id.bytes, target_id.bytes
+    # The target's entries are CollectionBookRow itself; the source's, `source`.
+    source = aliased(CollectionBookRow)
+    target = CollectionBookRow
+    source_entry = (source.user_id == source_id) & (source.book_id == target.book_id)
 
     def copy() -> CopiedCollection:
         removed = updated = 0
-        with (
-            conn.transaction_manager(
-                tpb(Isolation.READ_COMMITTED_RECORD_VERSION),
-                default_action=DefaultAction.ROLLBACK,
-            ) as transaction,
-            transaction.cursor() as cur,
-        ):
+        with read_committed(session):
             match mode:
                 case CopyMode.REPLACE:
-                    cur.execute(
-                        "DELETE FROM COLLECTION_BOOKS WHERE USER_ID = ?", (target,)
-                    )
-                    removed = cur.affected_rows
+                    removed = execute_change(
+                        session, delete(target).where(target.user_id == target_id)
+                    ).rowcount
                 case CopyMode.ADD:
-                    cur.execute(
-                        "UPDATE COLLECTION_BOOKS t SET COPIES = MINVALUE("
-                        "t.COPIES + (SELECT s.COPIES FROM COLLECTION_BOOKS s "
-                        "WHERE s.USER_ID = ? AND s.BOOK_ID = t.BOOK_ID), "
-                        "CAST(? AS SMALLINT)) "
-                        "WHERE t.USER_ID = ? AND EXISTS (SELECT 1 FROM COLLECTION_BOOKS s "
-                        "WHERE s.USER_ID = ? AND s.BOOK_ID = t.BOOK_ID)",
-                        (source, MAX_COPIES, target, source),
-                    )
-                    updated = cur.affected_rows
+                    source_copies = select(source.copies).where(source_entry)
+                    updated = execute_change(
+                        session,
+                        update(target)
+                        .where(
+                            target.user_id == target_id, exists().where(source_entry)
+                        )
+                        .values(
+                            copies=func.MINVALUE(
+                                target.copies + source_copies.scalar_subquery(),
+                                literal(MAX_COPIES, SmallInteger),
+                            )
+                        ),
+                    ).rowcount
                 case CopyMode.KEEP:
                     pass
-            cur.execute(
-                "INSERT INTO COLLECTION_BOOKS (USER_ID, BOOK_ID, COPIES, IS_READ) "
-                "SELECT CAST(? AS UUID), s.BOOK_ID, s.COPIES, FALSE "
-                "FROM COLLECTION_BOOKS s WHERE s.USER_ID = ? AND NOT EXISTS ("
-                "SELECT 1 FROM COLLECTION_BOOKS t "
-                "WHERE t.USER_ID = ? AND t.BOOK_ID = s.BOOK_ID)",
-                (target, source, target),
-            )
-            added = cur.affected_rows
-            transaction.commit()
+            # The source's books the target does not have, unread.
+            owned = aliased(CollectionBookRow)
+            added = execute_change(
+                session,
+                insert(target).from_select(
+                    ["user_id", "book_id", "copies", "is_read"],
+                    select(
+                        literal(target_id, UUIDBytes),
+                        source.book_id,
+                        source.copies,
+                        false(),
+                    ).where(
+                        source.user_id == source_id,
+                        ~exists().where(
+                            owned.user_id == target_id,
+                            owned.book_id == source.book_id,
+                        ),
+                    ),
+                ),
+            ).rowcount
+            session.commit()
         return CopiedCollection(added=added, updated=updated, removed=removed)
 
-    copied = retry_after_concurrent_delete(copy)
-    if conn.is_active():
-        conn.commit()
-    return copied
+    return retry_after_concurrent_delete(copy)
 
 
-def _change_entry(conn: Connection, sql: str, params: tuple[object, ...]) -> bool:
+def _change_entry(session: Session, statement: Executable) -> bool:
     """
-    Run `sql`, changing one user's collection entry; False if there is none,
-    even when it is being removed at this moment.
+    Run `statement`, changing one user's collection entry; False if there is
+    none, even when it is being removed at this moment.
 
     The transaction is its own and read committed, as in update_book, so it
-    sees an entry removed since the request's own transaction began. That one
-    ends too, so the request then reads the change.
+    sees an entry removed since the request's transaction began; the request
+    then reads the change.
     """
 
     def change() -> bool:
-        with (
-            conn.transaction_manager(
-                tpb(Isolation.READ_COMMITTED_RECORD_VERSION),
-                default_action=DefaultAction.ROLLBACK,
-            ) as transaction,
-            transaction.cursor() as cur,
-        ):
-            cur.execute(sql, params)
-            changed = cur.affected_rows > 0
-            transaction.commit()
+        with read_committed(session):
+            changed = execute_change(session, statement).rowcount > 0
+            session.commit()
         return changed
 
-    changed = retry_after_concurrent_delete(change)
-    if conn.is_active():
-        conn.commit()
-    return changed
+    return retry_after_concurrent_delete(change)

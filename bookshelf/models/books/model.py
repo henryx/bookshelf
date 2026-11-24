@@ -4,11 +4,6 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from uuid import UUID
 
-# Firebird GDS code for "violation of PRIMARY or UNIQUE KEY constraint".
-UNIQUE_KEY_VIOLATION = 335544665
-# Firebird GDS code for "violation of FOREIGN KEY constraint".
-FOREIGN_KEY_VIOLATION = 335544466
-
 PAGE_SIZE = 50
 # BOOK_CATEGORIES.CATEGORY; a longer text matches no category.
 CATEGORY_MAX_LENGTH = 64
@@ -227,7 +222,3 @@ class BookPage:
     def pages(self) -> int:
         """Number of pages; at least 1, so an empty list still has a page."""
         return max(1, -(-self.total // self.page_size))
-
-
-# A query and its parameters.
-type Query = tuple[str, tuple[object, ...]]

@@ -4,7 +4,7 @@ from flask import Blueprint, Response, current_app, flash, render_template, url_
 from flask_login import current_user, login_required, login_user
 from werkzeug.wrappers import Response as BaseResponse
 
-from bookshelf.db import get_db
+from bookshelf.db import get_session
 from bookshelf.models.collection_csv import (
     CsvFileError,
     ImportReport,
@@ -44,10 +44,10 @@ def account() -> BaseResponse | str:
     if not form.validate_on_submit():
         return _render(form)
 
-    conn = get_db()
+    session = get_session()
     password = form.password.data or None
     if password is not None and not authenticate(
-        conn, user.email, form.current_password.data or ""
+        session, user.email, form.current_password.data or ""
     ):
         current_app.logger.warning(
             "Password change for %s refused: wrong current password", user.email
@@ -56,7 +56,7 @@ def account() -> BaseResponse | str:
         return _render(form)
 
     update_account(
-        conn,
+        session,
         user,
         name=form.name.data,
         surname=form.surname.data,
@@ -70,7 +70,7 @@ def account() -> BaseResponse | str:
     )
     # The new password invalidates this session too: issue a fresh one (unless
     # the account was deleted meanwhile, which ends the session anyway).
-    if password is not None and (renewed := find_by_id(conn, user.id)) is not None:
+    if password is not None and (renewed := find_by_id(session, user.id)) is not None:
         login_user(renewed, remember=True)
     flash("Your account was saved.")
     return htmx_redirect(url_for("account.account"))
@@ -80,7 +80,7 @@ def account() -> BaseResponse | str:
 @login_required
 def export() -> Response:
     """The current user's collection as a CSV download."""
-    text = export_collection(get_db(), current_user.id)
+    text = export_collection(get_session(), current_user.id)
     current_app.logger.info("Collection of %s exported", current_user.email)
     filename = f"bookshelf-collection-{datetime.now(UTC).date().isoformat()}.csv"
     return Response(
@@ -145,7 +145,7 @@ def import_csv() -> str:
         )
     try:
         text = form.file.data.read().decode("utf-8-sig")
-        report = import_collection(get_db(), current_user.id, text)
+        report = import_collection(get_session(), current_user.id, text)
     except UnicodeDecodeError:
         current_app.logger.info("Import by %s refused: not UTF-8", current_user.email)
         return _render_import(error="The file is not UTF-8 text.")

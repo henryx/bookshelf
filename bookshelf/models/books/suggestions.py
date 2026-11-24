@@ -1,10 +1,13 @@
 """Suggestions for the book forms: books, authors, publishers, categories."""
 
+from collections.abc import Iterable
 from dataclasses import replace
 from uuid import UUID
 
-from firebird.driver import Connection
+from sqlalchemy import ColumnElement, String, literal, or_, select
+from sqlalchemy.orm import InstrumentedAttribute, Session
 
+from bookshelf.db.orm import AuthorRow, BookAuthorRow, BookCategoryRow, BookRow
 from bookshelf.models.books.isbn import isbn_searches
 from bookshelf.models.books.model import (
     CATEGORY_MAX_LENGTH,
@@ -12,7 +15,6 @@ from bookshelf.models.books.model import (
     AuthorField,
     BookField,
     BookSuggestion,
-    Query,
 )
 
 SUGGESTIONS_LIMIT = 10
@@ -23,40 +25,12 @@ _PUBLISHER_MAX_LENGTH = 255
 # BOOKS.TITLE; a longer text matches no title.
 _TITLE_MAX_LENGTH = 255
 
-# Up to ? books whose title (or ISBN, either of two texts) starts with ?, then
-# a row per author as in the lists (one with NULL for a book without authors).
-_SUGGEST_BY_TITLE_QUERY = """
-    SELECT s.ID, s.TITLE, s.ISBN, s.PUBLICATION_YEAR, a.NAME, a.SURNAME
-    FROM (
-        SELECT b.ID, b.TITLE, b.ISBN, b.PUBLICATION_YEAR FROM BOOKS b
-        WHERE b.TITLE STARTING WITH ?
-        ORDER BY b.TITLE, b.ID
-        FETCH FIRST ? ROWS ONLY
-    ) s
-    LEFT JOIN BOOK_AUTHORS ba ON ba.BOOK_ID = s.ID
-    LEFT JOIN AUTHORS a ON a.ID = ba.AUTHOR_ID
-    ORDER BY s.TITLE, s.ID, ba.SORT_ORDER
-"""
-
-_SUGGEST_BY_ISBN_QUERY = """
-    SELECT s.ID, s.TITLE, s.ISBN, s.PUBLICATION_YEAR, a.NAME, a.SURNAME
-    FROM (
-        SELECT b.ID, b.TITLE, b.ISBN, b.PUBLICATION_YEAR FROM BOOKS b
-        WHERE b.ISBN STARTING WITH ? OR b.ISBN STARTING WITH ?
-        ORDER BY b.ISBN
-        FETCH FIRST ? ROWS ONLY
-    ) s
-    LEFT JOIN BOOK_AUTHORS ba ON ba.BOOK_ID = s.ID
-    LEFT JOIN AUTHORS a ON a.ID = ba.AUTHOR_ID
-    ORDER BY s.ISBN, ba.SORT_ORDER
-"""
-
 # An ISBN typed with more than this many characters (hyphens and spaces
 # included) is no ISBN: it suggests nothing.
 _ISBN_TEXT_MAX_LENGTH = 32
 
 
-def suggest_authors(conn: Connection, text: str, field: AuthorField) -> list[Author]:
+def suggest_authors(session: Session, text: str, field: AuthorField) -> list[Author]:
     """
     Up to SUGGESTIONS_LIMIT authors whose name (or surname) starts with
     `text`, ignoring case. Blank or too long text suggests nothing.
@@ -64,24 +38,33 @@ def suggest_authors(conn: Connection, text: str, field: AuthorField) -> list[Aut
     text = text.strip()
     if not text or len(text) > _AUTHOR_NAME_MAX_LENGTH:
         return []
-    # STARTING WITH follows the columns' UNICODE_CI collation: case is ignored.
     match field:
         case AuthorField.NAME:
-            query = (
-                "SELECT NAME, SURNAME FROM AUTHORS WHERE NAME STARTING WITH ? "
-                "ORDER BY NAME, SURNAME FETCH FIRST ? ROWS ONLY"
-            )
+            first, second = AuthorRow.name, AuthorRow.surname
         case AuthorField.SURNAME:
-            query = (
-                "SELECT NAME, SURNAME FROM AUTHORS WHERE SURNAME STARTING WITH ? "
-                "ORDER BY SURNAME, NAME FETCH FIRST ? ROWS ONLY"
-            )
-    with conn.cursor() as cur:
-        cur.execute(query, (text, SUGGESTIONS_LIMIT))
-        return [Author(name, surname) for name, surname in cur.fetchall()]
+            first, second = AuthorRow.surname, AuthorRow.name
+    rows = session.execute(
+        select(AuthorRow.name, AuthorRow.surname)
+        .where(_starts_with(first, text, _AUTHOR_NAME_MAX_LENGTH))
+        .order_by(first, second)
+        .limit(SUGGESTIONS_LIMIT)
+    )
+    return [Author(name, surname) for name, surname in rows]
 
 
-def suggest_publishers(conn: Connection, text: str) -> list[str]:
+def _starts_with(
+    column: InstrumentedAttribute[str] | InstrumentedAttribute[str | None],
+    text: str,
+    length: int,
+) -> ColumnElement[bool]:
+    """
+    `column` starts with `text`; STARTING WITH follows the columns'
+    UNICODE_CI collation, so case is ignored.
+    """
+    return column.op("STARTING WITH", is_comparison=True)(literal(text, String(length)))
+
+
+def suggest_publishers(session: Session, text: str) -> list[str]:
     """
     Up to SUGGESTIONS_LIMIT publishers used in the catalogue that start with
     `text`, ignoring case; spellings differing only in case are one
@@ -90,16 +73,20 @@ def suggest_publishers(conn: Connection, text: str) -> list[str]:
     text = text.strip()
     if not text or len(text) > _PUBLISHER_MAX_LENGTH:
         return []
-    with conn.cursor() as cur:
-        cur.execute(
-            "SELECT DISTINCT PUBLISHER FROM BOOKS WHERE PUBLISHER STARTING WITH ? "
-            "ORDER BY PUBLISHER FETCH FIRST ? ROWS ONLY",
-            (text, SUGGESTIONS_LIMIT),
+    return [
+        publisher
+        for publisher in session.scalars(
+            select(BookRow.publisher)
+            .distinct()
+            .where(_starts_with(BookRow.publisher, text, _PUBLISHER_MAX_LENGTH))
+            .order_by(BookRow.publisher)
+            .limit(SUGGESTIONS_LIMIT)
         )
-        return [publisher for (publisher,) in cur.fetchall()]
+        if publisher is not None
+    ]
 
 
-def suggest_categories(conn: Connection, text: str) -> list[str]:
+def suggest_categories(session: Session, text: str) -> list[str]:
     """
     Up to SUGGESTIONS_LIMIT categories used in the catalogue that start with
     `text`, ignoring case; spellings differing only in case are one
@@ -108,27 +95,26 @@ def suggest_categories(conn: Connection, text: str) -> list[str]:
     text = text.strip()
     if not text or len(text) > CATEGORY_MAX_LENGTH:
         return []
-    with conn.cursor() as cur:
-        cur.execute(
-            "SELECT DISTINCT CATEGORY FROM BOOK_CATEGORIES "
-            "WHERE CATEGORY STARTING WITH ? "
-            "ORDER BY CATEGORY FETCH FIRST ? ROWS ONLY",
-            (text, SUGGESTIONS_LIMIT),
+    return list(
+        session.scalars(
+            select(BookCategoryRow.category)
+            .distinct()
+            .where(_starts_with(BookCategoryRow.category, text, CATEGORY_MAX_LENGTH))
+            .order_by(BookCategoryRow.category)
+            .limit(SUGGESTIONS_LIMIT)
         )
-        return [category for (category,) in cur.fetchall()]
+    )
 
 
 # ID, TITLE, ISBN, PUBLICATION_YEAR, then one author's NAME and SURNAME.
-type _SuggestionRow = tuple[bytes, str, str | None, int | None, str | None, str | None]
+type _SuggestionRow = tuple[UUID, str, str | None, int | None, str | None, str | None]
 
 
-def _suggestions(rows: list[_SuggestionRow]) -> list[BookSuggestion]:
+def _suggestions(rows: Iterable[_SuggestionRow]) -> list[BookSuggestion]:
     """Group the per-author rows into books, keeping their order."""
-    books: dict[bytes, BookSuggestion] = {}
+    books: dict[UUID, BookSuggestion] = {}
     for book_id, title, isbn, year, name, surname in rows:
-        book = books.get(book_id) or BookSuggestion(
-            UUID(bytes=book_id), title, isbn, year
-        )
+        book = books.get(book_id) or BookSuggestion(book_id, title, isbn, year)
         if surname is not None:
             book = replace(book, authors=(*book.authors, Author(name or "", surname)))
         books[book_id] = book
@@ -149,7 +135,7 @@ def _isbn_suggestion_texts(text: str) -> tuple[str, str] | None:
 
 
 def suggest_books(
-    conn: Connection, text: str, field: BookField
+    session: Session, text: str, field: BookField
 ) -> list[BookSuggestion]:
     """
     Up to SUGGESTIONS_LIMIT catalogue books whose title starts with `text`
@@ -164,12 +150,40 @@ def suggest_books(
         case BookField.TITLE:
             if len(text) > _TITLE_MAX_LENGTH:
                 return []
-            query: Query = (_SUGGEST_BY_TITLE_QUERY, (text, SUGGESTIONS_LIMIT))
+            condition = _starts_with(BookRow.title, text, _TITLE_MAX_LENGTH)
+            order = ["title", "id"]
         case BookField.ISBN:
             isbns = _isbn_suggestion_texts(text)
             if isbns is None:
                 return []
-            query = (_SUGGEST_BY_ISBN_QUERY, (*isbns, SUGGESTIONS_LIMIT))
-    with conn.cursor() as cur:
-        cur.execute(*query)
-        return _suggestions(cur.fetchall())
+            condition = or_(
+                *(
+                    _starts_with(BookRow.isbn, isbn, _ISBN_TEXT_MAX_LENGTH)
+                    for isbn in isbns
+                )
+            )
+            order = ["isbn"]
+    # Up to SUGGESTIONS_LIMIT books, then a row per author as in the lists
+    # (one with None for a book without authors).
+    books = select(BookRow.id, BookRow.title, BookRow.isbn, BookRow.publication_year)
+    found = (
+        books.where(condition)
+        .order_by(*(books.selected_columns[name] for name in order))
+        .limit(SUGGESTIONS_LIMIT)
+        .subquery("s")
+    )
+    rows = session.execute(
+        select(
+            found.c.id,
+            found.c.title,
+            found.c.isbn,
+            found.c.publication_year,
+            AuthorRow.name,
+            AuthorRow.surname,
+        )
+        .select_from(found)
+        .outerjoin(BookAuthorRow, BookAuthorRow.book_id == found.c.id)
+        .outerjoin(AuthorRow, AuthorRow.id == BookAuthorRow.author_id)
+        .order_by(*(found.c[name] for name in order), BookAuthorRow.sort_order)
+    )
+    return _suggestions(rows)

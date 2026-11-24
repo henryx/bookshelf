@@ -7,8 +7,9 @@ import pytest
 import requests
 from flask import Flask
 from flask.testing import FlaskClient
+from raw_db import raw
 
-from bookshelf.db import get_db
+from bookshelf.db import get_session
 from bookshelf.models.books import (
     Author,
     BookLookupError,
@@ -208,8 +209,8 @@ def test_add_form_has_a_look_up_button(client):
 
 def test_a_picked_book_has_no_look_up_button(db_app: Flask, client, password):
     with db_app.app_context():
-        other = create_user(get_db(), "other@example.com", password)
-        book_id = add_book(get_db(), other.id, NewBook("Dune", isbn=DUNE_ISBN))
+        other = create_user(get_session(), "other@example.com", password)
+        book_id = add_book(get_session(), other.id, NewBook("Dune", isbn=DUNE_ISBN))
 
     html = client.get(f"/books/new?book={book_id}", headers=HTMX)
 
@@ -287,8 +288,8 @@ def test_look_up_of_a_book_in_the_catalogue_offers_it(
 ):
     """No need to ask online: the catalogue has it."""
     with db_app.app_context():
-        other = create_user(get_db(), "other@example.com", password)
-        add_book(get_db(), other.id, NewBook("Dune", isbn=DUNE_ISBN))
+        other = create_user(get_session(), "other@example.com", password)
+        add_book(get_session(), other.id, NewBook("Dune", isbn=DUNE_ISBN))
 
     html = _look_up(client, isbn="0-441-17271-7").get_data(as_text=True)
 
@@ -332,7 +333,7 @@ def test_look_up_saves_nothing(db_app: Flask, client, online_catalogues):
 
     _look_up(client)
 
-    with db_app.app_context(), get_db().cursor() as cur:
+    with db_app.app_context(), raw(get_session()).cursor() as cur:
         cur.execute("SELECT COUNT(*) FROM BOOKS")
         assert cur.fetchone() == (0,)
 

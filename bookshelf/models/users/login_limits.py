@@ -3,12 +3,14 @@
 import logging
 from datetime import datetime
 
-from firebird.driver import Connection, DatabaseError
+from sqlalchemy import ColumnElement, delete, func, insert, literal_column, select
+from sqlalchemy.exc import DBAPIError
+from sqlalchemy.orm import Session
 
+from bookshelf.db import UPDATE_CONFLICT, execute_change, has_gds_code
+from bookshelf.db.orm import LoginFailureRow, UserRow
 from bookshelf.models.users.model import normalise_email
 
-# Firebird GDS code for "update conflicts with concurrent update".
-_UPDATE_CONFLICT = 335544451
 # Concurrent refused attempts that may each have to retry removing their row.
 _REMOVE_ATTEMPT_TRIES = 10
 
@@ -16,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 def start_login_attempt(
-    conn: Connection,
+    session: Session,
     email: str,
     ip: str,
     *,
@@ -44,23 +46,27 @@ def start_login_attempt(
     The failure's ID is the email's user, or NULL for an unknown email.
     """
     email = normalise_email(email)
-    with conn.cursor() as cur:
-        cur.execute(
-            "DELETE FROM LOGIN_FAILURES WHERE EMAIL = ? AND IP_ADDRESS = ? "
-            "AND ATTEMPTED_AT <= DATEADD(? MINUTE TO CURRENT_TIMESTAMP)",
-            (email, ip, -window_minutes),
+    execute_change(
+        session,
+        delete(LoginFailureRow).where(
+            LoginFailureRow.email == email,
+            LoginFailureRow.ip_address == ip,
+            LoginFailureRow.attempted_at <= _minutes_ago(window_minutes),
+        ),
+    )
+    attempted_at = session.scalars(
+        insert(LoginFailureRow)
+        .values(
+            id=select(UserRow.id).where(UserRow.email == email).scalar_subquery(),
+            email=email,
+            ip_address=ip,
         )
-        cur.execute(
-            "INSERT INTO LOGIN_FAILURES (ID, EMAIL, IP_ADDRESS) "
-            "VALUES ((SELECT ID FROM USERS WHERE EMAIL = ?), ?, ?) "
-            "RETURNING ATTEMPTED_AT",
-            (email, email, ip),
-        )
-        (attempted_at,) = cur.fetchone()
-    conn.commit()
+        .returning(LoginFailureRow.attempted_at)
+    ).one()
+    session.commit()
 
     if not _over_limit(
-        conn,
+        session,
         email,
         ip,
         max_failures=max_failures,
@@ -68,12 +74,12 @@ def start_login_attempt(
         window_minutes=window_minutes,
     ):
         return True
-    _remove_attempt(conn, email, ip, attempted_at)
+    _remove_attempt(session, email, ip, attempted_at)
     return False
 
 
 def _remove_attempt(
-    conn: Connection, email: str, ip: str, attempted_at: datetime
+    session: Session, email: str, ip: str, attempted_at: datetime
 ) -> None:
     """
     Delete the row a refused attempt added. Rows have no key of their own, but
@@ -84,30 +90,40 @@ def _remove_attempt(
     """
     for _ in range(_REMOVE_ATTEMPT_TRIES - 1):
         try:
-            _delete_one_failure(conn, email, ip, attempted_at)
+            _delete_one_failure(session, email, ip, attempted_at)
             return
-        except DatabaseError as e:
-            if _UPDATE_CONFLICT not in e.gds_codes:
+        except DBAPIError as e:
+            if not has_gds_code(e, UPDATE_CONFLICT):
                 raise
-            conn.rollback()
+            session.rollback()
             logger.debug("Retrying removal of refused login for %s from %s", email, ip)
-    _delete_one_failure(conn, email, ip, attempted_at)
+    _delete_one_failure(session, email, ip, attempted_at)
 
 
 def _delete_one_failure(
-    conn: Connection, email: str, ip: str, attempted_at: datetime
+    session: Session, email: str, ip: str, attempted_at: datetime
 ) -> None:
-    with conn.cursor() as cur:
-        cur.execute(
-            "DELETE FROM LOGIN_FAILURES "
-            "WHERE EMAIL = ? AND IP_ADDRESS = ? AND ATTEMPTED_AT = ? ROWS 1",
-            (email, ip, attempted_at),
+    # The table has no key: the row is picked by its record key, RDB$DB_KEY.
+    # The subquery's unqualified RDB$DB_KEY is its own table's.
+    record_key = literal_column("RDB$DB_KEY")
+    first = (
+        select(record_key)
+        .select_from(LoginFailureRow)
+        .where(
+            LoginFailureRow.email == email,
+            LoginFailureRow.ip_address == ip,
+            LoginFailureRow.attempted_at == attempted_at,
         )
-    conn.commit()
+        .limit(1)
+        .correlate(None)
+        .scalar_subquery()
+    )
+    execute_change(session, delete(LoginFailureRow).where(record_key == first))
+    session.commit()
 
 
 def _over_limit(
-    conn: Connection,
+    session: Session,
     email: str,
     ip: str,
     *,
@@ -115,46 +131,58 @@ def _over_limit(
     max_ip_failures: int,
     window_minutes: int,
 ) -> bool:
-    with conn.cursor() as cur:
-        cur.execute(
-            "SELECT COUNT(*) FROM LOGIN_FAILURES WHERE EMAIL = ? AND IP_ADDRESS = ? "
-            "AND ATTEMPTED_AT > DATEADD(? MINUTE TO CURRENT_TIMESTAMP)",
-            (email, ip, -window_minutes),
+    since = _minutes_ago(window_minutes)
+    email_failures = (
+        session.scalar(
+            select(func.count()).where(
+                LoginFailureRow.email == email,
+                LoginFailureRow.ip_address == ip,
+                LoginFailureRow.attempted_at > since,
+            )
         )
-        (email_failures,) = cur.fetchone()
-        if email_failures > max_failures:
-            return True
-        cur.execute(
-            "SELECT COUNT(*) FROM LOGIN_FAILURES WHERE IP_ADDRESS = ? "
-            "AND ATTEMPTED_AT > DATEADD(? MINUTE TO CURRENT_TIMESTAMP)",
-            (ip, -window_minutes),
+        or 0
+    )
+    if email_failures > max_failures:
+        return True
+    ip_failures = (
+        session.scalar(
+            select(func.count()).where(
+                LoginFailureRow.ip_address == ip, LoginFailureRow.attempted_at > since
+            )
         )
-        (ip_failures,) = cur.fetchone()
+        or 0
+    )
     return ip_failures > max_ip_failures
 
 
-def prune_login_failures(conn: Connection, *, window_minutes: int) -> int:
+def prune_login_failures(session: Session, *, window_minutes: int) -> int:
     """
     Delete every failure older than window_minutes, which no longer counts
     towards a block, and return how many were deleted. Logins prune only
     their own email and IP, so this clears the rest (run it periodically).
     """
-    with conn.cursor() as cur:
-        cur.execute(
-            "DELETE FROM LOGIN_FAILURES "
-            "WHERE ATTEMPTED_AT <= DATEADD(? MINUTE TO CURRENT_TIMESTAMP)",
-            (-window_minutes,),
-        )
-        deleted = cur.affected_rows
-    conn.commit()
+    deleted = execute_change(
+        session,
+        delete(LoginFailureRow).where(
+            LoginFailureRow.attempted_at <= _minutes_ago(window_minutes)
+        ),
+    ).rowcount
+    session.commit()
     return deleted
 
 
-def clear_login_failures(conn: Connection, email: str, ip: str) -> None:
+def clear_login_failures(session: Session, email: str, ip: str) -> None:
     """Forget the email's failures from this IP, after it logged in from there."""
-    with conn.cursor() as cur:
-        cur.execute(
-            "DELETE FROM LOGIN_FAILURES WHERE EMAIL = ? AND IP_ADDRESS = ?",
-            (normalise_email(email), ip),
-        )
-    conn.commit()
+    execute_change(
+        session,
+        delete(LoginFailureRow).where(
+            LoginFailureRow.email == normalise_email(email),
+            LoginFailureRow.ip_address == ip,
+        ),
+    )
+    session.commit()
+
+
+def _minutes_ago(minutes: int) -> ColumnElement[datetime]:
+    """The database's current time less `minutes` (its clock, as ATTEMPTED_AT's)."""
+    return func.dateadd(literal_column("MINUTE"), -minutes, func.current_timestamp())

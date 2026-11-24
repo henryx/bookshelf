@@ -10,13 +10,14 @@ Frontend is developed using HTMX library as PWA, to permit to install on mobile 
 
 Decisions:
 
- - Data access uses `firebird-driver` with literal SQL queries; no ORM.
- - The schema is created by `init-db`, which creates missing domains, tables, constraints and indexes, creates or
-   replaces the PSQL functions (`BOOK_MATCHES`, the book lists' search), and is safe to rerun. Tables are created with their columns only; every constraint is added separately with a name of our
-   own (`PK_USERS`, `UQ_USERS_EMAIL`, …) instead of one Firebird generates.
-   The schema is frozen since 1.0.0: released domains, tables, constraints and indexes are never edited in place.
-   New ones are created by `init-db`; changes to released ones need upgrade steps for existing databases (see
-   README, "Schema changes").
+ - Data access uses the SQLAlchemy ORM, through `sqlalchemy-firebird` on `firebird-driver` (since 1.5.0; literal
+   SQL queries before). Models return plain dataclasses, never ORM objects.
+ - The schema is made by Alembic migrations, applied by `init-db`, which also creates or replaces the PSQL
+   functions (`BOOK_MATCHES`, the book lists' search) and is safe to rerun. Tables are created with their columns
+   only; every constraint is added separately with a name of our own (`PK_USERS`, `UQ_USERS_EMAIL`, …) instead
+   of one Firebird generates. The 1.0.0 schema is frozen (revision `0001`); every change since is a new revision,
+   and a released revision is never changed. Databases from before 1.5.0, whose upgrade steps recorded a
+   `SCHEMA_VERSION`, are stamped with the matching revision (see README, "Schema changes").
  - Every response carries security headers: a Content-Security-Policy allowing only the app's own scripts,
    styles, fonts and images (no inline code, no plugins, forms posting only to the app) and forbidding frames,
    `X-Frame-Options: DENY` for older browsers, `X-Content-Type-Options: nosniff` and
@@ -60,7 +61,7 @@ which Google must have verified, and stores the Google account's ID (`GOOGLE_SUB
 later logins match that ID, so a different Google account that later gets the same email (e.g. a recreated
 Workspace account) cannot take the user over. Switching a user's way of logging in (admins only, from the admin area
 or the CLI) clears that ID, and ends the user's sessions: the session ID is built from the password hash, or for a
-Google user from their Google ID. Added by upgrade step 1 (1.2.0); users from before log in locally, as they did.
+Google user from their Google ID. Added by upgrade step 1 (1.2.0), now revision `0002`; users from before log in locally, as they did.
 
 A user also has an optional name and surname (columns `NAME` and `SURNAME`), shown in the top bar and the admin
 area. Either may be missing; empty fields are stored as NULL, and the database keeps given ones trimmed and non-blank

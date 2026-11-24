@@ -4,9 +4,10 @@ from threading import Barrier
 
 from flask import Flask
 from flask.testing import FlaskClient
+from raw_db import raw
 
 from bookshelf import create_app
-from bookshelf.db import get_db
+from bookshelf.db import get_session
 from bookshelf.models.users import (
     Role,
     User,
@@ -174,8 +175,8 @@ def test_ip_block_does_not_affect_other_ips(
 
 def _add_old_failures(app: Flask, email: str, times: int, minutes_ago: int) -> None:
     with app.app_context():
-        conn = get_db()
-        with conn.cursor() as cur:
+        session = get_session()
+        with raw(session).cursor() as cur:
             for _ in range(times):
                 cur.execute(
                     "INSERT INTO LOGIN_FAILURES (ID, EMAIL, IP_ADDRESS, ATTEMPTED_AT) "
@@ -183,7 +184,7 @@ def _add_old_failures(app: Flask, email: str, times: int, minutes_ago: int) -> N
                     "DATEADD(? MINUTE TO CURRENT_TIMESTAMP))",
                     (email, email, CLIENT_IP, -minutes_ago),
                 )
-        conn.commit()
+        session.commit()
 
 
 def test_login_failures_expire(
@@ -277,7 +278,7 @@ def test_password_reset_ends_existing_session(
 ):
     _login(db_client, user.email, password)
     with db_app.app_context():
-        set_password(get_db(), user, "a brand new password")
+        set_password(get_session(), user, "a brand new password")
 
     assert db_client.get("/").status_code == 302
 
@@ -287,7 +288,7 @@ def test_role_change_keeps_existing_session(
 ):
     _login(db_client, user.email, password)
     with db_app.app_context():
-        set_role(get_db(), user, Role.ADMIN)
+        set_role(get_session(), user, Role.ADMIN)
 
     assert db_client.get("/").status_code == 200
 
@@ -352,7 +353,7 @@ def test_concurrent_failed_logins_cannot_exceed_the_limit(db_app: Flask, user: U
     # Conflicts are a race, so give them several chances to happen.
     for _ in range(5):
         with db_app.app_context():
-            clear_login_failures(get_db(), user.email, CLIENT_IP)
+            clear_login_failures(get_session(), user.email, CLIENT_IP)
         with ThreadPoolExecutor(max_workers=attempts) as pool:
             statuses = list(pool.map(attempt, range(attempts)))
 
@@ -407,14 +408,14 @@ def test_blocked_attempt_is_not_counted(db_client: FlaskClient, user: User):
 
 
 def _failures(email: str) -> int:
-    with get_db().cursor() as cur:
+    with raw(get_session()).cursor() as cur:
         cur.execute("SELECT COUNT(*) FROM LOGIN_FAILURES WHERE EMAIL = ?", (email,))
         (count,) = cur.fetchone()
     return count
 
 
 def _failure_ids(email: str) -> list[bytes | None]:
-    with get_db().cursor() as cur:
+    with raw(get_session()).cursor() as cur:
         cur.execute("SELECT ID FROM LOGIN_FAILURES WHERE EMAIL = ?", (email,))
         return [user_id for (user_id,) in cur.fetchall()]
 
@@ -437,5 +438,5 @@ def test_deleting_user_deletes_their_failures(db_client: FlaskClient, user: User
     _fail_logins(db_client, user.email, 2)
 
     with db_client.application.app_context():
-        delete_user(get_db(), user)
+        delete_user(get_session(), user)
         assert _failures(user.email) == 0

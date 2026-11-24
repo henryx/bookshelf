@@ -9,11 +9,13 @@ from collections.abc import Callable
 from uuid import UUID, uuid4
 
 import pytest
-from firebird.driver import Connection, Cursor, DatabaseError
+from firebird.driver import Connection
 from flask import Flask
 from flask.testing import FlaskClient
+from sqlalchemy.exc import DBAPIError
+from sqlalchemy.orm import Session
 
-from bookshelf.db import get_db
+from bookshelf.db import get_session
 from bookshelf.models import authors as authors_model
 from bookshelf.models.authors import (
     AuthorEntry,
@@ -50,32 +52,32 @@ def client(db_client: FlaskClient, user: User, password: str) -> FlaskClient:
 
 def _book(db_app: Flask, user: User, title: str, *authors: Author) -> UUID:
     with db_app.app_context():
-        return add_book(get_db(), user.id, NewBook(title, authors=authors))
+        return add_book(get_session(), user.id, NewBook(title, authors=authors))
 
 
 def _authors_of(db_app: Flask, book_id: UUID) -> tuple[Author, ...]:
     with db_app.app_context():
-        details = find_book_details(get_db(), book_id)
+        details = find_book_details(get_session(), book_id)
     assert details is not None
     return details.authors
 
 
 def _entry(db_app: Flask, author: Author) -> AuthorEntry:
     with db_app.app_context():
-        page = list_authors(get_db(), f"{author.name} {author.surname}".strip())
+        page = list_authors(get_session(), f"{author.name} {author.surname}".strip())
     (entry,) = [e for e in page.authors if e.author == author]
     return entry
 
 
 def _all(db_app: Flask) -> list[tuple[Author, int]]:
     with db_app.app_context():
-        page = list_authors(get_db())
+        page = list_authors(get_session())
     return [(e.author, e.books) for e in page.authors]
 
 
 def _rename(db_app: Flask, entry: AuthorEntry, author: Author) -> Renamed:
     with db_app.app_context():
-        return rename_author(get_db(), entry.id, author)
+        return rename_author(get_session(), entry.id, author)
 
 
 # Model
@@ -95,9 +97,9 @@ def test_list_authors_searches_and_pages(db_app, user):
     _book(db_app, user, "Emma", JANE)
 
     with db_app.app_context():
-        conn = get_db()
-        found = list_authors(conn, "herb")
-        second = list_authors(conn, "herb", page=9, page_size=1)
+        session = get_session()
+        found = list_authors(session, "herb")
+        second = list_authors(session, "herb", page=9, page_size=1)
 
     assert [e.author for e in found.authors] == [Author("Brian", "Herbert"), FRANK]
     assert ([e.author for e in second.authors], second.page, second.total) == (
@@ -112,8 +114,8 @@ def test_find_author(db_app, user):
     entry = _entry(db_app, FRANK)
 
     with db_app.app_context():
-        assert find_author(get_db(), entry.id) == entry
-        assert find_author(get_db(), uuid4()) is None
+        assert find_author(get_session(), entry.id) == entry
+        assert find_author(get_session(), uuid4()) is None
 
 
 def test_rename_an_author_for_every_book(db_app, user):
@@ -159,7 +161,7 @@ def test_very_long_search_lists_no_author(db_app, user):
     _book(db_app, user, "Dune", FRANK)
 
     with db_app.app_context():
-        page = list_authors(get_db(), "x" * (SEARCH_MAX_LENGTH + 1))
+        page = list_authors(get_session(), "x" * (SEARCH_MAX_LENGTH + 1))
 
     assert (page.authors, page.total) == ([], 0)
 
@@ -211,10 +213,10 @@ def _name_taken_and_given_up(
     rename = authors_model._rename
     calls: list[None] = []
 
-    def clash(cur: Cursor, author_id: UUID, author: Author) -> bool:
+    def clash(session: Session, author_id: UUID, author: Author) -> bool:
         calls.append(None)
         if len(calls) > times:
-            return rename(cur, author_id, author)
+            return rename(session, author_id, author)
         namesake = uuid4().bytes
         with other_conn.cursor() as other:
             other.execute(
@@ -223,7 +225,7 @@ def _name_taken_and_given_up(
             )
         other_conn.commit()
         try:
-            return rename(cur, author_id, author)
+            return rename(session, author_id, author)
         finally:
             with other_conn.cursor() as other:
                 other.execute("DELETE FROM AUTHORS WHERE ID = ?", (namesake,))
@@ -308,9 +310,9 @@ def test_merge_passes_on_unexpected_database_errors(
     dune = _book(db_app, user, "Dune", FRNAK)
     _book(db_app, user, "Dune Messiah", FRANK)
     entry = _entry(db_app, FRNAK)
-    fail_statement("DELETE FROM AUTHORS WHERE ID = ?")
+    fail_statement("DELETE FROM AUTHORS WHERE AUTHORS.ID")
 
-    with pytest.raises(DatabaseError, match="deadlock"):
+    with pytest.raises(DBAPIError, match="deadlock"):
         _rename(db_app, entry, FRANK)
 
     assert _authors_of(db_app, dune) == (FRNAK,)
@@ -337,7 +339,7 @@ def test_rename_an_author_deleted_meanwhile(db_app, user, other_conn, race):
     _delete_book_and_author(other_conn, dune, entry)
 
     with pytest.raises(UnknownAuthorError):
-        race(lambda conn: rename_author(conn, entry.id, FRANK), "UPDATE AUTHORS")
+        race(lambda session: rename_author(session, entry.id, FRANK), "UPDATE AUTHORS")
 
     assert _all(db_app) == []
 
@@ -349,7 +351,10 @@ def test_merge_an_author_deleted_meanwhile(db_app, user, other_conn, race):
     _delete_book_and_author(other_conn, dune, entry)
 
     with pytest.raises(UnknownAuthorError):
-        race(lambda conn: rename_author(conn, entry.id, FRANK), "UPDATE BOOK_AUTHORS")
+        race(
+            lambda session: rename_author(session, entry.id, FRANK),
+            "UPDATE BOOK_AUTHORS",
+        )
 
     assert _all(db_app) == [(FRANK, 1)]
 
@@ -364,7 +369,7 @@ def test_merge_an_author_while_one_of_their_books_is_deleted(
     _delete_book(other_conn, dune)
 
     renamed = race(
-        lambda conn: rename_author(conn, entry.id, FRANK), "UPDATE BOOK_AUTHORS"
+        lambda session: rename_author(session, entry.id, FRANK), "UPDATE BOOK_AUTHORS"
     )
 
     assert renamed == Renamed(FRANK, merged=True)
@@ -374,7 +379,7 @@ def test_merge_an_author_while_one_of_their_books_is_deleted(
 
 def test_rename_an_unknown_author(db_app):
     with db_app.app_context(), pytest.raises(UnknownAuthorError):
-        rename_author(get_db(), uuid4(), FRANK)
+        rename_author(get_session(), uuid4(), FRANK)
 
 
 # Routes
@@ -527,9 +532,11 @@ def test_list_books_by_one_author(db_app, user):
     frank = _entry(db_app, FRANK)
 
     with db_app.app_context():
-        conn = get_db()
-        all_his = list_books(conn, user.id, author_id=frank.id)
-        searched = list_books(conn, user.id, "messiah", Sort.ADDED, author_id=frank.id)
+        session = get_session()
+        all_his = list_books(session, user.id, author_id=frank.id)
+        searched = list_books(
+            session, user.id, "messiah", Sort.ADDED, author_id=frank.id
+        )
 
     assert [b.title for b in all_his.books] == ["Dune", "Dune Messiah"]
     assert all_his.total == 2
@@ -591,7 +598,7 @@ def test_an_authors_page_links_keep_the_author(db_app, client, user):
 
 def test_add_to_collection_from_an_authors_books(db_app, client, user, password):
     with db_app.app_context():
-        other = create_user(get_db(), "other@example.com", password)
+        other = create_user(get_session(), "other@example.com", password)
     _book(db_app, other, "Dune", FRANK)
     _book(db_app, other, "Emma", JANE)
     dune = _book(db_app, other, "Dune Messiah", FRANK)
@@ -635,7 +642,7 @@ def test_book_lists_know_their_authors_ids(db_app, user):
     frank, jane = _entry(db_app, FRANK), _entry(db_app, JANE)
 
     with db_app.app_context():
-        (book,) = list_books(get_db(), user.id).books
+        (book,) = list_books(get_session(), user.id).books
 
     assert book.authors == (FRANK, JANE)  # an ID does not change equality
     assert [a.id for a in book.authors] == [frank.id, jane.id]
@@ -660,21 +667,21 @@ def test_authors_under_a_book_link_to_their_books(db_app, client, user, url):
 
 def test_list_collection_by_one_author(db_app, user, password):
     with db_app.app_context():
-        other = create_user(get_db(), "other@example.com", password)
+        other = create_user(get_session(), "other@example.com", password)
     _book(db_app, user, "Dune", FRANK)
     _book(db_app, user, "Emma", JANE)
     _book(db_app, other, "Dune Messiah", FRANK)  # not in the user's collection
     frank = _entry(db_app, FRANK)
 
     with db_app.app_context():
-        page = list_collection(get_db(), user.id, author_id=frank.id)
+        page = list_collection(get_session(), user.id, author_id=frank.id)
 
     assert ([b.title for b in page.books], page.total) == (["Dune"], 1)
 
 
 def test_an_authors_books_in_the_collection(db_app, client, user, password):
     with db_app.app_context():
-        other = create_user(get_db(), "other@example.com", password)
+        other = create_user(get_session(), "other@example.com", password)
     _book(db_app, user, "Dune", FRANK)
     _book(db_app, user, "Emma", JANE)
     _book(db_app, other, "Dune Messiah", FRANK)

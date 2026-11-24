@@ -6,12 +6,14 @@ from urllib.parse import parse_qs, urlsplit
 from uuid import UUID, uuid4
 
 import pytest
-from firebird.driver import DatabaseError
+from firebird.driver import Connection
 from flask import Flask
 from flask.testing import FlaskClient
+from raw_db import raw
+from sqlalchemy.exc import DBAPIError
 
 from bookshelf import create_app
-from bookshelf.db import get_db
+from bookshelf.db import get_session
 from bookshelf.models.books import (
     MAX_COPIES,
     SEARCH_MAX_LENGTH,
@@ -50,7 +52,7 @@ def client(db_client: FlaskClient, user: User, password: str) -> FlaskClient:
 def other(db_app: Flask, password: str) -> User:
     """Another user, with a collection of their own."""
     with db_app.app_context():
-        return create_user(get_db(), "other@example.com", password)
+        return create_user(get_session(), "other@example.com", password)
 
 
 def _book(
@@ -65,11 +67,11 @@ def _book(
     """A catalogue book, in `owner`'s collection."""
     with app.app_context():
         book = NewBook(title, authors, isbn=isbn)
-        return add_book(get_db(), owner.id, book, copies=copies)
+        return add_book(get_session(), owner.id, book, copies=copies)
 
 
 def _copies(app: Flask, user: User, book_id: UUID) -> int | None:
-    with app.app_context(), get_db().cursor() as cur:
+    with app.app_context(), raw(get_session()).cursor() as cur:
         cur.execute(
             "SELECT COPIES FROM COLLECTION_BOOKS WHERE USER_ID = ? AND BOOK_ID = ?",
             (user.id.bytes, book_id.bytes),
@@ -80,7 +82,7 @@ def _copies(app: Flask, user: User, book_id: UUID) -> int | None:
 
 def _collection(app: Flask, user: User) -> dict[UUID, tuple[int, bool]]:
     """The user's collection: each book's copies and read state."""
-    with app.app_context(), get_db().cursor() as cur:
+    with app.app_context(), raw(get_session()).cursor() as cur:
         cur.execute(
             "SELECT BOOK_ID, COPIES, IS_READ FROM COLLECTION_BOOKS WHERE USER_ID = ?",
             (user.id.bytes,),
@@ -89,7 +91,7 @@ def _collection(app: Flask, user: User) -> dict[UUID, tuple[int, bool]]:
 
 
 def _in_catalogue(app: Flask, book_id: UUID) -> bool:
-    with app.app_context(), get_db().cursor() as cur:
+    with app.app_context(), raw(get_session()).cursor() as cur:
         cur.execute("SELECT 1 FROM BOOKS WHERE ID = ?", (book_id.bytes,))
         return cur.fetchone() is not None
 
@@ -106,7 +108,7 @@ def test_list_books_gives_the_users_copies(db_app, user, other):
     _book(db_app, other, "Emma", copies=3)
 
     with db_app.app_context():
-        books = list_books(get_db(), user.id).books
+        books = list_books(get_session(), user.id).books
 
     assert [(b.title, b.copies) for b in books] == [("Dune", 2), ("Emma", None)]
 
@@ -116,7 +118,7 @@ def test_list_collection_has_only_the_users_books(db_app, user, other):
     _book(db_app, other, "Emma")
 
     with db_app.app_context():
-        page = list_collection(get_db(), user.id)
+        page = list_collection(get_session(), user.id)
 
     assert [(b.title, b.copies) for b in page.books] == [("Dune", 2)]
     assert page.total == 1
@@ -128,10 +130,10 @@ def test_list_collection_searches_sorts_and_pages(db_app, user):
     _book(db_app, user, "Persuasion", authors=(Author("Jane", "Austen"),))
 
     with db_app.app_context():
-        conn = get_db()
-        found = list_collection(conn, user.id, "jane")
-        by_author = list_collection(conn, user.id, sort=Sort.AUTHOR)
-        second = list_collection(conn, user.id, page=2, page_size=2)
+        session = get_session()
+        found = list_collection(session, user.id, "jane")
+        by_author = list_collection(session, user.id, sort=Sort.AUTHOR)
+        second = list_collection(session, user.id, page=2, page_size=2)
 
     assert [b.title for b in found.books] == ["Emma", "Persuasion"]
     assert [b.title for b in by_author.books] == ["Emma", "Persuasion", "Dune"]
@@ -146,9 +148,9 @@ def test_list_collection_out_of_range_gives_the_last_page(db_app, user, other):
     _book(db_app, other, "Ulysses")
 
     with db_app.app_context():
-        conn = get_db()
-        last = list_collection(conn, user.id, page=9, page_size=2)
-        empty = list_collection(conn, user.id, "nothing like this", page=3)
+        session = get_session()
+        last = list_collection(session, user.id, page=9, page_size=2)
+        empty = list_collection(session, user.id, "nothing like this", page=3)
 
     assert ([b.title for b in last.books], last.page, last.total) == (
         ["Persuasion"],
@@ -162,7 +164,7 @@ def test_list_collection_with_too_long_a_search_is_empty(db_app, user):
     _book(db_app, user, "Dune")
 
     with db_app.app_context():
-        page = list_collection(get_db(), user.id, "d" * (SEARCH_MAX_LENGTH + 1))
+        page = list_collection(get_session(), user.id, "d" * (SEARCH_MAX_LENGTH + 1))
 
     assert (page.books, page.page, page.total) == ([], 1, 0)
 
@@ -171,7 +173,7 @@ def test_add_to_collection(db_app, user, other):
     book_id = _book(db_app, other, "Emma")
 
     with db_app.app_context():
-        added = add_to_collection(get_db(), user.id, book_id, copies=2)
+        added = add_to_collection(get_session(), user.id, book_id, copies=2)
 
     assert added
     assert _copies(db_app, user, book_id) == 2
@@ -182,7 +184,7 @@ def test_add_to_collection_twice_keeps_the_copies(db_app, user):
     book_id = _book(db_app, user, "Dune", copies=3)
 
     with db_app.app_context():
-        added = add_to_collection(get_db(), user.id, book_id, copies=1)
+        added = add_to_collection(get_session(), user.id, book_id, copies=1)
 
     assert not added
     assert _copies(db_app, user, book_id) == 3
@@ -192,7 +194,7 @@ def test_set_copies(db_app, user):
     book_id = _book(db_app, user, "Dune")
 
     with db_app.app_context():
-        assert set_copies(get_db(), user.id, book_id, 4)
+        assert set_copies(get_session(), user.id, book_id, 4)
 
     assert _copies(db_app, user, book_id) == 4
 
@@ -201,7 +203,7 @@ def test_set_copies_of_a_book_not_in_the_collection(db_app, user, other):
     book_id = _book(db_app, other, "Emma")
 
     with db_app.app_context():
-        assert not set_copies(get_db(), user.id, book_id, 4)
+        assert not set_copies(get_session(), user.id, book_id, 4)
 
     assert _copies(db_app, user, book_id) is None
 
@@ -213,8 +215,8 @@ def test_add_to_collection_passes_on_unexpected_database_errors(
     book_id = _book(db_app, other, "Emma")
     fail_statement("INSERT INTO COLLECTION_BOOKS")
 
-    with db_app.app_context(), pytest.raises(DatabaseError, match="deadlock"):
-        add_to_collection(get_db(), user.id, book_id)
+    with db_app.app_context(), pytest.raises(DBAPIError, match="deadlock"):
+        add_to_collection(get_session(), user.id, book_id)
 
     assert _copies(db_app, user, book_id) is None
 
@@ -228,7 +230,7 @@ CHANGES = {
 }
 
 
-def _remove_uncommitted(conn, user: User, book_id: UUID) -> None:
+def _remove_uncommitted(conn: Connection, user: User, book_id: UUID) -> None:
     with conn.cursor() as cur:
         cur.execute(
             "DELETE FROM COLLECTION_BOOKS WHERE USER_ID = ? AND BOOK_ID = ?",
@@ -244,7 +246,7 @@ def test_change_a_book_removed_from_the_collection_meanwhile(
     waits_on, apply = CHANGES[change]
     _remove_uncommitted(other_conn, user, dune)
 
-    assert race(lambda conn: apply(conn, user.id, dune), waits_on) is False
+    assert race(lambda session: apply(session, user.id, dune), waits_on) is False
     assert _copies(db_app, user, dune) is None
 
 
@@ -257,20 +259,20 @@ def test_change_a_book_removed_since_the_request_looked_it_up(
     _, apply = CHANGES[change]
 
     with db_app.app_context():
-        conn = get_db()
-        assert find_book(conn, user.id, dune) is not None
+        session = get_session()
+        assert find_book(session, user.id, dune) is not None
         _remove_uncommitted(other_conn, user, dune)
         other_conn.commit()
 
-        assert apply(conn, user.id, dune) is False
+        assert apply(session, user.id, dune) is False
 
 
 def test_remove_from_collection_keeps_the_book_in_the_catalogue(db_app, user):
     book_id = _book(db_app, user, "Dune")
 
     with db_app.app_context():
-        assert remove_from_collection(get_db(), user.id, book_id)
-        assert not remove_from_collection(get_db(), user.id, book_id)
+        assert remove_from_collection(get_session(), user.id, book_id)
+        assert not remove_from_collection(get_session(), user.id, book_id)
 
     assert _copies(db_app, user, book_id) is None
     assert _in_catalogue(db_app, book_id)
@@ -286,15 +288,15 @@ def two_collections(db_app, user, other) -> tuple[UUID, UUID, UUID]:
     emma = _book(db_app, user, "Emma", copies=3)
     ulysses = _book(db_app, other, "Ulysses")
     with db_app.app_context():
-        conn = get_db()
-        assert set_read(conn, user.id, dune, read=True)
-        assert add_to_collection(conn, other.id, emma, read=True)
+        session = get_session()
+        assert set_read(session, user.id, dune, read=True)
+        assert add_to_collection(session, other.id, emma, read=True)
     return dune, emma, ulysses
 
 
 def _copy(app: Flask, source: User, target: User, mode: CopyMode) -> CopiedCollection:
     with app.app_context():
-        return copy_collection(get_db(), source.id, target.id, mode)
+        return copy_collection(get_session(), source.id, target.id, mode)
 
 
 def test_copy_collection_keeping_the_targets_books(
@@ -343,7 +345,7 @@ def test_copy_collection_adding_the_copies(db_app, user, other, two_collections)
 def test_copy_collection_adding_caps_the_copies(db_app, user, other):
     dune = _book(db_app, user, "Dune", copies=MAX_COPIES - 1)
     with db_app.app_context():
-        assert add_to_collection(get_db(), other.id, dune, copies=2)
+        assert add_to_collection(get_session(), other.id, dune, copies=2)
 
     _copy(db_app, user, other, CopyMode.ADD)
 
@@ -364,7 +366,7 @@ def test_copy_an_empty_collection_replacing_empties_the_target(
     db_app, other, password, two_collections
 ):
     with db_app.app_context():
-        empty = create_user(get_db(), "empty@example.com", password)
+        empty = create_user(get_session(), "empty@example.com", password)
 
     copied = _copy(db_app, empty, other, CopyMode.REPLACE)
 
@@ -387,10 +389,10 @@ def test_find_book(db_app, user, other):
     book_id = _book(db_app, user, "Good Omens", copies=2, authors=authors)
 
     with db_app.app_context():
-        conn = get_db()
-        mine = find_book(conn, user.id, book_id)
-        theirs = find_book(conn, other.id, book_id)
-        unknown = find_book(conn, user.id, uuid4())
+        session = get_session()
+        mine = find_book(session, user.id, book_id)
+        theirs = find_book(session, other.id, book_id)
+        unknown = find_book(session, user.id, uuid4())
 
     assert mine is not None and theirs is not None
     assert (mine.title, mine.authors, mine.copies) == ("Good Omens", authors, 2)
@@ -402,8 +404,8 @@ def test_find_book_by_isbn(db_app, user):
     book_id = _book(db_app, user, "Dune", isbn="9780441172719")
 
     with db_app.app_context():
-        found = find_book_by_isbn(get_db(), user.id, "9780441172719")
-        missing = find_book_by_isbn(get_db(), user.id, "9780140449136")
+        found = find_book_by_isbn(get_session(), user.id, "9780441172719")
+        missing = find_book_by_isbn(get_session(), user.id, "9780140449136")
 
     assert found is not None and (found.id, found.copies) == (book_id, 1)
     assert missing is None
@@ -478,7 +480,7 @@ def test_catalogue_rows_show_whether_the_book_is_in_the_collection(
 
 def test_add_to_collection_refuses_a_book_not_in_the_catalogue(db_app, user):
     with db_app.app_context(), pytest.raises(UnknownBookError):
-        add_to_collection(get_db(), user.id, uuid4())
+        add_to_collection(get_session(), user.id, uuid4())
 
 
 def test_add_a_book_deleted_meanwhile_is_not_found(
@@ -675,14 +677,14 @@ def test_duplicate_isbn_of_a_book_in_the_collection_says_so(db_app, client, user
 
 def _read(db_app: Flask, user: User) -> dict[str, bool]:
     with db_app.app_context():
-        return {b.title: b.read for b in list_collection(get_db(), user.id).books}
+        return {b.title: b.read for b in list_collection(get_session(), user.id).books}
 
 
 def test_books_start_as_not_read(db_app, user, other):
     _book(db_app, user, "Dune")
     emma = _book(db_app, other, "Emma")
     with db_app.app_context():
-        add_to_collection(get_db(), user.id, emma)
+        add_to_collection(get_session(), user.id, emma)
 
     assert _read(db_app, user) == {"Dune": False, "Emma": False}
 
@@ -690,14 +692,14 @@ def test_books_start_as_not_read(db_app, user, other):
 def test_set_read_is_per_user(db_app, user, other):
     dune = _book(db_app, user, "Dune")
     with db_app.app_context():
-        add_to_collection(get_db(), other.id, dune)
-        assert set_read(get_db(), user.id, dune, read=True)
+        add_to_collection(get_session(), other.id, dune)
+        assert set_read(get_session(), user.id, dune, read=True)
 
     assert _read(db_app, user) == {"Dune": True}
     assert _read(db_app, other) == {"Dune": False}
 
     with db_app.app_context():
-        assert set_read(get_db(), user.id, dune, read=False)
+        assert set_read(get_session(), user.id, dune, read=False)
     assert _read(db_app, user) == {"Dune": False}
 
 
@@ -705,7 +707,7 @@ def test_set_read_of_a_book_not_in_the_collection(db_app, user, other):
     emma = _book(db_app, other, "Emma")
 
     with db_app.app_context():
-        assert not set_read(get_db(), user.id, emma, read=True)
+        assert not set_read(get_session(), user.id, emma, read=True)
 
 
 def test_collection_rows_have_a_read_checkbox(db_app, client, user):
@@ -746,7 +748,7 @@ def test_mark_a_book_read_from_the_list(db_app, client, user):
 def test_unmark_a_book_without_javascript(db_app, client, user):
     dune = _book(db_app, user, "Dune")
     with db_app.app_context():
-        set_read(get_db(), user.id, dune, read=True)
+        set_read(get_session(), user.id, dune, read=True)
 
     rv = client.post(f"/collection/books/{dune}/read", data={"q": "du"})
 

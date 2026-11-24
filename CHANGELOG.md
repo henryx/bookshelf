@@ -4,6 +4,20 @@ All notable changes to Bookshelf, newest first. Each version is released as the 
 `quay.io/enricobianchi/bookshelf:<version>` and, from 1.0.2, as the Helm chart
 `oci://quay.io/enricobianchi/bookshelf-chart --version <version>`.
 
+## Unreleased
+
+### Changes
+
+- The app reads and writes the database through the SQLAlchemy ORM (with `sqlalchemy-firebird`), and its schema
+  changes are Alembic migrations. Nothing changes in use. Upgrading: run `init-db` as for any release (the Helm
+  chart does): it records a database's existing schema version as the matching migration, then applies any
+  newer one. The schema itself is unchanged, so 1.4.x still runs on a database upgraded this way.
+
+### Development
+
+- Schema changes are Alembic revisions in `bookshelf/migrations/versions/`, made with `alembic revision` and
+  applied by `init-db` (not `alembic upgrade`); README, "Schema changes".
+
 ## 1.4.2 (2026-11-24)
 
 ### Changes

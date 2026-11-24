@@ -6,7 +6,7 @@ import pytest
 from flask import Flask
 from playwright.sync_api import Dialog, Page, expect
 
-from bookshelf.db import get_db
+from bookshelf.db import get_session
 from bookshelf.models.books import Author, NewBook, add_book, remove_from_collection
 from bookshelf.models.users import User
 
@@ -14,7 +14,7 @@ from bookshelf.models.users import User
 @pytest.fixture
 def dune(db_app: Flask, user: User) -> UUID:
     with db_app.app_context():
-        return add_book(get_db(), user.id, NewBook("Dune", volume="1"))
+        return add_book(get_session(), user.id, NewBook("Dune", volume="1"))
 
 
 def test_save_closes_the_dialog_and_confirms(reader_page: Page, dune):
@@ -57,7 +57,7 @@ def test_title_opens_the_dialog_from_the_collection(
 def test_fix_a_misspelled_author(db_app: Flask, user: User, reader_page: Page):
     with db_app.app_context():
         add_book(
-            get_db(), user.id, NewBook("Emma", authors=(Author("Jnae", "Austen"),))
+            get_session(), user.id, NewBook("Emma", authors=(Author("Jnae", "Austen"),))
         )
     reader_page.reload()
 
@@ -78,9 +78,9 @@ def test_admin_deletes_a_book_after_confirming(
     db_app: Flask, user: User, admin_page: Page
 ):
     with db_app.app_context():
-        conn = get_db()
-        emma = add_book(conn, user.id, NewBook("Emma"))
-        remove_from_collection(conn, user.id, emma)  # in nobody's collection
+        session = get_session()
+        emma = add_book(session, user.id, NewBook("Emma"))
+        remove_from_collection(session, user.id, emma)  # in nobody's collection
     admin_page.reload()
     messages: list[str] = []
 

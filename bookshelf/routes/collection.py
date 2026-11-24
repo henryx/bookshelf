@@ -12,7 +12,7 @@ from flask_login import current_user, login_required
 from werkzeug.datastructures import MultiDict
 from werkzeug.wrappers import Response as BaseResponse
 
-from bookshelf.db import get_db
+from bookshelf.db import get_session
 from bookshelf.models.books import (
     SEARCH_MAX_LENGTH,
     Book,
@@ -54,7 +54,7 @@ def _render_collection(
     search, sort, page = list_state(values)
     author = author_filter(values)
     books = list_collection(
-        get_db(),
+        get_session(),
         current_user.id,
         search,
         sort,
@@ -83,7 +83,7 @@ def _from_list() -> bool:
 
 
 def _book_or_404(book_id: UUID) -> Book:
-    book = find_book(get_db(), current_user.id, book_id)
+    book = find_book(get_session(), current_user.id, book_id)
     if book is None:
         abort(404)
     return book
@@ -112,7 +112,7 @@ def add(book_id: UUID) -> BaseResponse | str:
         abort(400, description=" ".join(form.copies.errors))
     try:
         added = add_to_collection(
-            get_db(), current_user.id, book.id, form.copies.data or 1
+            get_session(), current_user.id, book.id, form.copies.data or 1
         )
     except UnknownBookError:
         # Deleted since it was looked up.
@@ -152,7 +152,7 @@ def read(book_id: UUID) -> BaseResponse | str:
     # The app-wide CSRFProtect has already checked the token; the checkbox
     # itself cannot be invalid.
     is_read = bool(ReadForm().read.data)
-    if not set_read(get_db(), current_user.id, book.id, read=is_read):
+    if not set_read(get_session(), current_user.id, book.id, read=is_read):
         return _collection_response(
             f"“{book.title}” is not in your collection.", error=True
         )
@@ -165,7 +165,7 @@ def read(book_id: UUID) -> BaseResponse | str:
 def remove(book_id: UUID) -> BaseResponse | str:
     """Remove a book from the user's collection; it stays in the catalogue."""
     book = _book_or_404(book_id)
-    if not remove_from_collection(get_db(), current_user.id, book.id):
+    if not remove_from_collection(get_session(), current_user.id, book.id):
         return _collection_response(
             f"“{book.title}” is not in your collection.", error=True
         )

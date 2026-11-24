@@ -145,7 +145,7 @@ characters long (12 by default).
 
 | Command | What it does |
 |---|---|
-| `init-db` | Create missing tables, columns, constraints and indexes, and create or replace the functions (safe to rerun) |
+| `init-db` | Create or upgrade the schema (the migrations), and create or replace the functions (safe to rerun) |
 | `prune-login-failures` | Delete failed logins older than `APP_LOGIN_BLOCK_MINUTES` (run periodically, e.g. hourly from cron) |
 | `create-admin EMAIL` | Create the first admin (refused once any admin exists) |
 | `create-user EMAIL [--auth local\|google]` | Create a regular user, logging in with a password (`local`, the default: asked for) or with Google (no password) |
@@ -248,9 +248,8 @@ from cron:
 0 * * * * docker exec <container> /app/venv/bin/flask --app bookshelf prune-login-failures
 ```
 
-After upgrading, back up the database with `gbak`, then run `init-db` again: it adds any new tables,
-constraints and indexes to an existing database, applies the release's upgrade steps (see "Schema changes"),
-and replaces the functions (such as the book search) with the current ones. Until it has run, the app answers
+After upgrading, back up the database with `gbak`, then run `init-db` again: it applies the release's
+migrations (see "Schema changes") and replaces the functions (such as the book search) with the current ones. Until it has run, the app answers
 every request with 503 ("run init-db"); the container keeps running, so `docker exec` works:
 
 ```sh
@@ -261,79 +260,88 @@ New check constraints apply to rows written from then on; Firebird does not rech
 
 ## Schema changes
 
-The schema lives in `bookshelf/db/schema.py`: `DOMAINS`, `TABLES`, `CONSTRAINTS`, `INDEXES` and `FUNCTIONS`,
-created in that order. `init-db` creates whatever is missing and is safe to rerun, but it does not change objects
-that already exist, except functions: each is `CREATE OR ALTER`ed on every run, so a change to one (e.g.
-`BOOK_MATCHES`, the book lists' search) reaches existing databases with no upgrade step.
+Data access goes through the SQLAlchemy ORM (`sqlalchemy-firebird`'s dialect on `firebird-driver`): the tables are
+mapped in `bookshelf/db/orm.py`, one `*Row` class each. The schema itself is made by migrations: Alembic
+revisions in `bookshelf/migrations/versions/`, applied by `init-db`. The ORM metadata never creates or changes
+it, and a test checks that every mapped table and column is in the schema the migrations make.
 
-- `TABLES` holds only columns, with their types, `NOT NULL` and defaults. Every table constraint (primary key,
-  unique, check, foreign key) is a named `ALTER TABLE … ADD CONSTRAINT` in `CONSTRAINTS`, never written inside
-  `CREATE TABLE`; a test fails if one is. Constraints run in order, so a foreign key comes after the key it
-  references.
-
-- The schema is frozen since 1.0.0: databases created by a release must keep working after an upgrade, so
-  the domains, tables, constraints and indexes it created must not be edited in place in `schema.py`.
-  - Adding a new domain, table or index needs no upgrade step: `init-db` creates whatever is missing.
-  - Changing a released one (a column added, dropped, renamed or retyped, a constraint added to a released
-    table or changed) needs an upgrade step that `init-db` applies to existing databases, as below.
-
-### Upgrade steps
-
-Written into `init-db` rather than taken from a migration tool: Alembic would bring in SQLAlchemy only for
-this and has no Firebird support of its own, yoyo-migrations has no Firebird backend, and Flyway or Liquibase
-would add a Java runtime to the deployment.
-
-- **Version.** The `SETTINGS` table holds the app's own settings: `NAME` (the key) and `"VALUE"`, text
-  (`VALUE` is a reserved word in Firebird, so it is always written quoted). The `SCHEMA_VERSION` setting is
-  the last step applied; `init-db` adds it as `0`, the frozen 1.0.0 schema, the first time it runs, and a
-  database from before versions (1.0.x) is at version 0.
-- **Steps.** `UPGRADES` in `bookshelf/db/upgrades.py` lists the steps (with the code applying them); step *n* (`UPGRADES[n - 1]`) takes a database from
-  version *n − 1* to *n*. Append only: never change or remove a released step. Each is an `UpgradeStep` of two
-  Python functions taking the connection, `upgrade` and `rollback`, running complete literal SQL strings, as
-  everywhere else. `rollback` undoes `upgrade`, taking the database back to version *n − 1*. Both commit their
-  own work; what `upgrade` leaves uncommitted is committed with its version.
-- **Order.** `init-db` creates whatever is missing (version 0, plus any new objects), applies the pending steps
-  in order, then `CREATE OR ALTER`s the functions, which may use what the steps added. A new database takes the
-  same path as an old one, so the two cannot drift apart.
-- **Rollback on failure.** Firebird rolls back DDL with its transaction, but a column added in a transaction
-  cannot be used until that transaction commits. A step that adds a column and fills it therefore commits
-  twice and is not atomic: when it fails, what it committed stays. So when a step fails, `init-db` runs its
-  `rollback`, removes `SCHEMA_UPGRADE_STEP`, and stops with the step's error; the database is back at version
-  *n − 1*,
-  still working with the running release.
-- **Rollback after a crash.** A step killed halfway (a pod evicted, the connection lost) gets no chance to
-  roll back. Before calling `upgrade`, `init-db` adds the `SCHEMA_UPGRADE_STEP` setting, the step's number;
-  once the step is applied, it sets `SCHEMA_VERSION` and removes `SCHEMA_UPGRADE_STEP` in one transaction. The
-  next `init-db` finds a `SCHEMA_UPGRADE_STEP` left behind, runs that step's `rollback`, then applies the step
-  again from the start. So does a `rollback` that failed: the setting stays until one succeeds.
-- **Guarded changes.** Since `rollback` can run after a failure at any point of `upgrade`, it undoes only what
-  is there: every change in both functions first checks whether it is already applied or already undone (as
-  `init-db` does for tables, constraints and indexes), so a `rollback` that itself fails can simply be run
-  again.
+- **Revisions.** `0001` is the frozen 1.0.0 schema (`bookshelf/db/baseline.py`: `DOMAINS`, `TABLES`,
+  `CONSTRAINTS`, `INDEXES`), creating whatever of it is missing; `0002` is the 1.2.0 change of how users log in.
+  Every schema change since is a new revision; never change a released one. Make one with
+  `uv run alembic revision -m "what it does" --rev-id 0003` (numbered in order), from `script.py.mako`.
+- **Guarded changes.** A revision is a list of `SchemaChange`s (`bookshelf/db/changes.py`): each has a check
+  (`bookshelf/db/catalog.py`: does the column or constraint exist?), the DDL applying it and the DDL undoing it,
+  and commits on its own. `upgrade` applies them in order, skipping those already made; `downgrade` undoes them in
+  reverse, skipping those not there. Firebird rolls back DDL with its transaction, but a column added in a
+  transaction cannot be used until that transaction commits, so a revision that adds a column and fills it
+  commits twice and is not atomic: the guards are what make it safe to run either function again after a
+  failure at any point.
+- **Constraints.** `TABLES` holds only columns, with their types, `NOT NULL` and defaults. Every table constraint
+  (primary key, unique, check, foreign key) is a named `ALTER TABLE … ADD CONSTRAINT` in `CONSTRAINTS`, never
+  written inside `CREATE TABLE`; a test fails if one is. Later revisions name theirs too.
+- **Functions.** `FUNCTIONS` in `bookshelf/db/schema.py` (`BOOK_MATCHES`, the book lists' search) are
+  `CREATE OR ALTER`ed on every `init-db`, after the revisions, so a change to one reaches existing databases with
+  no revision.
+- **Applied by `init-db`, not `alembic upgrade`.** `init_db` in `bookshelf/db/schema.py` uses Alembic's
+  revisions and version table (`ALEMBIC_VERSION`), but applies them itself, one at a time: Alembic's own runner
+  would wrap each revision in one transaction, which Firebird's DDL cannot use, and knows nothing of the
+  rollbacks and lock below. `alembic upgrade` refuses; `alembic history` and `alembic revision` work (from
+  `alembic.ini`). sqlalchemy-firebird has no Alembic support of its own: `FirebirdImpl` in `schema.py` gives it
+  Alembic's defaults.
+- **Rollback on failure.** When a revision fails, `init-db` rolls back what it left uncommitted, runs its
+  `downgrade`, and stops with the error: the database is back at the previous revision, still working with the
+  running release.
+- **Rollback after a crash.** A revision killed halfway (a pod evicted, the connection lost) gets no chance to
+  roll back. Before running one, `init-db` adds the `SCHEMA_UPGRADE_STEP` setting (in `SETTINGS`: `NAME` and
+  `"VALUE"`, always quoted, a reserved word) with its ID; once it is applied, it stamps the revision and removes
+  the setting in one transaction. The next `init-db` finds a `SCHEMA_UPGRADE_STEP` left behind, runs that
+  revision's `downgrade`, then applies it again from the start. So does a `downgrade` that failed: the setting
+  stays until one succeeds.
+- **From releases before 1.5.0.** They had upgrade steps of their own, with the last one applied in the
+  `SCHEMA_VERSION` setting. A database with tables but no `ALEMBIC_VERSION` is stamped with the matching
+  revision first: version 0 (or no `SETTINGS` table at all: 1.0.x) is `0001`, version 1 is `0002`; a step left
+  halfway is rolled back as that revision. `SCHEMA_VERSION` is left as it was, so going back to 1.4.x (with a
+  backup restored, below) finds what it expects.
 - **Compatible with the running release.** The Helm chart runs `init-db` as a pre-upgrade hook, while the old
-  pods keep serving (Firebird lets them go on using a table altered meanwhile). Each step must therefore work
+  pods keep serving (Firebird lets them go on using a table altered meanwhile). Each revision must therefore work
   with the previous release's code: add columns nullable or with a default, and drop or rename one only in a
-  later release, once no running code uses it. A step that drops a column a function uses (such as
+  later release, once no running code uses it. A revision that drops a column a function uses (such as
   `BOOK_MATCHES`) alters that function first: Firebird refuses to drop a column a function depends on.
 - **One run at a time.** `init-db` locks the `SCHEMA_UPGRADE_LOCK` setting, which nothing else writes, in a
   transaction of its own held until it ends (and always rolled back), so a second run started meanwhile waits
-  for it. The lock cannot be the `SCHEMA_VERSION` row: the run updates that one after each step.
-- **Newer database.** `init-db` refuses a database at a version this release does not know: run from an older
-  release, it would replace the functions with older ones.
+  for it.
+- **Newer database.** `init-db` refuses a database at a revision this release does not know (or a step left
+  halfway that it does not know): run from an older release, it would replace the functions with older ones.
 - **Request check.** While the database is behind its code, the app answers every request with 503 and logs
   that `init-db` is needed (static files, the service worker and its offline page are still served). It does
   not refuse to start, so `init-db` can run in its container. A database with no schema at all is not behind:
   the setup wizard creates it. A database ahead of the code is fine: that is the old pods during an upgrade.
-- **What rollback cannot undo.** `rollback` restores the schema, not data a step destroyed: a dropped column's
-  values are gone. Keeping drops to the later, contract releases (above) means a failed step rarely has data to
-  lose, but back up the database with `gbak` before upgrading all the same. `rollback` is for a step that fails;
-  going back to an older release after a successful upgrade means restoring that backup.
-- **Tests.** `tests/test_upgrade_steps.py` tests the mechanism with steps of its own (`empty_db_app` gives each
-  test a database of its own). Each real step is tested on a database at the previous version holding data:
-  `upgrade` alone, then
-  `rollback` after making `upgrade` fail at each of its changes in turn, checking that the database is back at
-  version *n − 1* with its data, and that `rollback` run twice changes nothing more. A database upgraded from
-  version 0 ends with the same metadata as a new one.
+- **What rollback cannot undo.** `downgrade` restores the schema, not data a revision destroyed: a dropped
+  column's values are gone. Keeping drops to the later, contract releases (above) means a failed revision rarely
+  has data to lose, but back up the database with `gbak` before upgrading all the same. `downgrade` is for a
+  revision that fails; going back to an older release after a successful upgrade means restoring that backup.
+- **Tests.** `tests/test_migrations.py` tests the mechanism with revisions of its own (the `migrations` fixture
+  gives `init-db` the real revisions up to one, then test ones; `empty_db_app` gives each test a database of its
+  own). Each real revision is tested on a database at the previous one holding data (`test_migration_0002.py`):
+  `upgrade` alone, then `downgrade` after making `upgrade` stop at each of its changes in turn, checking that the
+  database is back at the previous revision with its data, and that `downgrade` run twice changes nothing more.
+
+### Data access
+
+- Models take a `Session` (`get_session()`, one per app context, closed and so rolled back at its end) and
+  commit their own writes. They return the dataclasses of `bookshelf/models/` (`User`, `Book`, …), never ORM
+  objects, so nothing loads lazily once the session is gone.
+- Writes the models check (a unique or foreign key clash, a row changed meanwhile) are ORM statements run with
+  `execute_change` (`insert()`, `update()`, `delete()` on the mapped classes), not `session.add()`: a failed
+  flush would end the session's transaction, while Firebird keeps it going after a failed statement. Firebird's
+  error codes are read with `has_gds_code`.
+- `read_committed(session)` runs a block in a read committed transaction of its own, for changes that must see
+  rows others committed meanwhile (adding a book with an author just created, renaming an author); the dialect's
+  own isolation setting calls a method firebird-driver lacks, so engine events set the transaction's parameters.
+- `FirebirdDialect` (`bookshelf/db/__init__.py`, URL `firebird+bookshelf://`) fixes what sqlalchemy-firebird gets
+  wrong with firebird-driver 2.x: closing (`do_terminate`) and checking (`do_ping`) pooled connections.
+- Column types carry no collation: the dialect repeats a column's type in each parameter's `CAST`, and Firebird
+  refuses a collation there. Comparisons still follow the columns' `UNICODE_CI`.
 
 ## CI and releases
 

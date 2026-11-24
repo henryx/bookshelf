@@ -13,7 +13,7 @@ from flask_login import current_user, login_required
 from werkzeug.datastructures import MultiDict
 from werkzeug.wrappers import Response as BaseResponse
 
-from bookshelf.db import get_db
+from bookshelf.db import get_session
 from bookshelf.models.authors import (
     AuthorEntry,
     UnknownAuthorError,
@@ -48,7 +48,7 @@ def index() -> str:
     partial = is_htmx() and not request.headers.get("HX-History-Restore-Request")
     return render_template(
         "_author_list.html" if partial else "authors.html",
-        authors=list_authors(get_db(), search, page),
+        authors=list_authors(get_session(), search, page),
         search=search,
         search_max_length=SEARCH_MAX_LENGTH,
     )
@@ -80,7 +80,7 @@ def rename(author_id: UUID) -> BaseResponse | str:
     Rename an author for every book; any user may. A name another author
     already has merges the two. Saving goes back to the list as it was.
     """
-    entry = find_author(get_db(), author_id)
+    entry = find_author(get_session(), author_id)
     if entry is None:
         abort(404)
     form = RenameAuthorForm(
@@ -91,7 +91,7 @@ def rename(author_id: UUID) -> BaseResponse | str:
         return _render_rename(form, entry, values)
 
     try:
-        renamed = rename_author(get_db(), author_id, form.to_author())
+        renamed = rename_author(get_session(), author_id, form.to_author())
     except UnknownAuthorError:
         # Merged into another author, or renamed into one, since it was looked up.
         current_app.logger.info(

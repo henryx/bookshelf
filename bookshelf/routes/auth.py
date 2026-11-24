@@ -21,7 +21,7 @@ from flask_login import (
 )
 from werkzeug.wrappers import Response as BaseResponse
 
-from bookshelf.db import get_db
+from bookshelf.db import get_session
 from bookshelf.models.users import (
     User,
     authenticate,
@@ -90,7 +90,7 @@ def load_user(session_id: str) -> User | None:
     """
     if not setup_done():
         return None
-    user = find_by_session_id(get_db(), session_id)
+    user = find_by_session_id(get_session(), session_id)
     if user is None or not user.is_active:
         return None
     return user
@@ -120,14 +120,14 @@ def login() -> BaseResponse | str | tuple[str, int]:
     if not form.validate_on_submit():
         return _render_login(form)
 
-    conn = get_db()
+    session = get_session()
     email = form.email.data or ""
     ip = request.remote_addr or ""
     cfg = current_app.config
     # Counted as a failure until the password checks out; blocked attempts
     # are not checked or counted, so retrying does not extend the block.
     if not start_login_attempt(
-        conn,
+        session,
         email,
         ip,
         max_failures=cfg["LOGIN_MAX_FAILURES"],
@@ -140,13 +140,13 @@ def login() -> BaseResponse | str | tuple[str, int]:
         form.form_errors.append(TOO_MANY_ATTEMPTS)
         return _render_login(form), 429
 
-    user = authenticate(conn, email, form.password.data or "")
+    user = authenticate(session, email, form.password.data or "")
     if user is None:
         current_app.logger.info("Failed login for %s from %s", email, ip)
         form.form_errors.append(INVALID_CREDENTIALS)
         return _render_login(form)
 
-    clear_login_failures(conn, email, ip)
+    clear_login_failures(session, email, ip)
     login_user(user, remember=True)
     return htmx_redirect(url_for("collection.index"))
 
@@ -181,7 +181,7 @@ def google_callback() -> BaseResponse:
     email = str(claims.get("email") or "")
     user = None
     if claims.get("email_verified") and claims.get("sub"):
-        user = google_login(get_db(), str(claims["sub"]), email)
+        user = google_login(get_session(), str(claims["sub"]), email)
     if user is None or not user.is_active:
         current_app.logger.info(
             "Google login refused for %s from %s", email, request.remote_addr

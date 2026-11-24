@@ -7,8 +7,9 @@ from uuid import uuid4
 import pytest
 from flask import Flask
 from flask.testing import FlaskClient
+from raw_db import raw
 
-from bookshelf.db import get_db
+from bookshelf.db import get_session
 from bookshelf.models.books import PAGE_SIZE, Sort, list_books
 from bookshelf.models.users import User
 
@@ -32,9 +33,9 @@ def _add_book(
     added: date | None = None,
 ) -> None:
     with app.app_context():
-        conn = get_db()
+        session = get_session()
         book_id = uuid4().bytes
-        with conn.cursor() as cur:
+        with raw(session).cursor() as cur:
             cur.execute(
                 "INSERT INTO BOOKS (ID, TITLE, ISBN, PUBLICATION_YEAR, CREATED_AT) "
                 "VALUES (?, ?, ?, ?, COALESCE(?, CURRENT_TIMESTAMP))",
@@ -59,7 +60,7 @@ def _add_book(
                     "VALUES (?, ?, ?)",
                     (book_id, author_id, order),
                 )
-        conn.commit()
+        session.commit()
 
 
 def _titles(html: str) -> list[str]:
@@ -242,7 +243,7 @@ def test_list_books_returns_total_and_pages(db_app, user):
         _add_book(db_app, f"Book {n}")
 
     with db_app.app_context():
-        page = list_books(get_db(), user.id, "", Sort.TITLE, 2, page_size=2)
+        page = list_books(get_session(), user.id, "", Sort.TITLE, 2, page_size=2)
 
     assert [book.title for book in page.books] == ["Book 2"]
     assert page.total == 3
@@ -255,6 +256,6 @@ def test_list_books_out_of_range_gives_the_last_page_with_its_total(db_app, user
         _add_book(db_app, f"Book {n}")
 
     with db_app.app_context():
-        page = list_books(get_db(), user.id, "book", Sort.ADDED, 7, page_size=2)
+        page = list_books(get_session(), user.id, "book", Sort.ADDED, 7, page_size=2)
 
     assert (len(page.books), page.total, page.page) == (1, 3, 2)
