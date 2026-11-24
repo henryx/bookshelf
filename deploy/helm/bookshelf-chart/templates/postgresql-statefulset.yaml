@@ -1,0 +1,72 @@
+{{- if .Values.postgresql.enabled }}
+{{- $pg := .Values.postgresql }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "bookshelf.postgresql.fullname" . }}
+  labels:
+    {{- include "bookshelf.labels" . | nindent 4 }}
+    {{- include "bookshelf.postgresql.selectorLabels" . | nindent 4 }}
+spec:
+  serviceName: {{ include "bookshelf.postgresql.fullname" . }}
+  # One server, one volume: no replication.
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "bookshelf.postgresql.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "bookshelf.labels" . | nindent 8 }}
+        {{- include "bookshelf.postgresql.selectorLabels" . | nindent 8 }}
+    spec:
+      # Lets the server shut down cleanly (a fast shutdown, then a checkpoint).
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: postgresql
+          image: {{ printf "%s:%s" $pg.image.repository $pg.image.tag }}
+          imagePullPolicy: {{ $pg.image.pullPolicy }}
+          ports:
+            - name: postgresql
+              containerPort: 5432
+          # The app's user owns the database, created on the first start only.
+          env:
+            - name: POSTGRES_DB
+              value: bookshelf
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "bookshelf.secretName" . }}
+                  key: APP_DB_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "bookshelf.secretName" . }}
+                  key: APP_DB_PASSWORD
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\" -d bookshelf"]
+            periodSeconds: 10
+          livenessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\" -d bookshelf"]
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          resources:
+            {{- toYaml $pg.resources | nindent 12 }}
+          volumeMounts:
+            # PostgreSQL 18's images keep their data under this, per version.
+            - name: data
+              mountPath: /var/lib/postgresql
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        {{- with $pg.persistence.storageClass }}
+        storageClassName: {{ . }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ $pg.persistence.size }}
+{{- end }}

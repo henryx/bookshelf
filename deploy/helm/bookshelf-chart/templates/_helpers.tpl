@@ -33,6 +33,28 @@ app.kubernetes.io/name: firebird
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
+{{- define "bookshelf.postgresql.fullname" -}}
+{{- printf "%s-postgresql" (include "bookshelf.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{- define "bookshelf.postgresql.selectorLabels" -}}
+app.kubernetes.io/name: postgresql
+app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}
+
+{{/* The database server: the in-cluster one if enabled, else database.backend. */}}
+{{- define "bookshelf.dbBackend" -}}
+{{- if and .Values.firebird.enabled .Values.postgresql.enabled }}
+{{- fail "firebird.enabled and postgresql.enabled: enable one database at most" }}
+{{- else if .Values.postgresql.enabled }}postgresql
+{{- else if .Values.firebird.enabled }}firebird
+{{- else if has .Values.database.backend (list "firebird" "postgresql") }}
+{{- .Values.database.backend }}
+{{- else }}
+{{- fail (printf "database.backend must be firebird or postgresql, not %q" .Values.database.backend) }}
+{{- end }}
+{{- end }}
+
 {{- define "bookshelf.image" -}}
 {{- printf "%s:%s" .Values.image.repository (.Values.image.tag | default .Chart.AppVersion) }}
 {{- end }}
@@ -54,8 +76,10 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- define "bookshelf.dbDsn" -}}
 {{- if .Values.firebird.enabled }}
 {{- printf "%s:/var/lib/firebird/data/bookshelf.fdb" (include "bookshelf.firebird.fullname" .) }}
+{{- else if .Values.postgresql.enabled }}
+{{- printf "%s/bookshelf" (include "bookshelf.postgresql.fullname" .) }}
 {{- else }}
-{{- required "database.dsn is required unless firebird.enabled" .Values.database.dsn }}
+{{- required "database.dsn is required unless firebird.enabled or postgresql.enabled" .Values.database.dsn }}
 {{- end }}
 {{- end }}
 

@@ -17,8 +17,9 @@ All notable changes to Bookshelf, newest first. Each version is released as the 
   authors page, shows 10, 50 or 100 a page. Lists now show 10 a page unless you choose more (they showed 50).
   The size is part of the list's address, so a bookmark or the browser's history keeps it.
 - **PostgreSQL:** Bookshelf runs on PostgreSQL 18 or newer as well as on Firebird: set `APP_DB_BACKEND=postgresql`
-  and `APP_DB_DSN` to `host[:port]/database`. Existing Firebird deployments need no change. The Helm chart does not
-  offer PostgreSQL yet.
+  and `APP_DB_DSN` to `host[:port]/database`. Existing Firebird deployments need no change. The Helm chart offers it
+  too: `postgresql.enabled` runs PostgreSQL 18 in the cluster, or `database.backend=postgresql` with
+  `database.dsn` uses an existing server; `database.searchLanguage` sets the search's language.
 - **Word search on PostgreSQL:** the book and author searches use PostgreSQL's full-text search: each word you type
   starts a word of the title or the authors' names, in any order ("herbert dune"), and words are matched by their
   stem ("runs" finds "running"). `APP_SEARCH_LANGUAGE` (default `english`; e.g. `italian`, or `simple` for no

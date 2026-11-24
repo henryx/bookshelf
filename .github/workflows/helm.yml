@@ -32,15 +32,19 @@ jobs:
       - name: Set up Helm
         uses: azure/setup-helm@v5
 
-      # Both database modes, with throwaway values for the required settings.
+      # Each database (Firebird, PostgreSQL) in the cluster and external, with
+      # throwaway values for the required settings.
       - name: Lint and render
         run: |
-          in_cluster="secretKey=k,database.password=p,firebird.enabled=true,firebird.rootPassword=r,ingress.enabled=true"
-          external="secretKey=k,database.password=p,database.dsn=db.example.com:/data/bookshelf.fdb"
-          helm lint --strict "$CHART" --set "$in_cluster"
-          helm lint --strict "$CHART" --set "$external"
-          helm template bookshelf "$CHART" --set "$in_cluster" > /dev/null
-          helm template bookshelf "$CHART" --set "$external" > /dev/null
+          for values in \
+            "secretKey=k,database.password=p,firebird.enabled=true,firebird.rootPassword=r,ingress.enabled=true" \
+            "secretKey=k,database.password=p,database.dsn=db.example.com:/data/bookshelf.fdb" \
+            "secretKey=k,database.password=p,postgresql.enabled=true,ingress.enabled=true" \
+            "secretKey=k,database.password=p,database.backend=postgresql,database.dsn=pg.example.com/bookshelf"
+          do
+            helm lint --strict "$CHART" --set "$values"
+            helm template bookshelf "$CHART" --set "$values" > /dev/null
+          done
 
       - name: Package and push
         if: env.PUBLISH == 'true'

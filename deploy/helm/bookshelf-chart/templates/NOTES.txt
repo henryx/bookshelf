@@ -19,4 +19,10 @@ and open http://localhost:8080/
 {{- if .Values.firebird.enabled }}
 
 The database runs in {{ include "bookshelf.firebird.fullname" . }}-0 with no replication: back up its volume.
+{{- else if .Values.postgresql.enabled }}
+
+The database runs in {{ include "bookshelf.postgresql.fullname" . }}-0 with no replication: back it up, e.g.
+
+  kubectl -n {{ .Release.Namespace }} exec {{ include "bookshelf.postgresql.fullname" . }}-0 -- \
+    sh -c 'pg_dump -U "$POSTGRES_USER" bookshelf' > bookshelf.sql
 {{- end }}

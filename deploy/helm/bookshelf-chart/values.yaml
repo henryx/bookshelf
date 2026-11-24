@@ -9,7 +9,8 @@ imagePullSecrets: []
 replicaCount: 2
 
 # Non-secret settings, as environment variables (see README.md,
-# "Configuration"). APP_DB_DSN is set from `database` below.
+# "Configuration"). APP_DB_BACKEND, APP_DB_DSN and APP_SEARCH_LANGUAGE are
+# set from `database` below.
 config:
   APP_LOG_LEVEL: info
   # Behind the ingress controller: client IP and HTTPS come from
@@ -44,12 +45,21 @@ google:
   existingSecret: ""
 
 database:
-  # Firebird user: allowed to create the tables (e.g. the database owner).
-  # With firebird.enabled, Firebird creates it on its first start.
+  # The database server: firebird or postgresql (18 or newer). Set by
+  # firebird.enabled or postgresql.enabled when one of them is.
+  backend: firebird
+  # The database user: allowed to create the tables (e.g. the database
+  # owner). With firebird.enabled or postgresql.enabled, the server creates
+  # it on its first start.
   user: bookshelf
   password: ""
-  # An existing Firebird server and database; ignored with firebird.enabled.
-  dsn: ""  # e.g. firebird.example.com:/var/lib/firebird/data/bookshelf.fdb
+  # An existing server and database; ignored with firebird.enabled or
+  # postgresql.enabled. Firebird: firebird.example.com:/var/lib/firebird/data/bookshelf.fdb;
+  # PostgreSQL: postgres.example.com/bookshelf (host[:port]/database).
+  dsn: ""
+  # PostgreSQL only: the text search configuration of the book and author
+  # searches (stemming, stop words), e.g. italian, or simple for none.
+  searchLanguage: english
 
 service:
   type: ClusterIP
@@ -96,6 +106,26 @@ firebird:
     pullPolicy: IfNotPresent
   # SYSDBA password (the app does not use it).
   rootPassword: ""
+  persistence:
+    size: 5Gi
+    # Empty: the cluster's default storage class.
+    storageClass: ""
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 1Gi
+
+# PostgreSQL 18 in the cluster: one pod with its own volume (no replication:
+# back it up, e.g. pg_dump). The app's user (database.user and password) is
+# its owner, created on the first start.
+postgresql:
+  enabled: false
+  image:
+    repository: postgres
+    tag: "18"
+    pullPolicy: IfNotPresent
   persistence:
     size: 5Gi
     # Empty: the cluster's default storage class.

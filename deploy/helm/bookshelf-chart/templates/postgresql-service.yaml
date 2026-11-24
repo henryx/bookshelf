@@ -1,0 +1,16 @@
+{{- if .Values.postgresql.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "bookshelf.postgresql.fullname" . }}
+  labels:
+    {{- include "bookshelf.labels" . | nindent 4 }}
+    {{- include "bookshelf.postgresql.selectorLabels" . | nindent 4 }}
+spec:
+  selector:
+    {{- include "bookshelf.postgresql.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: postgresql
+      port: 5432
+      targetPort: postgresql
+{{- end }}
