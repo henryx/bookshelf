@@ -18,6 +18,8 @@ from bookshelf.models.users import (
     authenticate,
     create_user,
     find_by_email,
+    find_by_id,
+    record_login,
 )
 
 
@@ -262,7 +264,10 @@ def test_list_users(
     assert rv.exit_code == 0, rv.output
     lines = rv.output.splitlines()
     assert any(
-        all(column in line for column in ("Email", "Role", "Login", "Status"))
+        all(
+            column in line
+            for column in ("Email", "Role", "Login", "Status", "Last login")
+        )
         for line in lines
     )
     admin_line = next(line for line in lines if ADMIN_EMAIL in line)
@@ -273,6 +278,27 @@ def test_list_users(
     assert "local" in user_line
     assert "locked" in user_line
     assert lines.index(admin_line) < lines.index(user_line)
+
+
+def test_list_users_shows_the_last_login(db_app: Flask, admin: User, user: User):
+    with db_app.app_context():
+        session = get_session()
+        record_login(session, admin.id)
+        found = find_by_id(session, admin.id)
+    assert found is not None and found.last_login_at is not None
+
+    rv = db_app.test_cli_runner().invoke(
+        args=["list-users", "--admin-email", ADMIN_EMAIL],
+        input=f"{ADMIN_PASSWORD}\n",
+    )
+
+    assert rv.exit_code == 0, rv.output
+    lines = rv.output.splitlines()
+    admin_line = next(line for line in lines if ADMIN_EMAIL in line)
+    user_line = next(line for line in lines if user.email in line)
+    assert f"{found.last_login_at:%Y-%m-%d %H:%M} UTC" in admin_line
+    # Typing the admin's password for the CLI is not a login.
+    assert "never" in user_line
 
 
 def test_list_users_requires_admin(db_app: Flask, user: User, password: str):

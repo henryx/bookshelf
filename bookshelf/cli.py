@@ -400,11 +400,22 @@ def list_users_command(admin_email: str) -> None:
     session = get_session()
     _require_admin(session, admin_email, "List users")
 
-    table = PrettyTable(["Email", "Role", "Login", "Status"], align="l")
+    table = PrettyTable(["Email", "Role", "Login", "Status", "Last login"], align="l")
     for user in list_users(session):
         status = "locked" if user.is_locked else "active"
+        last_login = (
+            f"{user.last_login_at:%Y-%m-%d %H:%M} UTC"
+            if user.last_login_at
+            else "never"
+        )
         table.add_row(
-            [user.email, user.role.value, user.auth_method.value.lower(), status]
+            [
+                user.email,
+                user.role.value,
+                user.auth_method.value.lower(),
+                status,
+                last_login,
+            ]
         )
     click.echo(table)
 

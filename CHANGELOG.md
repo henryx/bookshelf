@@ -8,8 +8,8 @@ All notable changes to Bookshelf, newest first. Each version is released as the 
 
 ### New
 
-- **Last login:** the admin users list shows when each user last logged in (in UTC), or "Never". The schema
-  revision `0004` adds `USERS.LAST_LOGIN_AT`, applied by `init-db` as usual.
+- **Last login:** the admin users list and `flask list-users` show when each user last logged in (in UTC), or
+  "Never". The schema revision `0004` adds `USERS.LAST_LOGIN_AT`, applied by `init-db` as usual.
 
 ### Changes
 

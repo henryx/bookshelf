@@ -249,7 +249,7 @@ The same operations are also available as CLI commands (see README):
 |---|---|
 | Create the first admin | `create-admin` (no admin credentials needed; refused once any admin exists, locked or not) |
 | Create a regular user | `create-user` |
-| List users | `list-users` |
+| List users | `list-users` (with each user's last login, in UTC, as in the admin area) |
 | Promote / demote a user | `promote-user`, `demote-user` |
 | Reset a password | `reset-user-password` (the admin sets the new password; no email is available) |
 | Lock / unlock a user | `lock-user`, `unlock-user` |

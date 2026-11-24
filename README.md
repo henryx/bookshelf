@@ -180,7 +180,7 @@ characters long (12 by default).
 | `create-admin EMAIL` | Create the first admin (refused once any admin exists) |
 | `create-user EMAIL [--auth local\|google]` | Create a regular user, logging in with a password (`local`, the default: asked for) or with Google (no password) |
 | `set-auth-method EMAIL local\|google` | Switch how a user logs in (a new password is asked for `local`); ends their open sessions |
-| `list-users` | Show all users with role, how they log in, and lock status |
+| `list-users` | Show all users with role, how they log in, lock status and last login (UTC) |
 | `reset-user-password EMAIL` | Set a new password for a user (refused for a Google user: `set-auth-method` first) |
 | `promote-user EMAIL` / `demote-user EMAIL` | Give or remove the admin role |
 | `lock-user EMAIL` / `unlock-user EMAIL` | Block or allow a user's login; locking ends open sessions |
