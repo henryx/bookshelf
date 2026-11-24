@@ -27,6 +27,7 @@ Bookshelf library webapp is a webapp to manage a book library built with Flask u
 - `uv run tox -e type`: Run type check
 - `uv run tox -e audit`: Run auditing
 - `uv run tox -e report`: Run report coverage
+- `gh run list --commit <sha>` / `gh run view <id>` / `gh run watch <id>`: Check a push's CI run (`tests.yml`, then the image and chart jobs); use `gh`, logged in, not the unauthenticated REST API (60 requests an hour). A newer push to the same branch cancels a running one (`cancel-in-progress`)
 
 ## Project Layout
 - `bookshelf/__init__.py`: `create_app()` factory, error handlers, logging
