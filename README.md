@@ -291,7 +291,8 @@ revisions in `bookshelf/migrations/versions/`, applied by `init-db`. The ORM met
 it, and a test checks that every mapped table and column is in the schema the migrations make.
 
 - **Revisions.** `0001` is the frozen 1.0.0 schema (`bookshelf/db/baseline.py`: `DOMAINS`, `TABLES`,
-  `CONSTRAINTS`, `INDEXES`), creating whatever of it is missing; `0002` is the 1.2.0 change of how users log in.
+  `CONSTRAINTS`, `INDEXES`), creating whatever of it is missing; `0002` is the 1.2.0 change of how users log in;
+  `0003` widens `BOOKS.ISBN` to `VARCHAR(18)` for serials' codes (see "Serials (ISSN)" in docs/bookshelf.md).
   The same DDL runs on PostgreSQL, but for what `POSTGRESQL_COLLATIONS` and `POSTGRESQL_INDEXES` replace (a
   `UNICODE_CI` collation instead of the `UUID` domain, PostgreSQL having a UUID type; the descending index's
   syntax). A `SchemaChange`'s SQL can be one statement for both or one per backend (`bookshelf/db/changes.py`),
@@ -305,6 +306,12 @@ it, and a test checks that every mapped table and column is in the schema the mi
   transaction cannot be used until that transaction commits, so a revision that adds a column and fills it
   commits twice and is not atomic: the guards are what make it safe to run either function again after a
   failure at any point.
+  - A change without undo DDL is kept on downgrade: one the previous release works with that cannot be undone
+    (Firebird narrows no column, so `0003` keeps `ISBN` wide; the restored check still holds it to 13 digits).
+  - A `KeyedChange` wraps a change Firebird makes only with a key dropped (retyping a column in a `UNIQUE`): it
+    drops the keys just around that change and adds back any missing, each step guarded. While a key is down
+    the database does not enforce it, so a duplicate written meanwhile makes the change fail and roll back.
+  - Firebird keeps a `CHAR`'s padding when it becomes a `VARCHAR`: `0003` trims the values (on downgrade too).
 - **Constraints.** `TABLES` holds only columns, with their types, `NOT NULL` and defaults. Every table constraint
   (primary key, unique, check, foreign key) is a named `ALTER TABLE … ADD CONSTRAINT` in `CONSTRAINTS`, never
   written inside `CREATE TABLE`; a test fails if one is. Later revisions name theirs too.
@@ -349,6 +356,9 @@ it, and a test checks that every mapped table and column is in the schema the mi
   column's values are gone. Keeping drops to the later, contract releases (above) means a failed revision rarely
   has data to lose, but back up the database with `gbak` before upgrading all the same. `downgrade` is for a
   revision that fails; going back to an older release after a successful upgrade means restoring that backup.
+  Its pods may run on the newer schema meanwhile (that is the upgrade's own window), but never run an older
+  release's `init-db` on it: before 1.5.0 it re-adds the constraints it knows, such as the 13-digit check on
+  `ISBN`, and serials with an issue can no longer be saved.
 - **Tests.** `tests/test_migrations.py` tests the mechanism with revisions of its own (the `migrations` fixture
   gives `init-db` the real revisions up to one, then test ones; `empty_db_app` gives each test a database of its
   own). Each real revision is tested on a database at the previous one holding data (`test_migration_0002.py`):

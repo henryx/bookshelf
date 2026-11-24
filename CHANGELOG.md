@@ -24,12 +24,18 @@ All notable changes to Bookshelf, newest first. Each version is released as the 
   stem ("runs" finds "running"). `APP_SEARCH_LANGUAGE` (default `english`; e.g. `italian`, or `simple` for no
   stemming) picks the language; run `init-db` after changing it. On Firebird the search is unchanged.
 
+### Fixes
+
+- The About dialog's close button (✕) was all but invisible: light text on the dialog's light paper.
+
 ### Changes
 
 - The app reads and writes the database through the SQLAlchemy ORM (with `sqlalchemy-firebird`), and its schema
   changes are Alembic migrations. Nothing changes in use. Upgrading: run `init-db` as for any release (the Helm
   chart does): it records a database's existing schema version as the matching migration, then applies any
-  newer one. The schema itself is unchanged, so 1.4.x still runs on a database upgraded this way.
+  newer one. The only schema change is the wider `BOOKS.ISBN` for serials (see New), which 1.4.x still runs
+  on. Going back to 1.4.x, do not run its `init-db`: it would add back the old 13-digit check on `ISBN`, and
+  serials with an issue could no longer be saved, even after upgrading again.
 
 ### Development
 
