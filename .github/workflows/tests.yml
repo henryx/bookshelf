@@ -22,7 +22,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        env: [lint, type, audit, py3]
+        env: [lint, type, audit, py3, py3-postgres]
         include:
           # check only: fail on unformatted files instead of rewriting them
           - env: format
@@ -47,8 +47,8 @@ jobs:
           enable-cache: true
           cache-dependency-glob: uv.lock
 
-      # py3 starts Firebird via testcontainers (Docker is preinstalled on
-      # ubuntu-latest).
+      # py3 starts Firebird and py3-postgres PostgreSQL via testcontainers
+      # (Docker is preinstalled on ubuntu-latest).
       - name: Run tox -e ${{ matrix.env }}
         run: uv run tox -e ${{ matrix.env }} ${{ matrix.args }}
         env:
