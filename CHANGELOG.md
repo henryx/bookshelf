@@ -39,6 +39,9 @@ All notable changes to Bookshelf, newest first. Each version is released as the 
 
 ### Development
 
+- The README shows how to run Bookshelf with Docker Compose, with PostgreSQL or Firebird.
+- Two browser tests that failed now and then on CI's slower runners wait properly: for the authors page to load
+  before typing a search, and no longer for a scanner that a quick barcode read closes at once.
 - The tests run on PostgreSQL too: `uv run tox -e py3-postgres` (a PostgreSQL 18 container per worker), also in CI.
 - Schema changes are Alembic revisions in `bookshelf/migrations/versions/`, made with `alembic revision` and
   applied by `init-db` (not `alembic upgrade`); README, "Schema changes".
