@@ -371,6 +371,22 @@ def test_account_menu_opens_the_about_dialog(reader_page: Page, live_server: str
     expect(dialog).to_be_hidden()
 
 
+def test_about_dialogs_close_button_is_readable(reader_page: Page):
+    """
+    The dialog lives in the top bar, inside the hero: its close button takes
+    the dialog's ink, not the hero's light text, which the paper would hide.
+    """
+    reader_page.locator("details.avatar summary").click()
+    reader_page.get_by_role("link", name="About").click()
+    dialog = reader_page.get_by_role("dialog", name="About Bookshelf")
+    close = dialog.get_by_role("button", name="Close")
+    expect(close).to_be_visible()
+
+    ink = dialog.evaluate("d => getComputedStyle(d).color")
+
+    assert close.evaluate("b => getComputedStyle(b).color") == ink
+
+
 def test_admin_copies_a_collection_from_the_user_dialog(
     herbert_book, user: User, admin: User, admin_page: Page, live_server: str
 ):

@@ -364,6 +364,12 @@ a.button.secondary,
   color: var(--on-cloth);
 }
 
+/* A dialog opened from the hero (About, in the top bar) is paper, not cloth:
+   its buttons take the dialog's ink, not the hero's light text. */
+.hero dialog button.secondary {
+  color: var(--ink);
+}
+
 .hero input,
 .hero select {
   border-color: transparent;
