@@ -11,7 +11,7 @@
   </div>
   <table class="users">
     <thead>
-      <tr><th>Email</th><th>Name</th><th>Role</th><th>Login</th><th>Status</th></tr>
+      <tr><th>Email</th><th>Name</th><th>Role</th><th>Login</th><th>Status</th><th>Last login</th></tr>
     </thead>
     <tbody>
       {% for user in users %}
@@ -27,6 +27,12 @@
           <td>{{ "Admin" if user.is_admin else "Regular" }}</td>
           <td>{{ "Google" if user.auth_method.value == "GOOGLE" else "Password" }}</td>
           <td>{{ "Locked" if user.is_locked else "Active" }}</td>
+          {% if user.last_login_at %}
+            <td><time datetime="{{ user.last_login_at.strftime('%Y-%m-%dT%H:%MZ') }}">
+              {{- user.last_login_at.strftime("%Y-%m-%d %H:%M") }} UTC</time></td>
+          {% else %}
+            <td>Never</td>
+          {% endif %}
         </tr>
       {% endfor %}
     </tbody>

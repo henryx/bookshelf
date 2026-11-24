@@ -28,6 +28,7 @@ from bookshelf.models.users import (
     clear_login_failures,
     find_by_session_id,
     google_login,
+    record_login,
     start_login_attempt,
 )
 from bookshelf.routes import htmx_redirect, is_htmx
@@ -147,6 +148,7 @@ def login() -> BaseResponse | str | tuple[str, int]:
         return _render_login(form)
 
     clear_login_failures(session, email, ip)
+    record_login(session, user.id)
     login_user(user, remember=True)
     return htmx_redirect(url_for("collection.index"))
 
@@ -191,6 +193,7 @@ def google_callback() -> BaseResponse:
     current_app.logger.info(
         "Google login for %s from %s", user.email, request.remote_addr
     )
+    record_login(get_session(), user.id)
     login_user(user, remember=True)
     return redirect(url_for("collection.index"))
 

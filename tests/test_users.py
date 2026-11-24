@@ -2,7 +2,7 @@ import logging
 import threading
 import time
 from collections.abc import Callable
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 import pytest
@@ -32,6 +32,7 @@ from bookshelf.models.users import (
     google_login,
     list_users,
     login_limits,
+    record_login,
     set_auth_method,
     set_locked,
     set_password,
@@ -817,3 +818,70 @@ def test_a_google_user_has_no_password_to_change(db_app: Flask, password: str):
         update_account(
             get_session(), google, name="Gina", surname=None, password=password
         )
+
+
+# Last login
+
+
+def _last_login(app: Flask, user: User) -> datetime | None:
+    with app.app_context():
+        found = find_by_id(get_session(), user.id)
+    assert found is not None
+    return found.last_login_at
+
+
+def _utc_now() -> datetime:
+    return datetime.now(UTC).replace(tzinfo=None)
+
+
+def test_a_new_user_has_never_logged_in(db_app: Flask, user: User):
+    assert user.last_login_at is None
+    assert _last_login(db_app, user) is None
+
+
+def test_record_login_stamps_the_time_in_utc(db_app: Flask, user: User):
+    before = _utc_now()
+    with db_app.app_context():
+        record_login(get_session(), user.id)
+    after = _utc_now()
+
+    last_login = _last_login(db_app, user)
+    # Firebird keeps tenths of a millisecond: `before` may be cut below.
+    assert last_login is not None
+    assert before - timedelta(milliseconds=1) <= last_login <= after
+
+
+def test_list_users_shows_the_last_login(db_app: Flask, user: User):
+    with db_app.app_context():
+        session = get_session()
+        record_login(session, user.id)
+        (listed,) = list_users(session)
+
+    assert listed.last_login_at == _last_login(db_app, user)
+
+
+def test_record_login_waits_for_a_concurrent_change(
+    db_app: Flask, user: User, other_conn: RawConnection, race
+):
+    # An admin renames the user, not yet committed.
+    with other_conn.cursor() as cur:
+        cur.execute("UPDATE USERS SET NAME = 'Ada' WHERE ID = ?", (user.id,))
+
+    race(lambda session: record_login(session, user.id), "UPDATE USERS")
+
+    with db_app.app_context():
+        saved = find_by_id(get_session(), user.id)
+    assert saved is not None
+    assert saved.name == "Ada" and saved.last_login_at is not None
+
+
+def test_record_login_of_a_user_deleted_meanwhile(
+    db_app: Flask, user: User, other_conn: RawConnection, race
+):
+    with other_conn.cursor() as cur:
+        cur.execute("DELETE FROM USERS WHERE ID = ?", (user.id,))
+
+    race(lambda session: record_login(session, user.id), "UPDATE USERS")
+
+    with db_app.app_context():
+        assert find_by_id(get_session(), user.id) is None

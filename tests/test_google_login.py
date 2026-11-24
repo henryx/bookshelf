@@ -122,6 +122,7 @@ def test_a_google_user_logs_in_and_is_bound(
     with google_app.app_context():
         bound = find_by_id(get_session(), google_user.id)
     assert bound is not None and bound.google_subject == "google-sub-1"
+    assert bound.last_login_at is not None
 
 
 def test_login_is_logged(
@@ -173,6 +174,9 @@ def test_a_locked_google_user_is_refused(
 
     assert GOOGLE_LOGIN_REFUSED in rv.get_data(as_text=True)
     assert not _logged_in(client)
+    with google_app.app_context():
+        refused = find_by_id(get_session(), google_user.id)
+    assert refused is not None and refused.last_login_at is None
 
 
 def test_a_failed_google_answer_says_so(

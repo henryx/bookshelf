@@ -20,7 +20,7 @@ from bookshelf.models.users.listing import (
     find_by_session_id,
     list_users,
 )
-from bookshelf.models.users.login import authenticate, google_login
+from bookshelf.models.users.login import authenticate, google_login, record_login
 from bookshelf.models.users.login_limits import (
     clear_login_failures,
     prune_login_failures,
@@ -58,6 +58,7 @@ __all__ = [
     "google_login",
     "list_users",
     "prune_login_failures",
+    "record_login",
     "set_auth_method",
     "set_locked",
     "set_password",

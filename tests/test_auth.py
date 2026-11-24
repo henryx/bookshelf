@@ -18,6 +18,7 @@ from bookshelf.models.users import (
     User,
     clear_login_failures,
     delete_user,
+    find_by_id,
     set_password,
     set_role,
 )
@@ -72,6 +73,26 @@ def test_login_success_sets_persistent_cookie(
     assert rv.headers["Location"] == "/"
     assert any("remember_token=" in c for c in rv.headers.getlist("Set-Cookie"))
     assert db_client.get("/").status_code == 200
+
+
+def test_login_records_the_last_login(
+    db_app: Flask, db_client: FlaskClient, user: User, password: str
+):
+    _login(db_client, user.email, password)
+
+    with db_app.app_context():
+        saved = find_by_id(get_session(), user.id)
+    assert saved is not None and saved.last_login_at is not None
+
+
+def test_failed_login_records_no_last_login(
+    db_app: Flask, db_client: FlaskClient, user: User
+):
+    _login(db_client, user.email, "wrong-password")
+
+    with db_app.app_context():
+        saved = find_by_id(get_session(), user.id)
+    assert saved is not None and saved.last_login_at is None
 
 
 def test_login_page_when_logged_in_goes_to_the_collection(

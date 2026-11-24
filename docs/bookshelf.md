@@ -170,7 +170,7 @@ Decisions:
 The admin area is where admins manage the people who can use Bookshelf. Only admins can open it: a visitor who is
 not logged in is sent to the login page, and a regular user is refused. An admin can:
 
- - See every user, with their email, name, role and status.
+ - See every user, with their email, name, role, status and last login.
  - Create a user.
  - Set or change a user's name and surname.
  - Make a user an admin, or an admin a regular user again.
@@ -183,7 +183,9 @@ not logged in is sent to the login page, and a regular user is refused. An admin
 
 **Opening it.** When an admin is logged in, the account menu in the top bar (see "Account menu") has an "Admin" link;
 other users do not see it. It opens the users list: a table with each user's email, name and surname, role (regular
-or admin) and status (active or locked).
+or admin), how they log in, status (active or locked) and last login: the date and time (to the minute, in UTC) of
+their last successful login, with a password or Google, or "Never". Failed and refused logins do not count. The time
+is the app's clock in UTC, so it reads the same whatever the database server's time zone (Firebird 3 has none).
 
 **Editing a user.** Clicking an email opens the user's details in a modal dialog over the list. The email is shown but
 cannot be changed: it is the login, so a wrong email means deleting the user and creating them again. The name and

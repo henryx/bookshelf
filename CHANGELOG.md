@@ -6,6 +6,11 @@ All notable changes to Bookshelf, newest first. Each version is released as the 
 
 ## Unreleased
 
+### New
+
+- **Last login:** the admin users list shows when each user last logged in (in UTC), or "Never". The schema
+  revision `0004` adds `USERS.LAST_LOGIN_AT`, applied by `init-db` as usual.
+
 ### Changes
 
 - **Setup token:** the first-run wizard (`/setup`) asks for a setup token, so whoever reaches a new install first

@@ -89,6 +89,8 @@ class UserRow(Base):
     surname: Mapped[str | None] = mapped_column(String(127))
     auth_method: Mapped[str] = mapped_column(String(16), server_default=text("'LOCAL'"))
     google_subject: Mapped[str | None] = mapped_column(String(255))
+    # UTC, NULL until the first login.
+    last_login_at: Mapped[datetime | None]
 
 
 class LoginFailureRow(Base):

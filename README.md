@@ -400,13 +400,14 @@ it, and a test checks that every mapped table and column is in the schema the mi
 
 - **Revisions.** `0001` is the frozen 1.0.0 schema (`bookshelf/db/baseline.py`: `DOMAINS`, `TABLES`,
   `CONSTRAINTS`, `INDEXES`), creating whatever of it is missing; `0002` is the 1.2.0 change of how users log in;
-  `0003` widens `BOOKS.ISBN` to `VARCHAR(18)` for serials' codes (see "Serials (ISSN)" in docs/bookshelf.md).
+  `0003` widens `BOOKS.ISBN` to `VARCHAR(18)` for serials' codes (see "Serials (ISSN)" in docs/bookshelf.md);
+  `0004` adds `USERS.LAST_LOGIN_AT`, when each user last logged in (UTC).
   The same DDL runs on PostgreSQL, but for what `POSTGRESQL_COLLATIONS` and `POSTGRESQL_INDEXES` replace (a
   `UNICODE_CI` collation instead of the `UUID` domain, PostgreSQL having a UUID type; the descending index's
   syntax). A `SchemaChange`'s SQL can be one statement for both or one per backend (`bookshelf/db/changes.py`),
   and `bookshelf/db/catalog.py` looks objects up in either's catalog.
   Every schema change since is a new revision; never change a released one. Make one with
-  `uv run alembic revision -m "what it does" --rev-id 0003` (numbered in order), from `script.py.mako`.
+  `uv run alembic revision -m "what it does" --rev-id 0005` (numbered in order), from `script.py.mako`.
 - **Guarded changes.** A revision is a list of `SchemaChange`s (`bookshelf/db/changes.py`): each has a check
   (`bookshelf/db/catalog.py`: does the column or constraint exist?), the DDL applying it and the DDL undoing it,
   and commits on its own. `upgrade` applies them in order, skipping those already made; `downgrade` undoes them in

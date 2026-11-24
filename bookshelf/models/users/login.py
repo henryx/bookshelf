@@ -1,11 +1,19 @@
 """Logging in: with a password, or with a Google account."""
 
 import logging
+from datetime import UTC, datetime
+from uuid import UUID
 
 from sqlalchemy import select, update
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
-from bookshelf.db import execute_change
+from bookshelf.db import (
+    execute_change,
+    is_concurrent_delete,
+    is_update_conflict,
+    read_committed,
+)
 from bookshelf.db.orm import UserRow
 from bookshelf.models.users.listing import fetch_user, find_by_email, find_by_id
 from bookshelf.models.users.model import AuthMethod, User
@@ -64,3 +72,30 @@ def google_login(session: Session, subject: str, email: str) -> User | None:
         return None
     logger.info("User %s bound to their Google account", user.email)
     return find_by_id(session, user.id)
+
+
+def record_login(session: Session, user_id: UUID) -> None:
+    """
+    Set the user's last login to now, in UTC (the app's clock: Firebird 3 has
+    no time zones). In a read committed transaction of its own, so a
+    concurrent change of the user (another login, an admin's edit) is waited
+    for rather than failing the login: Firebird then reports an update
+    conflict, or a deleted user, and it runs once more, seeing that change.
+    """
+    try:
+        _stamp_login(session, user_id)
+    except DBAPIError as e:
+        if not (is_update_conflict(e) or is_concurrent_delete(e)):
+            raise
+        logger.info("Recording login of %s again after a concurrent change", user_id)
+        _stamp_login(session, user_id)
+
+
+def _stamp_login(session: Session, user_id: UUID) -> None:
+    now = datetime.now(UTC).replace(tzinfo=None)
+    with read_committed(session):
+        execute_change(
+            session,
+            update(UserRow).where(UserRow.id == user_id).values(last_login_at=now),
+        )
+        session.commit()

@@ -163,12 +163,14 @@ def _assert_complete_schema(conn: RawConnection) -> None:
         "SURNAME",
         "AUTH_METHOD",
         "GOOGLE_SUBJECT",
+        "LAST_LOGIN_AT",
     ]
     assert _domain(conn, "USERS", "ID") == "UUID"
     assert _nullable(conn, "USERS", "PASSWORD_HASH")
     assert _nullable(conn, "USERS", "NAME")
     assert _nullable(conn, "USERS", "SURNAME")
     assert _nullable(conn, "USERS", "GOOGLE_SUBJECT")
+    assert _nullable(conn, "USERS", "LAST_LOGIN_AT")
     assert _constraints(conn, "USERS") == {
         "PK_USERS": "PRIMARY KEY",
         "UQ_USERS_EMAIL": "UNIQUE",

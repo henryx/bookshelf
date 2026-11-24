@@ -2,6 +2,7 @@
 
 import hashlib
 from dataclasses import dataclass
+from datetime import datetime
 from enum import StrEnum
 from uuid import UUID
 
@@ -78,6 +79,8 @@ class User:
     surname: str | None = None
     auth_method: AuthMethod = AuthMethod.LOCAL
     google_subject: str | None = None
+    # When they last logged in, in UTC; None if they never have.
+    last_login_at: datetime | None = None
 
     # Flask-Login user protocol
     is_authenticated = True

@@ -21,6 +21,7 @@ def row_to_user(row: UserRow) -> User:
         surname=row.surname,
         auth_method=AuthMethod(row.auth_method),
         google_subject=row.google_subject,
+        last_login_at=row.last_login_at,
     )
 
 
