@@ -85,7 +85,7 @@ Bookshelf library webapp is a webapp to manage a book library built with Flask u
   - No `text()` or raw SQL in models, and no backend's own syntax: what Firebird and PostgreSQL write differently is a construct of `bookshelf/db/sql.py` (add one there, compiled for both). `text()` is for migrations, `catalog.py`, `schema.py` and tests only.
   - Never interpolate names or clauses into SQL; values only as bound parameters. Bind a Python string compared with no column as `literal(value, String(n))`: the dialect casts every parameter, and `VARCHAR` without a length is invalid.
   - Mapped column types carry no collation (the dialect would put it in each parameter's `CAST`, which Firebird refuses); the DDL keeps it (`UNICODE_CI`, on PostgreSQL a nondeterministic ICU collation of that name). Names are lower case (unquoted, so upper case in Firebird and lower case in PostgreSQL, as the DDL's unquoted names).
-  - The schema changes only through Alembic revisions in `bookshelf/migrations/versions/`, made from `script.py.mako`: a list of guarded `SchemaChange`s (`upgrade` and `downgrade`, both rerunnable), compatible with the previous release's code. Never change a released revision, nor the frozen 1.0.0 DDL in `bookshelf/db/baseline.py`. Update `orm.py` to match, and test the revision on a database at the previous one (as `tests/test_migration_0002.py`).
+  - The schema changes only through Alembic revisions in `bookshelf/migrations/versions/`, made from `script.py.mako`: a list of guarded `SchemaChange`s (`upgrade` and `downgrade`, both rerunnable), compatible with the previous release's code. Never change a released revision, nor the frozen 1.0.0 DDL in `bookshelf/db/baseline.py`. Update `orm.py` to match, and test the revision on a database at the previous one (as `tests/test_migration_0002.py`), knowing the revisions up to its own only (`migrations(last="<its number>")`), so later ones do not break its checks.
   - `FUNCTIONS` (functions such as `BOOK_MATCHES`, the book lists' search condition; per backend) and `POSTGRESQL_HELPERS` are created or replaced on every `init_db`: edit them in place at any time, for both backends.
   - Every database change is tested on both backends (`py3` and `py3-postgres`); a test of one backend's own behaviour is marked `@pytest.mark.firebird` or `@pytest.mark.postgresql`.
 - Other:
@@ -123,6 +123,7 @@ Avoid generic AI aesthetics. Make creative, distinctive choices.
 - Do not refactor unrelated code unless asked.
 - Before finishing, verify with the narrowest relevant test.
 - Do not commit files unless asked.
+- When asked, format code before commit.
 - do not touch `uv.lock` manually but use `uv` command to modify it.
 
 ## Critical Rules

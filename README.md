@@ -473,6 +473,8 @@ it, and a test checks that every mapped table and column is in the schema the mi
   own). Each real revision is tested on a database at the previous one holding data (`test_migration_0002.py`):
   `upgrade` alone, then `downgrade` after making `upgrade` stop at each of its changes in turn, checking that the
   database is back at the previous revision with its data, and that `downgrade` run twice changes nothing more.
+  Its database knows the revisions up to its own only (`migrations(last="0004")`), so a later revision does not
+  change what it checks.
 
 ### Data access
 

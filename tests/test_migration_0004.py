@@ -35,7 +35,11 @@ V3_COLUMNS = [
 def v3_conn(
     empty_db_app: Flask, migrations: Callable[..., None]
 ) -> Iterator[RawConnection]:
-    """A connection to a database at revision 0003, holding a user."""
+    """
+    A connection to a database at revision 0003, holding a user; init_db then
+    knows the revisions up to 0004 only, so later ones do not change what
+    these tests see.
+    """
     migrations(last="0003")
     with empty_db_app.app_context():
         init_db(get_engine())
@@ -46,7 +50,7 @@ def v3_conn(
                 (uuid4(), EMAIL),
             )
         conn.commit()
-        migrations()
+        migrations(last="0004")
         yield conn
 
 
