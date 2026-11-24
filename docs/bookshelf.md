@@ -10,8 +10,17 @@ Frontend is developed using HTMX library as PWA, to permit to install on mobile 
 
 Decisions:
 
- - Data access uses the SQLAlchemy ORM, through `sqlalchemy-firebird` on `firebird-driver` (since 1.5.0; literal
-   SQL queries before). Models return plain dataclasses, never ORM objects.
+ - The database is Firebird or, from 1.5.0, PostgreSQL 18 or newer: one per deployment (`APP_DB_BACKEND`, Firebird
+   by default). Both run the same schema, models and tests; what they write differently is kept in one place
+   (`bookshelf/db/sql.py` for queries, per-backend DDL and functions in `bookshelf/db/`). PostgreSQL must be 18 or
+   newer: the case-insensitive collation the schema uses works with LIKE from 18.
+ - Data access uses the SQLAlchemy ORM, through `sqlalchemy-firebird` on `firebird-driver`, or psycopg 3 (since
+   1.5.0; literal SQL queries before). Models return plain dataclasses, never ORM objects.
+ - Searching the book and author lists differs by database, each doing what it does best. Firebird finds the text
+   as typed inside the title, an author's name or the ISBN. PostgreSQL uses its full-text search: each word of the
+   text, stemmed (`APP_SEARCH_LANGUAGE`, English by default: "runs" finds "running"), starts a word of the title or
+   the authors' names, in any order; ISBNs still match their digits anywhere. Suggestions start with the typed
+   text on both.
  - The schema is made by Alembic migrations, applied by `init-db`, which also creates or replaces the PSQL
    functions (`BOOK_MATCHES`, the book lists' search) and is safe to rerun. Tables are created with their columns
    only; every constraint is added separately with a name of our own (`PK_USERS`, `UQ_USERS_EMAIL`, …) instead
@@ -612,6 +621,7 @@ Decisions:
 
  - The main page is the book list, with a search box. There is no separate dashboard page.
  - One search box searches title, author and ISBN together. There are no separate filters (by author or category).
+   On PostgreSQL it is a word search (see Decisions): "herbert dune" finds Dune, but "une" finds nothing.
  - The list is sorted by title by default; the user can sort it by author or by date added instead.
  - The list is shown in pages of 10 books; "Show", next to the order, makes them 50 or 100. The size is kept, as
    the search and order are, by the page links, the rows' buttons and the book dialog, and is part of the
@@ -690,7 +700,7 @@ Known limitations:
 Status: built at `/authors`, linked from the account menu.
 
 Every author in the catalogue, by surname then name ("Herbert, Frank"; "Homer" alone), with how many books are
-theirs, a search box (name or surname, ignoring case) and pages of 10, 50 or 100 ("Show", as on the main page). An author's name opens their books; each
+theirs, a search box (name or surname, ignoring case; words of them on PostgreSQL) and pages of 10, 50 or 100 ("Show", as on the main page). An author's name opens their books; each
 row's "Rename" opens a dialog to change the author's name and surname, for every book at once.
 
 Decisions:

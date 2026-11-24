@@ -1,6 +1,6 @@
 # Bookshelf - A Book library app
 
-A self-hosted web app to manage a book library, built with Flask, HTMX and Firebird.
+A self-hosted web app to manage a book library, built with Flask, HTMX and Firebird or PostgreSQL.
 Requirements and decisions are in [docs/bookshelf.md](docs/bookshelf.md).
 
 ## Requirements
@@ -8,10 +8,11 @@ Requirements and decisions are in [docs/bookshelf.md](docs/bookshelf.md).
 - Python 3.14+
 - [uv](https://docs.astral.sh/uv/)
 - Docker (development database, tests, image builds)
-- The Firebird client library, `libfbclient.so.2`, which `firebird-driver` loads (dev server, CLI, tests):
+- For Firebird, the Firebird client library, `libfbclient.so.2`, which `firebird-driver` loads (dev server, CLI, tests):
   `libfbclient2` on Fedora (`sudo dnf install libfbclient2`) and Debian/Ubuntu (`sudo apt install libfbclient2`).
   Without it every database call, and every test, fails with "The location of Firebird Client Library could not
-  be determined". The Docker image already installs it.
+  be determined". The Docker image already installs it. PostgreSQL needs nothing more: its driver (psycopg)
+  comes with its own client library.
 
 ## Development setup
 
@@ -41,6 +42,19 @@ uv run dotenv -f dev.env run flask --app bookshelf run --debug
 
 The app is at <http://localhost:5000>. The passwords in `dev.env` and above are for local use only.
 
+To develop on PostgreSQL (18 or newer) instead, start one and point the dev server at it, overriding
+`dev.env`'s database settings (`--no-override` lets the environment win over the file):
+
+```sh
+docker run -d --name bookshelf-postgres \
+  -p 127.0.0.1:5432:5432 \
+  -e POSTGRES_USER=bookshelf -e POSTGRES_PASSWORD=bookshelf -e POSTGRES_DB=bookshelf \
+  -v bookshelf-postgres-data:/var/lib/postgresql \
+  postgres:18
+APP_DB_BACKEND=postgresql APP_DB_DSN=localhost:5432/bookshelf APP_DB_PASSWORD=bookshelf \
+  uv run dotenv -f dev.env run --no-override flask --app bookshelf run --debug
+```
+
 `--debug` is the only way to turn on Flask's debug mode and its interactive debugger, which runs any code
 typed into it: never use it where others can reach the app. `python -m bookshelf.wsgi` and the Docker
 image never run in debug mode, whatever `APP_LOG_LEVEL` is.
@@ -67,9 +81,11 @@ All settings come from environment variables:
 | Variable | Required | Default | Purpose |
 |---|---|---|---|
 | `APP_SECRET_KEY` | yes | — | Signs session and login cookies |
-| `APP_DB_DSN` | yes | — | Firebird database, e.g. `host:/var/lib/firebird/data/bookshelf.fdb` |
-| `APP_DB_USER` | yes | — | Firebird user |
-| `APP_DB_PASSWORD` | yes | — | Firebird password |
+| `APP_DB_BACKEND` | no | `firebird` | The database server: `firebird` or `postgresql` (18 or newer) |
+| `APP_DB_DSN` | yes | — | The database: for Firebird e.g. `host:/var/lib/firebird/data/bookshelf.fdb` (`host/port:path` for another port); for PostgreSQL `host[:port]/database`, e.g. `db.example.com/bookshelf` |
+| `APP_DB_USER` | yes | — | Database user |
+| `APP_DB_PASSWORD` | yes | — | Database password |
+| `APP_SEARCH_LANGUAGE` | no | `english` | PostgreSQL only: the text search configuration of the book and author searches (stemming and stop words), e.g. `italian`, or `simple` for none; one of the server's (`SELECT cfgname FROM pg_ts_config`). `init-db` records it: run it again after changing it |
 | `APP_COOKIE_SECURE` | no | `true` | Set to `false` only for local HTTP |
 | `APP_LOGIN_MAX_FAILURES` | no | `5` | Failed logins for an email from one IP before that IP's logins for it are refused |
 | `APP_LOGIN_MAX_IP_FAILURES` | no | `20` | Failed logins from one IP, across all emails, before that IP's logins are refused |
@@ -86,7 +102,9 @@ All settings come from environment variables:
 
 ## Books
 
-The main page is the book list: one search box over title, author and ISBN, sorting by title, author or date
+The main page is the book list: one search box over title, author and ISBN (on PostgreSQL a word search: each
+word starts a word of the title or the authors, so "herbert dune" finds Dune, and "runs" finds "running"),
+sorting by title, author or date
 added, in pages of 10, 50 or 100 books ("Show", next to the order; 10 unless chosen). The round "+" button at the bottom right (here and in your collection) opens the
 "Add book" dialog. Authors are rows of name and surname, and categories rows of one field (a book can have
 several); in both "+" adds a row and "−" removes one. The author, category and publisher fields suggest existing
@@ -208,10 +226,14 @@ checked on `/login` (it queries the database), so pods get no traffic while the 
 `X-Forwarded-Proto`, as most do. Firebird has no replication, so the in-cluster database is a single pod: back
 up its volume.
 
+The chart runs Bookshelf on Firebird only for now; PostgreSQL support in the chart (an `APP_DB_BACKEND` setting
+and an optional in-cluster PostgreSQL) is still to come.
+
 ## Tests and checks
 
 ```sh
 uv run tox -e py3                     # tests, in parallel (each worker starts its own Firebird via testcontainers: Docker must be running)
+uv run tox -e py3-postgres            # the same tests on PostgreSQL 18 (a container per worker too)
 uv run tox -e e2e                     # browser tests of the scripts in static/js/ (Playwright; installs Chromium, Docker too)
 uv run tox -e e2e-firefox             # the same in Firefox
 uv run tox -e lint                    # ruff check
@@ -260,13 +282,17 @@ New check constraints apply to rows written from then on; Firebird does not rech
 
 ## Schema changes
 
-Data access goes through the SQLAlchemy ORM (`sqlalchemy-firebird`'s dialect on `firebird-driver`): the tables are
-mapped in `bookshelf/db/orm.py`, one `*Row` class each. The schema itself is made by migrations: Alembic
+Data access goes through the SQLAlchemy ORM, on Firebird (`sqlalchemy-firebird`'s dialect on `firebird-driver`) or
+PostgreSQL (psycopg 3): the tables are mapped in `bookshelf/db/orm.py`, one `*Row` class each. The schema itself is made by migrations: Alembic
 revisions in `bookshelf/migrations/versions/`, applied by `init-db`. The ORM metadata never creates or changes
 it, and a test checks that every mapped table and column is in the schema the migrations make.
 
 - **Revisions.** `0001` is the frozen 1.0.0 schema (`bookshelf/db/baseline.py`: `DOMAINS`, `TABLES`,
   `CONSTRAINTS`, `INDEXES`), creating whatever of it is missing; `0002` is the 1.2.0 change of how users log in.
+  The same DDL runs on PostgreSQL, but for what `POSTGRESQL_COLLATIONS` and `POSTGRESQL_INDEXES` replace (a
+  `UNICODE_CI` collation instead of the `UUID` domain, PostgreSQL having a UUID type; the descending index's
+  syntax). A `SchemaChange`'s SQL can be one statement for both or one per backend (`bookshelf/db/changes.py`),
+  and `bookshelf/db/catalog.py` looks objects up in either's catalog.
   Every schema change since is a new revision; never change a released one. Make one with
   `uv run alembic revision -m "what it does" --rev-id 0003` (numbered in order), from `script.py.mako`.
 - **Guarded changes.** A revision is a list of `SchemaChange`s (`bookshelf/db/changes.py`): each has a check
@@ -297,7 +323,7 @@ it, and a test checks that every mapped table and column is in the schema the mi
   the setting in one transaction. The next `init-db` finds a `SCHEMA_UPGRADE_STEP` left behind, runs that
   revision's `downgrade`, then applies it again from the start. So does a `downgrade` that failed: the setting
   stays until one succeeds.
-- **From releases before 1.5.0.** They had upgrade steps of their own, with the last one applied in the
+- **From releases before 1.5.0** (Firebird only: PostgreSQL databases start at 1.5.0). They had upgrade steps of their own, with the last one applied in the
   `SCHEMA_VERSION` setting. A database with tables but no `ALEMBIC_VERSION` is stamped with the matching
   revision first: version 0 (or no `SETTINGS` table at all: 1.0.x) is `0001`, version 1 is `0002`; a step left
   halfway is rolled back as that revision. `SCHEMA_VERSION` is left as it was, so going back to 1.4.x (with a
@@ -331,22 +357,34 @@ it, and a test checks that every mapped table and column is in the schema the mi
 - Models take a `Session` (`get_session()`, one per app context, closed and so rolled back at its end) and
   commit their own writes. They return the dataclasses of `bookshelf/models/` (`User`, `Book`, …), never ORM
   objects, so nothing loads lazily once the session is gone.
-- Writes the models check (a unique or foreign key clash, a row changed meanwhile) are ORM statements run with
-  `execute_change` (`insert()`, `update()`, `delete()` on the mapped classes), not `session.add()`: a failed
-  flush would end the session's transaction, while Firebird keeps it going after a failed statement. Firebird's
-  error codes are read with `has_gds_code`.
-- `read_committed(session)` runs a block in a read committed transaction of its own, for changes that must see
-  rows others committed meanwhile (adding a book with an author just created, renaming an author); the dialect's
-  own isolation setting calls a method firebird-driver lacks, so engine events set the transaction's parameters.
+- Writes go through `execute_change` (`insert()`, `update()`, `delete()` on the mapped classes), not
+  `session.add()`. A write whose error a model handles (a unique or foreign key clash) runs in a savepoint,
+  `try_change`: PostgreSQL ends a transaction at its first error, Firebird does not, and a savepoint keeps both
+  going. Errors are told apart by `is_unique_violation`, `is_foreign_key_violation`, `is_update_conflict` and
+  `is_concurrent_delete`, from Firebird's GDS codes or PostgreSQL's SQLSTATEs.
+- Transactions are snapshots by default: Firebird's own, PostgreSQL's repeatable read. `read_committed(session)`
+  runs a block in a read committed transaction of its own, for changes that must see rows others committed
+  meanwhile (adding a book with an author just created, renaming an author). On Firebird, engine events set the
+  transaction's parameters: the dialect's own isolation setting calls a method firebird-driver lacks.
+- SQL that the two write differently is a construct of `bookshelf/db/sql.py`, compiled for each:
+  `matches_search`, `starts_with_ci`, `minutes_ago`, `record_key`, `least`. Models use those, never one backend's
+  own syntax. The book and author list queries put their page in a CTE (`WITH p AS …`), which both run.
+- Searching: on Firebird the title, an author's "name surname" or the ISBN contains the text, as typed. On
+  PostgreSQL it is full-text: each word of the text, stemmed by `APP_SEARCH_LANGUAGE`, starts a word of the title
+  and the authors' names (in any order: "herbert dune"); ISBNs still contain their digits. The functions
+  `BOOK_MATCHES` and, on PostgreSQL, `SEARCH_MATCHES` hold the conditions (`FUNCTIONS` and `POSTGRESQL_HELPERS`
+  in `bookshelf/db/schema.py`). Suggestions (title, author, publisher, category) start with the text on both.
 - `FirebirdDialect` (`bookshelf/db/__init__.py`, URL `firebird+bookshelf://`) fixes what sqlalchemy-firebird gets
   wrong with firebird-driver 2.x: closing (`do_terminate`) and checking (`do_ping`) pooled connections.
 - Column types carry no collation: the dialect repeats a column's type in each parameter's `CAST`, and Firebird
-  refuses a collation there. Comparisons still follow the columns' `UNICODE_CI`.
+  refuses a collation there. Comparisons still follow the columns' `UNICODE_CI`: Firebird's own, and on
+  PostgreSQL a nondeterministic ICU collation of that name, ignoring case (not accents), which LIKE accepts
+  from PostgreSQL 18; `init-db` refuses an older server.
 
 ## CI and releases
 
-GitHub Actions (`tests.yml`) run lint, format check, type check, audit, tests and browser tests (in
-Chromium and in Firefox) on every push to `main`, on version tags and on pull requests. A `versions` job also
+GitHub Actions (`tests.yml`) run lint, format check, type check, audit, tests (on Firebird and on PostgreSQL)
+and browser tests (in Chromium and in Firefox) on every push to `main`, on version tags and on pull requests. A `versions` job also
 checks that `pyproject.toml`'s version and the Helm chart's `version` and `appVersion` are the same, and on a
 version tag that they match the tag. Only once all of them pass is the image
 built (`docker.yml`, called by `tests.yml`): pushes to `main` publish `quay.io/enricobianchi/bookshelf:latest`,

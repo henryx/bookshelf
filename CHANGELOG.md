@@ -11,6 +11,13 @@ All notable changes to Bookshelf, newest first. Each version is released as the 
 - **Page size:** "Show", next to the order in the catalogue and the collection and next to the search on the
   authors page, shows 10, 50 or 100 a page. Lists now show 10 a page unless you choose more (they showed 50).
   The size is part of the list's address, so a bookmark or the browser's history keeps it.
+- **PostgreSQL:** Bookshelf runs on PostgreSQL 18 or newer as well as on Firebird: set `APP_DB_BACKEND=postgresql`
+  and `APP_DB_DSN` to `host[:port]/database`. Existing Firebird deployments need no change. The Helm chart does not
+  offer PostgreSQL yet.
+- **Word search on PostgreSQL:** the book and author searches use PostgreSQL's full-text search: each word you type
+  starts a word of the title or the authors' names, in any order ("herbert dune"), and words are matched by their
+  stem ("runs" finds "running"). `APP_SEARCH_LANGUAGE` (default `english`; e.g. `italian`, or `simple` for no
+  stemming) picks the language; run `init-db` after changing it. On Firebird the search is unchanged.
 
 ### Changes
 
@@ -21,6 +28,7 @@ All notable changes to Bookshelf, newest first. Each version is released as the 
 
 ### Development
 
+- The tests run on PostgreSQL too: `uv run tox -e py3-postgres` (a PostgreSQL 18 container per worker), also in CI.
 - Schema changes are Alembic revisions in `bookshelf/migrations/versions/`, made with `alembic revision` and
   applied by `init-db` (not `alembic upgrade`); README, "Schema changes".
 
