@@ -27,7 +27,11 @@ V2_CONSTRAINTS = {"PK_BOOKS", "UQ_BOOKS_ISBN", "CHK_BOOKS_ISBN", "CHK_BOOKS_TITL
 def v2_conn(
     empty_db_app: Flask, migrations: Callable[..., None]
 ) -> Iterator[RawConnection]:
-    """A connection to a database at revision 0002, holding a book with an ISBN."""
+    """
+    A connection to a database at revision 0002, holding a book with an ISBN;
+    init_db then knows the revisions up to 0003 only, so later ones do not
+    change what these tests see.
+    """
     migrations(last="0002")
     with empty_db_app.app_context():
         init_db(get_engine())
@@ -38,7 +42,7 @@ def v2_conn(
                 (uuid4(), DUNE_ISBN),
             )
         conn.commit()
-        migrations()
+        migrations(last="0003")
         yield conn
 
 
