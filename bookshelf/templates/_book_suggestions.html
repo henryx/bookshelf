@@ -4,9 +4,10 @@
 {% for book in books %}
   {% set authors = book.authors | join(", ") %}
   {% if field == "isbn" %}
-    {% set value, details = book.isbn, [book.title, authors] %}
+    {# A serial's code shown as ISSN and issue; the field still gets the code. #}
+    {% set value, shown, details = book.isbn, book.isbn | format_code(label=False), [book.title, authors] %}
   {% else %}
-    {% set value, details = book.title, [authors, book.publication_year] %}
+    {% set value, shown, details = book.title, book.title, [authors, book.publication_year] %}
   {% endif %}
-  <li role="option" data-value="{{ value }}" data-book-id="{{ book.id }}">{{ value }} <span class="suggestion-detail">{{ details | select | join(' · ') }}</span></li>
+  <li role="option" data-value="{{ value }}" data-book-id="{{ book.id }}">{{ shown }} <span class="suggestion-detail">{{ details | select | join(' · ') }}</span></li>
 {% endfor %}

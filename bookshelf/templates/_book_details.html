@@ -1,9 +1,11 @@
-{# A book's title (and ISBN, when not editable), shown, its edit form and, for admins, its
+{# A book's title (and ISBN or ISSN, when not editable), shown, its edit form and, for admins, its
    delete button: the book dialog's content, and the body of the book page. #}
 <dl class="book-details">
   <dt>Title</dt>
   <dd class="book-details-title">{{ book.title }}</dd>
-  {% if book.isbn and not form.isbn %}<dt>ISBN</dt><dd class="mono">{{ book.isbn }}</dd>{% endif %}
+  {% if book.isbn and not form.isbn %}
+    <dt>{{ book.isbn | code_label }}</dt><dd class="mono">{{ book.isbn | format_code(label=False) }}</dd>
+  {% endif %}
 </dl>
 {% include "_edit_book_form.html" %}
 

@@ -18,7 +18,14 @@ from bookshelf.models.books.editing import (
     unique_categories,
     update_book,
 )
-from bookshelf.models.books.isbn import normalise_isbn
+from bookshelf.models.books.isbn import (
+    code_label,
+    format_code,
+    isbn_searches,
+    issn_of,
+    issue_of,
+    normalise_isbn,
+)
 from bookshelf.models.books.listing import (
     find_book,
     find_book_by_isbn,
@@ -89,11 +96,16 @@ __all__ = [
     "UnknownBookError",
     "add_book",
     "add_to_collection",
+    "code_label",
     "copy_collection",
     "delete_book",
     "find_book",
     "find_book_by_isbn",
     "find_book_details",
+    "format_code",
+    "isbn_searches",
+    "issn_of",
+    "issue_of",
     "list_books",
     "list_collection",
     "look_up_isbn",

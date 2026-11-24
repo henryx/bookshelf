@@ -15,7 +15,8 @@ from bookshelf.models.books import NewBook, add_book
 from bookshelf.models.users import User
 
 DUNE_ISBN = "9780441172719"
-NOT_A_BOOK = "4006381333931"  # a valid EAN-13, but not 978/979: not an ISBN
+NOT_A_BOOK = "4006381333931"  # a valid EAN-13, but not 977/978/979
+SERIAL = "9770317847001"  # a serial's barcode: ISSN 0317-8471
 
 # EAN-13 digit patterns (L, and R its complement; G is R reversed), and the
 # L/G parity of the left half set by the first digit.
@@ -161,13 +162,42 @@ def test_the_browser_reads_the_barcode_without_zxing(reader_page: Page, dune):
     assert loaded == []
 
 
+@pytest.mark.parametrize(
+    "detector", [_NO_DETECTOR, _DETECTOR], ids=["zxing", "browser"]
+)
+def test_a_serials_barcode_fills_the_field_and_asks_for_the_issue(
+    reader_page: Page, detector: str
+):
+    looked_up: list[str] = []
+    reader_page.on(
+        "request",
+        lambda request: (
+            looked_up.append(request.url) if request.method == "POST" else None
+        ),
+    )
+    _camera(reader_page, SERIAL, detector)
+
+    _open_scanner(reader_page)
+
+    expect(reader_page.locator("#book-scan-dialog")).to_be_hidden(timeout=10_000)
+    field = reader_page.get_by_label("ISBN")
+    expect(field).to_have_value(SERIAL)
+    expect(field).to_be_focused()
+    expect(reader_page.locator("[data-barcode-note]")).to_have_text(
+        "ISSN 0317-8471: add the issue number after a space, if it has one."
+    )
+    # Not looked up: Google Books and Open Library hardly know serials.
+    assert looked_up == []
+
+
 def test_a_barcode_that_is_not_an_isbn_says_so(reader_page: Page):
     _camera(reader_page, NOT_A_BOOK)
 
     _open_scanner(reader_page)
 
     expect(reader_page.locator("#book-scan-dialog [role=status]")).to_have_text(
-        "That barcode is not an ISBN: try the one with 978 or 979.", timeout=10_000
+        "That barcode is not an ISBN or ISSN: try the one starting 977, 978 or 979.",
+        timeout=10_000,
     )
     expect(reader_page.locator("#book-scan-dialog")).to_be_visible()
     expect(reader_page.get_by_label("ISBN")).to_have_value("")
@@ -178,10 +208,10 @@ def test_a_barcode_that_is_not_an_isbn_says_so(reader_page: Page):
     [
         (
             "NotAllowedError",
-            "Camera access was denied: allow it in the browser, or type the ISBN.",
+            "Camera access was denied: allow it in the browser, or type the ISBN or ISSN.",
         ),
-        ("NotFoundError", "No camera found: type the ISBN."),
-        ("NotReadableError", "The camera could not be started: type the ISBN."),
+        ("NotFoundError", "No camera found: type the ISBN or ISSN."),
+        ("NotReadableError", "The camera could not be started: type the ISBN or ISSN."),
     ],
 )
 def test_a_camera_that_cannot_be_used_says_why(reader_page: Page, error, message):

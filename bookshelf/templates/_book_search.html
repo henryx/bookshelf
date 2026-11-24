@@ -9,7 +9,7 @@
   {# One author's books: the search and order keep to them. #}
   {% if author %}<input type="hidden" name="author" value="{{ author.id }}">{% endif %}
   <input id="book-search-q" type="search" name="q" value="{{ search }}"
-         maxlength="{{ search_max_length }}" placeholder="Title, author or ISBN"
+         maxlength="{{ search_max_length }}" placeholder="Title, author, ISBN or ISSN"
          aria-label="Search books">
   <label>
     <span class="hint">Sort by</span>

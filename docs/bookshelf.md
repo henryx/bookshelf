@@ -408,6 +408,7 @@ Decisions:
    format character) are dropped, and a leading `'` (kept as text) or a trailing `.0` / `,0` (saved as a number)
    taken off. An ISBN in scientific notation ("9.78044E+12") has lost digits a spreadsheet dropped, so it is
    refused with a message saying so (`IsbnLostDigitsError`) rather than "Not a valid ISBN".
+ - Serials (magazines, journals) are catalogued by their ISSN, in the same field (see "Serials (ISSN)").
  - Titles, publishers, author names and surnames, and categories ignore case when compared and sorted ("Sci-fi"
    and "sci-fi" are one category), but not accents ("Citta" and "Città" differ). All are trimmed; titles, surnames and
    categories cannot be blank. Empty optional fields (publisher, series, volume, plot, …) are stored as NULL.
@@ -415,6 +416,35 @@ Decisions:
  - Sizes: title and publisher up to 255 characters, author name and surname up to 127 each, volume up to 32,
    series up to 255, category up to 64, plot up to 4000. Name and surname are limited to 127 because the unique index on both must
    fit Firebird's index key limit (8 KB pages). Who added a book is not recorded.
+
+### Serials (ISSN)
+
+Magazines, journals and other serials have an ISSN instead of an ISBN, entered in the same field ("ISBN or ISSN").
+Facts, from the ISSN International Centre, the Library of Congress and GS1:
+
+ - An ISSN is 8 characters, `0317-8471`: 7 digits and a check digit (modulo 11; `X` stands for 10).
+ - A serial's EAN-13 barcode is `977` (GS1's prefix for serials), the ISSN's 7 digits (its check digit dropped),
+   a 2-digit variant (a price or variant code, usually `00`) and the EAN check digit.
+ - An optional separate add-on barcode, of 2 or 5 digits (EAN-2, EAN-5), usually carries the issue (for monthly
+   magazines, the month number) or the date; in some markets a 5-digit add-on is a price instead.
+
+How Bookshelf handles them:
+
+ - The field takes an ISBN as before, or a serial's barcode (`977…`, 13 digits, then maybe the add-on: 15 or 18
+   digits, apart or not), or an ISSN as typed (`0317-8471` or `03178471`, check digit verified) with the issue
+   after a space (`0317-8471 05`). Anything else is "Not a valid ISBN or ISSN".
+ - A serial is stored as its barcode and add-on (`9770317847001` + `05`): a typed ISSN becomes its barcode with
+   variant `00`. The code is unique, as ISBNs are: each issue of a magazine is a catalogue item of its own, told
+   apart by its add-on; a serial without an add-on can be catalogued once.
+ - It is shown as "ISSN 0317-8471 · issue 05" (the book dialog, suggestions, the duplicate message).
+ - Searching by an ISSN (with or without its hyphen) finds the serial's issues; its digits match anywhere, as an
+   ISBN's do. Suggestions on the field work the same way.
+ - "Look up" finds books by ISBN only (Google Books and Open Library hardly know serials): for an ISSN it
+   offers the catalogue's item with that code, if any, else says to fill in the fields by hand.
+ - "Scan" reads a serial's barcode; the browser's own reader never reports the add-on, ZXing does when it can,
+   so the issue may have to be typed (the note under the field says which ISSN was read).
+ - The CSV export writes the stored code; the import takes every form above in the `isbn` column.
+ - The database's `BOOKS.ISBN` holds both (revision `0003`: `VARCHAR(18)`, checked by `CHK_BOOKS_ISBN_CODE`).
 
 ### Adding a book
 
@@ -492,8 +522,10 @@ Decisions:
      the form says which could not be reached, since it may have the book. The server needs outbound HTTPS
      to `www.googleapis.com` and `openlibrary.org`, and the ISBN is all it sends them.
  - "Scan", next to "Look up", reads the barcode on the back cover with the camera: the EAN-13 of a book is its
-   ISBN-13 (978 or 979), which fills the ISBN and is looked up as above. Another barcode (a price, a
-   product) is not an ISBN, and the dialog says so and keeps scanning. Closing the dialog, or the barcode
+   ISBN-13 (978 or 979), which fills the ISBN and is looked up as above. A serial's (977, its ISSN) fills the
+   field too, with its add-on when ZXing reads one, and is not looked up: a note under the field names the
+   ISSN and asks for the issue (see "Serials (ISSN)"). Another barcode (a price, a product) is neither, and the
+   dialog says so and keeps scanning. Closing the dialog, or the barcode
    being read, stops the camera.
    - The browser reads the barcode itself where it can (`BarcodeDetector` with EAN-13, e.g. Chrome on Android);
      elsewhere (e.g. Firefox) with ZXing (`static/zxing/`, @zxing/library 0.23.0, Apache-2.0), vendored like
@@ -546,7 +578,7 @@ Decisions:
    which fields changed.
  - If two users edit the same book at once, the last save wins for every field but a new ISBN, including an ISBN
    corrected by admins. When a book had no ISBN, a second save setting one is refused if the first one already
-   set it ("This book already has an ISBN").
+   set it ("This book already has an ISBN or ISSN").
 
 Technical details:
 

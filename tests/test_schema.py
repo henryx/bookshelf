@@ -217,7 +217,7 @@ def _assert_complete_schema(conn: RawConnection) -> None:
     assert _constraints(conn, "BOOKS") == {
         "PK_BOOKS": "PRIMARY KEY",
         "UQ_BOOKS_ISBN": "UNIQUE",
-        "CHK_BOOKS_ISBN": "CHECK",
+        "CHK_BOOKS_ISBN_CODE": "CHECK",
         "CHK_BOOKS_TITLE": "CHECK",
     }
     assert _index_columns(conn, "IDX_BOOKS_TITLE") == ["TITLE"]

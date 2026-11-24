@@ -25,6 +25,9 @@ from bookshelf.db.schema import (
 
 type Migrations = Callable[..., None]
 
+# The real revisions' last one.
+HEAD = ScriptDirectory(str(MIGRATIONS)).get_current_head()
+
 
 class AddNote:
     """A revision adding BOOKS.NOTE and filling it: two commits, as Firebird needs."""
@@ -233,7 +236,7 @@ def test_a_failed_rollback_is_run_again_by_the_next_init_db(
     with empty_db_app.app_context():
         with pytest.raises(RuntimeError, match="rollback failed"):
             _init()
-        assert _state() == (["0002"], "t001")
+        assert _state() == ([HEAD], "t001")
         assert _behind()
         step.fail_upgrade = step.fail_rollback = False
         step.calls.clear()
@@ -274,7 +277,7 @@ def test_a_failed_revisions_uncommitted_work_is_discarded(
             _init()
 
         assert _book_count() == 0
-        assert _state() == (["0002"], None)
+        assert _state() == ([HEAD], None)
 
 
 # From the upgrade steps of releases before 1.5.0 (Firebird only)
@@ -316,7 +319,7 @@ def test_a_database_without_versions_is_at_revision_0001(
 
         _init()
 
-        assert _state() == (["0002"], None)
+        assert _state() == ([HEAD], None)
         assert _has_column("USERS", "AUTH_METHOD")
         assert not _behind()
 
@@ -339,7 +342,7 @@ def test_a_step_left_halfway_before_alembic_is_rolled_back_then_applied(
 
         _init()
 
-        assert _state() == (["0002"], None)
+        assert _state() == ([HEAD], None)
         assert _has_column("USERS", "GOOGLE_SUBJECT")
 
 
@@ -416,7 +419,7 @@ def test_a_newer_revision_left_halfway_is_refused(empty_db_app: Flask, migration
 
         with pytest.raises(SchemaTooNewError, match="revision t001"):
             _init()
-        assert _state() == (["0002"], "t001")
+        assert _state() == ([HEAD], "t001")
 
 
 def test_a_second_init_db_waits_for_the_first(app: Flask, other_conn, race):

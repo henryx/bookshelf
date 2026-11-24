@@ -463,7 +463,8 @@ def downgrade() -> None:
 @pytest.fixture
 def migrations(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Callable[..., None]:
     """
-    Set the revisions init_db knows: the real ones up to `last`, then one
+    Set the revisions init_db knows: the real ones up to `last` (all of
+    them unless given), then one
     per step given (t001, t002, ...), each running that step's upgrade and
     rollback.
     """
@@ -476,9 +477,11 @@ def migrations(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Callable[...,
     # the same path.
     folders = itertools.count()
 
-    def use(*steps: MigrationStep, last: str = "0002") -> None:
+    def use(*steps: MigrationStep, last: str | None = None) -> None:
         versions = tmp_path / f"migrations{next(folders)}" / "versions"
         versions.mkdir(parents=True)
+        last = last or real.get_current_head()
+        assert last is not None
         for revision in real.iterate_revisions(last, "base"):
             shutil.copy(revision.path, versions)
         previous = last

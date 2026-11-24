@@ -4,14 +4,19 @@
 
   // Barcode scanning: the add form's Scan button ([data-barcode-scan]) opens
   // its dialog (aria-controls), whose camera view reads the book's EAN-13
-  // (an ISBN-13: 978 or 979) into the ISBN field (data-barcode-input) and
-  // presses Look up. The browser's own BarcodeDetector reads it where it
-  // can; elsewhere ZXing (data-barcode-decoder), loaded on first use.
+  // into the ISBN field (data-barcode-input). An ISBN-13 (978 or 979) is
+  // then looked up (Look up is pressed). A serial's (977, its ISSN) is not:
+  // the field gets it, with the add-on (the issue) when ZXing reads one,
+  // and the note under it ([data-barcode-note]) asks for the issue. The
+  // browser's own BarcodeDetector reads it where it can (never an add-on);
+  // elsewhere ZXing (data-barcode-decoder), loaded on first use.
   // Closing the dialog (or a found barcode) stops the camera. The button
   // shows only where a camera can be asked for (<html data-can-scan>):
   // over HTTPS (or on localhost), in a browser with getUserMedia.
   var SCAN_INTERVAL = 150; // milliseconds between two frames read
   var BOOK_EAN = /^97[89]\d{10}$/;
+  // A serial's barcode, 977 + 10 digits, maybe with its 2- or 5-digit add-on.
+  var SERIAL_EAN = /^977\d{10}(\d{2}|\d{5})?$/;
   var scanning = null; // the open dialog's session: {dialog, video, stream, timer, active}
   var decoders = new Map(); // ZXing's URL -> a promise of its decode function
 
@@ -30,12 +35,12 @@
     switch (error && error.name) {
       case "NotAllowedError":
       case "SecurityError":
-        return "Camera access was denied: allow it in the browser, or type the ISBN.";
+        return "Camera access was denied: allow it in the browser, or type the ISBN or ISSN.";
       case "NotFoundError":
       case "OverconstrainedError":
-        return "No camera found: type the ISBN.";
+        return "No camera found: type the ISBN or ISSN.";
       default:
-        return "The camera could not be started: type the ISBN.";
+        return "The camera could not be started: type the ISBN or ISSN.";
     }
   }
 
@@ -84,7 +89,12 @@
         var source = new ZXing.HTMLCanvasElementLuminanceSource(canvas);
         var bitmap = new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(source));
         try {
-          return Promise.resolve([reader.decode(bitmap, hints).getText()]);
+          var result = reader.decode(bitmap, hints);
+          var code = result.getText();
+          // A serial's add-on (EAN-2 or EAN-5, usually the issue), when read.
+          var metadata = result.getResultMetadata();
+          var addOn = metadata && metadata.get(ZXing.ResultMetadataType.UPC_EAN_EXTENSION);
+          return Promise.resolve([code.indexOf("977") === 0 && addOn ? code + addOn : code]);
         } catch (error) {
           // No barcode in this frame, or one only partly read.
           if (error instanceof ZXing.NotFoundException ||
@@ -132,13 +142,37 @@
     }
   }
 
-  function scanned(session, isbn) {
+  // The ISSN (0317-8471) in a serial's barcode: its 7 digits and their check digit.
+  function issnOf(code) {
+    var digits = code.slice(3, 10);
+    var total = 0;
+    for (var i = 0; i < 7; i++) {
+      total += Number(digits[i]) * (8 - i);
+    }
+    var check = (11 - (total % 11)) % 11;
+    var issn = digits + (check === 10 ? "X" : String(check));
+    return issn.slice(0, 4) + "-" + issn.slice(4);
+  }
+
+  function scanned(session, code) {
     var input = document.getElementById(session.dialog.dataset.barcodeInput);
     // Now, not on the "close" event: Look up swaps the form, and the dialog
     // in it, out of the page, and an event on it no longer reaches document.
     stopScan();
     session.dialog.close();
-    input.value = isbn;
+    input.value = code;
+    if (SERIAL_EAN.test(code)) {
+      var note = input.form && input.form.querySelector("[data-barcode-note]");
+      if (note) {
+        note.textContent = "ISSN " + issnOf(code) + (code.length > 13 ?
+          ", issue " + code.slice(13) + "." :
+          ": add the issue number after a space, if it has one.");
+        note.hidden = false;
+      }
+      input.focus();
+      input.setSelectionRange(code.length, code.length);
+      return;
+    }
     var lookUp = input.form && input.form.querySelector('[name="lookup"]');
     if (lookUp) {
       lookUp.click();
@@ -170,18 +204,21 @@
         if (!session.active) {
           return;
         }
-        var isbn = codes.find(function (code) { return BOOK_EAN.test(code); });
-        if (isbn) {
-          scanned(session, isbn);
+        var found = codes.find(function (code) {
+          return BOOK_EAN.test(code) || SERIAL_EAN.test(code);
+        });
+        if (found) {
+          scanned(session, found);
           return;
         }
         if (codes.length) {
           scanStatus(session.dialog,
-            "That barcode is not an ISBN: try the one with 978 or 979.", false);
+            "That barcode is not an ISBN or ISSN: try the one starting 977, 978 or 979.",
+            false);
         }
         next();
       }, function (error) {
-        scanFailed(session, "The barcode could not be read: type the ISBN.", error);
+        scanFailed(session, "The barcode could not be read: type the ISBN or ISSN.", error);
       });
     }
 
@@ -221,7 +258,8 @@
           readFrames(session, decode);
         }
       }, function (error) {
-        scanFailed(session, "The barcode reader could not be loaded: type the ISBN.", error);
+        scanFailed(session, "The barcode reader could not be loaded: type the ISBN or ISSN.",
+          error);
       });
     }, function (error) {
       scanFailed(session, cameraMessage(error), error);

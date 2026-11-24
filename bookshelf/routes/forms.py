@@ -270,7 +270,7 @@ class EditBookForm(FlaskForm):
     """
 
     authors = FieldList(FormField(AuthorForm), "Authors", min_entries=1)
-    isbn = StringField("ISBN", filters=[_strip_or_none])
+    isbn = StringField("ISBN or ISSN", filters=[_strip_or_none])
     publisher = _optional_text("Publisher", _NAME_MAX_LENGTH)
     publication_year = IntegerField(
         "Year", validators=[Optional(), NumberRange(min=1, max=9999)]
@@ -344,11 +344,11 @@ class EditBookForm(FlaskForm):
             normalise_isbn(field.data)
         except IsbnLostDigitsError as e:
             raise ValidationError(
-                "This ISBN became a number in a spreadsheet, which lost its digits: "
+                "This code became a number in a spreadsheet, which lost its digits: "
                 "enter it again."
             ) from e
         except InvalidIsbnError as e:
-            raise ValidationError("Not a valid ISBN.") from e
+            raise ValidationError("Not a valid ISBN or ISSN.") from e
 
 
 class ImportForm(FlaskForm):

@@ -8,6 +8,11 @@ All notable changes to Bookshelf, newest first. Each version is released as the 
 
 ### New
 
+- **Serials by ISSN:** magazines and journals can be catalogued by their ISSN, in the ISBN field: as typed
+  (`0317-8471`, with the issue after a space: `0317-8471 05`) or as their barcode (`977…`, with its 2- or 5-digit
+  add-on). Each issue is an item of its own; they are shown as "ISSN 0317-8471 · issue 05", found by searching for
+  the ISSN, imported and exported in the CSV's `isbn` column, and read by Scan (which then asks for the issue).
+  Look up stays for books. `init-db` widens the field (`BOOKS.ISBN`, 13 to 18 characters) on upgrade.
 - **Page size:** "Show", next to the order in the catalogue and the collection and next to the search on the
   authors page, shows 10, 50 or 100 a page. Lists now show 10 a page unless you choose more (they showed 50).
   The size is part of the list's address, so a bookmark or the browser's history keeps it.

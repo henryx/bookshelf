@@ -100,7 +100,7 @@ FUNCTIONS: dict[str, Sql] = {
             CREATE OR REPLACE FUNCTION BOOK_MATCHES (
                 P_BOOK_ID UUID,
                 P_BOOK_TITLE VARCHAR,
-                P_BOOK_ISBN CHAR(13),
+                P_BOOK_ISBN VARCHAR(18),
                 P_SEARCH_TEXT VARCHAR,
                 P_ISBN_TEXT VARCHAR,
                 P_ISBN_13_TEXT VARCHAR,

@@ -37,7 +37,7 @@
   {% if form.isbn and book.isbn %}
     {{ field(form.isbn, "Empty it to remove it. Only admins can change or remove it.", autocomplete="off") }}
   {% elif form.isbn %}
-    {{ field(form.isbn, "ISBN-10 or ISBN-13. Once saved, only admins can change it.", autocomplete="off") }}
+    {{ field(form.isbn, "ISBN-10 or ISBN-13, or a serial’s ISSN (0317-8471, the issue after a space) or barcode. Once saved, only admins can change it.", autocomplete="off") }}
   {% endif %}
   {# Publisher and year side by side, as when adding a book. #}
   <div class="field-row">

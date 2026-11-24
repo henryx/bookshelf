@@ -88,9 +88,11 @@
              "hx-indicator": "this",
            }) }}
   {% with id_prefix = "book-" %}{% include "_author_rows.html" %}{% endwith %}
-  {% set isbn_hint = "ISBN-10 or ISBN-13; hyphens and spaces are fine." if picked else
-       "ISBN-10 or ISBN-13; hyphens and spaces are fine. Look up fills in the empty fields "
-       "from Google Books or Open Library." %}
+  {% set isbn_hint = "ISBN-10 or ISBN-13, or for a serial its ISSN (0317-8471, the issue after a "
+       "space: 0317-8471 05) or barcode (977…); hyphens and spaces are fine." if picked else
+       "ISBN-10 or ISBN-13, or for a serial its ISSN (0317-8471, the issue after a space: "
+       "0317-8471 05) or barcode (977…); hyphens and spaces are fine. Look up fills in a book’s "
+       "empty fields from Google Books or Open Library." %}
   <div class="isbn-lookup">
     <div class="field">
       {{ field("isbn", isbn_hint, autocomplete="off", suggest=True, data_book_pick=True, **{
@@ -115,6 +117,8 @@
               aria-controls="book-scan-dialog" aria-haspopup="dialog">Scan</button>
     {% endif %}
   </div>
+  {# A scanned serial's ISSN, and the issue to add (js/scan.js). #}
+  <p class="hint" data-barcode-note hidden></p>
   {% if not picked %}
     {# The camera view. data-barcode-decoder: ZXing, loaded where the browser cannot read
        barcodes itself (BarcodeDetector). #}

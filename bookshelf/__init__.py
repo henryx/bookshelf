@@ -11,6 +11,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from bookshelf import cli, db
 from bookshelf.config import Config
 from bookshelf.logging_config import logging_config
+from bookshelf.models.books import code_label, format_code
 from bookshelf.routes import is_htmx
 from bookshelf.routes.account import account_route
 from bookshelf.routes.admin import admin_route
@@ -78,6 +79,9 @@ def create_app(overrides: Mapping[str, object] | None = None) -> Flask:
         n = cfg.trusted_proxies
         app.wsgi_app = ProxyFix(app.wsgi_app, x_for=n, x_proto=n, x_host=n)
 
+    # A book's code as shown: "ISBN" or "ISSN", and the code (0317-8471 · issue 05).
+    app.jinja_env.filters["code_label"] = code_label
+    app.jinja_env.filters["format_code"] = format_code
     app.register_error_handler(Exception, handle_error)
     app.after_request(add_security_headers)
     db.init_app(app)

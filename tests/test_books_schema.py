@@ -86,13 +86,33 @@ def test_duplicate_isbn_is_refused(conn: RawConnection):
     )
 
 
-@pytest.mark.parametrize("isbn", ["978-8804123456", "880412345X", "97888041234567"])
-def test_isbn_must_be_13_digits(conn: RawConnection, isbn: str):
+@pytest.mark.parametrize(
+    "isbn",
+    [
+        "978-8804123456",
+        "880412345X",
+        "97888041234567",  # an ISBN has no add-on
+        "1234567890123",  # neither an ISBN (978, 979) nor a serial (977)
+        "977031784700",  # a serial's barcode is 13 digits
+        "9770317847001123",  # then an add-on of 2 or 5, not 3
+        "977031784700112345X",
+    ],
+)
+def test_isbn_must_be_an_isbn_13_or_a_serials_code(conn: RawConnection, isbn: str):
     assert _refused(
         conn,
         "INSERT INTO BOOKS (ID, TITLE, ISBN) VALUES (?, ?, ?)",
         (uuid4(), "A book", isbn),
     )
+
+
+@pytest.mark.parametrize(
+    "isbn", ["9788804123456", "9770317847001", "977031784700105", "977031784700112345"]
+)
+def test_isbn_may_be_a_serials_code_with_its_add_on(conn: RawConnection, isbn: str):
+    _add_book(conn, isbn=isbn)
+
+    assert _count(conn, "SELECT COUNT(*) FROM BOOKS WHERE ISBN = ?", (isbn,)) == 1
 
 
 @pytest.mark.parametrize("title", ["", "   ", " Untrimmed", "Untrimmed "])

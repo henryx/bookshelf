@@ -551,7 +551,7 @@ def test_posted_isbn_is_ignored_once_the_book_has_one(db_app, client, user):
 @pytest.mark.parametrize(
     ("data", "error"),
     [
-        ({"isbn": "12345"}, "Not a valid ISBN."),
+        ({"isbn": "12345"}, "Not a valid ISBN or ISSN."),
         ({"isbn": "9.78044E+12"}, "became a number in a spreadsheet"),
         ({"volume": "x" * 33}, "32 characters"),
         ({"categories-0": "y" * 65}, "64 characters"),
@@ -592,7 +592,7 @@ def test_save_refuses_an_isbn_set_meanwhile(
 
     rv = client.post(_url(book_id), data={"isbn": EMMA_ISBN}, headers=HTMX)
 
-    assert "This book already has an ISBN." in rv.get_data(as_text=True)
+    assert "This book already has an ISBN or ISSN." in rv.get_data(as_text=True)
     assert _details(db_app, book_id).isbn == DUNE_ISBN
 
 
@@ -780,7 +780,7 @@ def test_admin_isbn_is_validated(db_app, admin_client, user):
 
     rv = admin_client.post(_url(book_id), data={"isbn": "12345"}, headers=HTMX)
 
-    assert "Not a valid ISBN." in rv.get_data(as_text=True)
+    assert "Not a valid ISBN or ISSN." in rv.get_data(as_text=True)
     assert _details(db_app, book_id).isbn == DUNE_ISBN
 
 

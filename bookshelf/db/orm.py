@@ -113,7 +113,7 @@ class BookRow(Base):
 
     id: Mapped[UUID] = mapped_column(UUIDType, primary_key=True)
     title: Mapped[str] = mapped_column(String(255))
-    isbn: Mapped[str | None] = mapped_column(String(13))
+    isbn: Mapped[str | None] = mapped_column(String(18))
     publisher: Mapped[str | None] = mapped_column(String(255))
     publication_year: Mapped[int | None] = mapped_column(SmallInteger)
     series: Mapped[str | None] = mapped_column(String(255))

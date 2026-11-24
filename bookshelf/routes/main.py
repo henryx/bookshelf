@@ -32,6 +32,7 @@ from bookshelf.models.books import (
     Sort,
     UnknownBookError,
     add_book,
+    code_label,
     delete_book,
     find_book,
     find_book_by_isbn,
@@ -276,6 +277,12 @@ def _look_up(form: BookForm) -> str:
         return _render_add(form)
     if existing := find_book_by_isbn(get_session(), current_user.id, isbn):
         return _render_add(form, existing)
+    if code_label(isbn) == "ISSN":
+        # Google Books and Open Library hardly know serials.
+        form.form_errors.append(
+            "Look up finds books by their ISBN: fill in a serial's fields by hand."
+        )
+        return _render_add(form)
     try:
         found = look_up_isbn(
             isbn, google_books_key=current_app.config["GOOGLE_BOOKS_API_KEY"]

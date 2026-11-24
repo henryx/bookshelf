@@ -40,7 +40,7 @@ def test_errors_keep_the_dialog_open(dune, reader_page: Page):
     dialog.get_by_label("ISBN").fill("12345")
     dialog.get_by_role("button", name="Save").click()
 
-    expect(dialog.get_by_text("Not a valid ISBN.")).to_be_visible()
+    expect(dialog.get_by_text("Not a valid ISBN or ISSN.")).to_be_visible()
     expect(dialog).to_be_visible()
 
 

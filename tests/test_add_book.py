@@ -260,8 +260,8 @@ def test_add_book_without_htmx_redirects(client):
     [
         ({"title": "   "}, "This field is required."),
         ({"title": "x" * 256}, "Field cannot be longer than 255 characters."),
-        ({"isbn": "978-0-441-17271-8"}, "Not a valid ISBN."),
-        ({"isbn": "12345"}, "Not a valid ISBN."),
+        ({"isbn": "978-0-441-17271-8"}, "Not a valid ISBN or ISSN."),
+        ({"isbn": "12345"}, "Not a valid ISBN or ISSN."),
         (_authors(("Ann", "")), "Surname is required."),
         (
             _authors(("x" * 128, "Leckie")),
@@ -368,7 +368,7 @@ def test_add_book_explains_an_isbn_in_scientific_notation(db_app, client):
     rv = _post(client, title="Dune", isbn="9.78044E+12")
 
     assert (
-        "This ISBN became a number in a spreadsheet, which lost its digits: enter it again."
+        "This code became a number in a spreadsheet, which lost its digits: enter it again."
         in rv.get_data(as_text=True)
     )
     assert _scalar(db_app, "SELECT COUNT(*) FROM BOOKS") == 0

@@ -54,10 +54,10 @@ def _books(count: int) -> str:
 
 
 class InvalidIsbnError(ValueError):
-    """Text that is not a valid ISBN-10 or ISBN-13."""
+    """Text that is not a valid ISBN-10, ISBN-13 or ISSN (see isbn.py)."""
 
     def __init__(self, isbn: str) -> None:
-        super().__init__(f"Not a valid ISBN: {isbn}")
+        super().__init__(f"Not a valid ISBN or ISSN: {isbn}")
         self.isbn = isbn
 
 
@@ -69,10 +69,15 @@ class IsbnLostDigitsError(InvalidIsbnError):
 
 
 class BookExistsError(Exception):
-    """A book with the same ISBN is already in the catalogue."""
+    """A book with the same ISBN (or ISSN and issue) is already in the catalogue."""
 
     def __init__(self, isbn: str) -> None:
-        super().__init__(f"A book with ISBN {isbn} is already in the catalogue.")
+        # Here: isbn.py imports this module's errors.
+        from bookshelf.models.books.isbn import format_code
+
+        super().__init__(
+            f"A book with {format_code(isbn)} is already in the catalogue."
+        )
         self.isbn = isbn
 
 
@@ -91,7 +96,7 @@ class IsbnAlreadySetError(Exception):
     """A book's ISBN can be set only while it has none."""
 
     def __init__(self, book_id: UUID) -> None:
-        super().__init__("This book already has an ISBN.")
+        super().__init__("This book already has an ISBN or ISSN.")
         self.book_id = book_id
 
 

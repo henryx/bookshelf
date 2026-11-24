@@ -13,6 +13,7 @@ __all__ = [
     "collation_exists",
     "column_exists",
     "column_nullable",
+    "column_type",
     "constraint_exists",
     "domain_exists",
     "index_exists",
@@ -152,3 +153,35 @@ def collation_exists(conn: Connection, name: str) -> bool:
         },
         name=name,
     )
+
+
+def column_type(conn: Connection, table: str, column: str) -> str | None:
+    """
+    A text column's type as the DDL writes it, CHAR(13) or VARCHAR(18); None
+    for a missing column or another type.
+    """
+    queries = {
+        DatabaseBackend.FIREBIRD: text(
+            "SELECT CASE f.RDB$FIELD_TYPE WHEN 14 THEN 'CHAR' WHEN 37 THEN 'VARCHAR' END, "
+            "f.RDB$CHARACTER_LENGTH "
+            "FROM RDB$RELATION_FIELDS rf "
+            "JOIN RDB$FIELDS f ON f.RDB$FIELD_NAME = rf.RDB$FIELD_SOURCE "
+            "WHERE rf.RDB$RELATION_NAME = :table AND rf.RDB$FIELD_NAME = :column"
+        ),
+        DatabaseBackend.POSTGRESQL: text(
+            "SELECT CASE data_type WHEN 'character' THEN 'CHAR' "
+            "WHEN 'character varying' THEN 'VARCHAR' END, character_maximum_length "
+            "FROM information_schema.columns "
+            "WHERE table_schema = current_schema() "
+            "AND table_name = :table AND column_name = :column"
+        ),
+    }
+    backend = backend_of(conn)
+    names = {"table": table, "column": column}
+    if backend is DatabaseBackend.POSTGRESQL:
+        names = {key: name.lower() for key, name in names.items()}
+    row = conn.execute(queries[backend], names).first()
+    if row is None or row[0] is None:
+        return None
+    kind, length = row
+    return f"{str(kind).strip()}({length})"

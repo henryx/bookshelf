@@ -111,7 +111,10 @@ several); in both "+" adds a row and "−" removes one. The author, category and
 entries as you type, and picking an author fills both name and surname. The book is added to the shared catalogue
 and to your own collection. "Look up", next to the ISBN, fills in the empty fields from Google Books or Open
 Library (see `APP_GOOGLE_BOOKS_API_KEY`). "Scan" reads the ISBN from the book's barcode with the phone camera and
-looks it up; browsers give pages the camera only over HTTPS (or on localhost), so it shows only there.
+looks it up; browsers give pages the camera only over HTTPS (or on localhost), so it shows only there. Serials
+(magazines, journals) go in the same field by their ISSN (`0317-8471`, the issue after a space: `0317-8471 05`)
+or their barcode (`977…`), and each issue is an item of its own; see "Serials (ISSN)" in
+[docs/bookshelf.md](docs/bookshelf.md).
 
 Clicking a book's title opens it in a dialog to edit every field but the title; the ISBN can be set while the
 book has none, and only admins can change or remove one already set. Admins can also delete a book from that
