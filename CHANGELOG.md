@@ -4,6 +4,18 @@ All notable changes to Bookshelf, newest first. Each version is released as the 
 `quay.io/enricobianchi/bookshelf:<version>` and, from 1.0.2, as the Helm chart
 `oci://quay.io/enricobianchi/bookshelf-chart --version <version>`.
 
+## 1.4.2 (2026-11-24)
+
+### Changes
+
+- The image runs gunicorn 27 (from 26.2); its settings in `gunicorn.conf.py` are unchanged. Click, email-validator
+  and WTForms are updated to their latest patch releases. Nothing changes in use.
+
+### Development
+
+- Updated tools: ruff 0.17, ty 0.0.104, tox 4.67.13, tox-uv 1.37.7, python-dotenv 1.2.4 and uv-build 0.13.8;
+  the Helm chart's workflow uses `azure/setup-helm` v5.
+
 ## 1.4.1 (2026-11-23)
 
 ### Changes
