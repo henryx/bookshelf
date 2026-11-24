@@ -335,7 +335,8 @@ Decisions:
    file is added once.
  - Rows are imported one by one: a bad row (no title, invalid ISBN, year, copies or read, a value too
    long) is reported with its row number as in a spreadsheet (the header is row 1), and
-   the others are still imported. The card shows the count added (and new to the catalogue) and skipped, and
+   the others are still imported. An invalid ISBN is quoted as written ("Row 4: not a valid ISBN (123)."), so
+   it can be found in the file. The card shows the count added (and new to the catalogue) and skipped, and
    the rows not imported; the collection itself is on its own page.
  - A cell starting with `=`, `+`, `-`, `@`, a tab or a carriage return is exported with a `'` before it, so a
    spreadsheet shows it as text instead of running it as a formula (catalogue texts come from every user); the
