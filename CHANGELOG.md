@@ -31,6 +31,10 @@ All notable changes to Bookshelf, newest first. Each version is released as the 
 
 ### Changes
 
+- Helm chart: Google's settings are grouped under `google`: the login's OAuth client under `google.auth`
+  (`clientId`, `clientSecret`, `existingSecret`, formerly directly under `google`) and the Google Books API key as
+  `google.booksApiKey` (formerly `googleBooksApiKey`). The old names are still read (the install notes list any
+  in use, to move), and the Secrets' keys are unchanged.
 - The app reads and writes the database through the SQLAlchemy ORM (with `sqlalchemy-firebird`), and its schema
   changes are Alembic migrations. Nothing changes in use. Upgrading: run `init-db` as for any release (the Helm
   chart does): it records a database's existing schema version as the matching migration, then applies any

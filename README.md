@@ -212,11 +212,11 @@ With PostgreSQL in the cluster instead, `--set postgresql.enabled=true` in place
 every setting. From a checkout, use `deploy/helm/bookshelf-chart` in place of the `oci://` reference. Rather than passing secrets on the command line, a values file kept out of git or an
 existing Secret (`existingSecret`, with the keys `APP_SECRET_KEY`, `APP_DB_USER`, `APP_DB_PASSWORD`,
 and `FIREBIRD_ROOT_PASSWORD` with `firebird.enabled`) works too.
-Logging in with Google keeps its OAuth client in a Secret of its own: set `google.clientId` and
-`google.clientSecret` and the chart creates `<release>-google`, or name an existing Secret with the keys
-`APP_GOOGLE_CLIENT_ID` and `APP_GOOGLE_CLIENT_SECRET` in `google.existingSecret` (it may be the same Secret as
+Logging in with Google keeps its OAuth client in a Secret of its own: set `google.auth.clientId` and
+`google.auth.clientSecret` and the chart creates `<release>-google`, or name an existing Secret with the keys
+`APP_GOOGLE_CLIENT_ID` and `APP_GOOGLE_CLIENT_SECRET` in `google.auth.existingSecret` (it may be the same Secret as
 `existingSecret`). Only the app's pods read it, not the `init-db` and `prune-login-failures` jobs.
-A Google Books API key goes in the app's Secret: set `googleBooksApiKey`, or add the key
+A Google Books API key goes in the app's Secret: set `google.booksApiKey`, or add the key
 `APP_GOOGLE_BOOKS_API_KEY` to `existingSecret`. It is optional, and only the app's pods read it.
 
 The setup wizard is open to whoever reaches it first, so create the first admin before the Ingress is reachable

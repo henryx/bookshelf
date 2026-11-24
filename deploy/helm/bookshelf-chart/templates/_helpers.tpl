@@ -63,14 +63,35 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- .Values.existingSecret | default (include "bookshelf.fullname" .) }}
 {{- end }}
 
-{{/* Logging in with Google is on: non-empty output. */}}
-{{- define "bookshelf.googleEnabled" -}}
-{{- if or .Values.google.clientId .Values.google.existingSecret }}true{{ end }}
+{{/*
+The Google OAuth client's settings, google.auth.<name>, else the name it had
+before 1.5.0, google.<name>. dig: values reused from an older release have
+no google.auth.
+*/}}
+{{- define "bookshelf.googleAuth" -}}
+{{- $google := .root.Values.google | default dict }}
+{{- dig "auth" .name "" $google | default (get $google .name) | default "" }}
 {{- end }}
 
-{{/* The Google OAuth client's own Secret: google.existingSecret, or the chart's. */}}
+{{/* Logging in with Google is on: non-empty output. */}}
+{{- define "bookshelf.googleEnabled" -}}
+{{- if or (include "bookshelf.googleAuth" (dict "root" . "name" "clientId")) (include "bookshelf.googleAuth" (dict "root" . "name" "existingSecret")) }}true{{ end }}
+{{- end }}
+
+{{/* The Google OAuth client's own Secret: google.auth.existingSecret, or the chart's. */}}
 {{- define "bookshelf.googleSecretName" -}}
-{{- .Values.google.existingSecret | default (printf "%s-google" (include "bookshelf.fullname" .) | trunc 63 | trimSuffix "-") }}
+{{- include "bookshelf.googleAuth" (dict "root" . "name" "existingSecret") | default (printf "%s-google" (include "bookshelf.fullname" .) | trunc 63 | trimSuffix "-") }}
+{{- end }}
+
+{{/* Settings given by their names from before 1.5.0, for the install notes. */}}
+{{- define "bookshelf.oldGoogleSettings" -}}
+{{- $google := .Values.google | default dict }}
+{{- $old := list }}
+{{- range list "clientId" "clientSecret" "existingSecret" }}
+{{- if get $google . }}{{ $old = append $old (printf "google.%s (now google.auth.%s)" . .) }}{{ end }}
+{{- end }}
+{{- if .Values.googleBooksApiKey }}{{ $old = append $old "googleBooksApiKey (now google.booksApiKey)" }}{{ end }}
+{{- join ", " $old }}
 {{- end }}
 
 {{- define "bookshelf.dbDsn" -}}

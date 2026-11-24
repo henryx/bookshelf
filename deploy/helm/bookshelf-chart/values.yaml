@@ -27,22 +27,28 @@ existingSecret: ""
 # python3 -c 'import secrets; print(secrets.token_urlsafe(48))'
 secretKey: ""
 
-# Google Books API key, for the add form's Look up (README.md,
-# "Configuration"); optional: without one, Google Books allows fewer lookups
-# a day. Set it here and the chart puts it in its Secret, or add the key
-# APP_GOOGLE_BOOKS_API_KEY to existingSecret.
-googleBooksApiKey: ""
-
-# Logging in with Google (README.md, "Logging in with Google"): a Google OAuth
-# client for a web application, whose authorised redirect URI is
-# https://<host>/login/google/callback. The client has a Secret of its own,
-# apart from the app's (existingSecret): either name an existing one with the
-# keys APP_GOOGLE_CLIENT_ID and APP_GOOGLE_CLIENT_SECRET, or set clientId and
-# clientSecret and the chart creates <release>-google. Neither: no Google login.
+# Google services.
 google:
-  clientId: ""
-  clientSecret: ""
-  existingSecret: ""
+  # Logging in with Google (README.md, "Logging in with Google"): a Google
+  # OAuth client for a web application, whose authorised redirect URI is
+  # https://<host>/login/google/callback. The client has a Secret of its own,
+  # apart from the app's (existingSecret): either name an existing one with
+  # the keys APP_GOOGLE_CLIENT_ID and APP_GOOGLE_CLIENT_SECRET, or set
+  # clientId and clientSecret and the chart creates <release>-google.
+  # Neither: no Google login. (Before 1.5.0 these were google.clientId,
+  # google.clientSecret and google.existingSecret, still read when these are
+  # empty.)
+  auth:
+    clientId: ""
+    clientSecret: ""
+    existingSecret: ""
+  # Google Books API key, for the add form's Look up (README.md,
+  # "Configuration"); optional: without one, Google Books allows fewer
+  # lookups a day. Unlike the OAuth client it goes in the app's Secret: set
+  # it here and the chart puts it there, or add the key
+  # APP_GOOGLE_BOOKS_API_KEY to existingSecret. (Before 1.5.0 it was
+  # googleBooksApiKey, still read when this is empty.)
+  booksApiKey: ""
 
 database:
   # The database server: firebird or postgresql (18 or newer). Set by

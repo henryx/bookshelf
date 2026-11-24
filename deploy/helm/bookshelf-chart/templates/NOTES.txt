@@ -1,3 +1,8 @@
+{{- with include "bookshelf.oldGoogleSettings" . }}
+Settings under their names from before 1.5.0, still read for now: move them.
+  {{ . }}
+
+{{ end -}}
 Bookshelf {{ .Chart.AppVersion }} is installed as {{ include "bookshelf.fullname" . }} in {{ .Release.Namespace }}.
 
 The setup wizard (/setup) is open to whoever reaches it first: create the
