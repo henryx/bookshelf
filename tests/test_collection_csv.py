@@ -238,7 +238,7 @@ def test_import_reports_bad_rows_and_imports_the_rest(db_app, user):
     assert report.added == 1
     assert report.errors == [
         "Row 2: the title is required.",
-        "Row 4: not a valid ISBN.",
+        "Row 4: not a valid ISBN (123).",
         "Row 5: the year must be a whole number from 1 to 9999, or a date with it.",
         "Row 6: copies must be a whole number from 1 to 999.",
         "Row 7: read must be yes or no.",
@@ -294,7 +294,7 @@ def test_import_explains_isbns_in_scientific_notation(db_app, user, isbn):
 def test_import_still_refuses_wrong_isbns(db_app, user, isbn):
     report = _import(db_app, user, f'title,isbn\nDune,"{isbn}"\n')
 
-    assert report.errors == ["Row 2: not a valid ISBN."]
+    assert report.errors == [f"Row 2: not a valid ISBN ({isbn})."]
 
 
 @pytest.mark.parametrize(

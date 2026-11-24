@@ -278,7 +278,7 @@ def _isbn(text: str | None) -> str | None:
             "digits: format the column as text and enter the ISBN again."
         ) from e
     except InvalidIsbnError as e:
-        raise _RowError("not a valid ISBN.") from e
+        raise _RowError(f"not a valid ISBN ({text}).") from e
 
 
 def _parse_row(row: dict[str, str]) -> _Row:

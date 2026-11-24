@@ -12,6 +12,8 @@ All notable changes to Bookshelf, newest first. Each version is released as the 
   can no longer make themselves admin. The app logs the token when it first shows the wizard, and
   `flask --app bookshelf setup-token` prints it (it is derived from `APP_SECRET_KEY`). Installs that already have
   an admin see no change.
+- **CSV import:** a row with an invalid ISBN is reported with the ISBN as written, e.g.
+  `Row 4: not a valid ISBN (123).`
 
 ## 1.5.0 (2026-11-24)
 
