@@ -5,8 +5,12 @@ Settings under their names from before 1.5.0, still read for now: move them.
 {{ end -}}
 Bookshelf {{ .Chart.AppVersion }} is installed as {{ include "bookshelf.fullname" . }} in {{ .Release.Namespace }}.
 
-The setup wizard (/setup) is open to whoever reaches it first: create the
-first admin now, before anyone else can reach the app:
+The setup wizard (/setup) asks for a setup token; get it with:
+
+  kubectl -n {{ .Release.Namespace }} exec deploy/{{ include "bookshelf.fullname" . }} -- \
+    /app/venv/bin/flask --app bookshelf setup-token
+
+or create the first admin from the CLI instead:
 
   kubectl -n {{ .Release.Namespace }} exec -it deploy/{{ include "bookshelf.fullname" . }} -- \
     /app/venv/bin/flask --app bookshelf create-admin admin@example.com

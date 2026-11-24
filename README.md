@@ -65,8 +65,14 @@ image never run in debug mode, whatever `APP_LOG_LEVEL` is.
 
 While the database has no tables or no admin, every page redirects to a setup wizard at
 `/setup`, which creates the tables and the first admin and logs that admin in. Once an admin
-exists, `/setup` returns 404. The wizard is open to whoever reaches it first: finish it before
-the app is reachable by anyone else, or create the admin from the CLI instead:
+exists, `/setup` returns 404. The wizard asks for a setup token, derived from `APP_SECRET_KEY`:
+the app logs it when it first shows the wizard, and `setup-token` prints it:
+
+```sh
+uv run dotenv -f dev.env run flask --app bookshelf setup-token
+```
+
+Or create the admin from the CLI instead:
 
 ```sh
 uv run dotenv -f dev.env run flask --app bookshelf init-db
@@ -170,6 +176,7 @@ characters long (12 by default).
 |---|---|
 | `init-db` | Create or upgrade the schema (the migrations), and create or replace the functions (safe to rerun) |
 | `prune-login-failures` | Delete failed logins older than `APP_LOGIN_BLOCK_MINUTES` (run periodically, e.g. hourly from cron) |
+| `setup-token` | Show the token the setup wizard asks for |
 | `create-admin EMAIL` | Create the first admin (refused once any admin exists) |
 | `create-user EMAIL [--auth local\|google]` | Create a regular user, logging in with a password (`local`, the default: asked for) or with Google (no password) |
 | `set-auth-method EMAIL local\|google` | Switch how a user logs in (a new password is asked for `local`); ends their open sessions |
@@ -224,10 +231,11 @@ chart 1.5.0's names; chart 1.4.x has them directly under `google`, and the Books
 A Google Books API key goes in the app's Secret: set `google.booksApiKey`, or add the key
 `APP_GOOGLE_BOOKS_API_KEY` to `existingSecret`. It is optional, and only the app's pods read it.
 
-The setup wizard is open to whoever reaches it first, so create the first admin before the Ingress is reachable
-by anyone else (the chart's install notes show the command):
+The setup wizard asks for a setup token (the chart's install notes show how to get it), or create the first admin
+from the CLI:
 
 ```sh
+kubectl -n bookshelf exec deploy/bookshelf -- /app/venv/bin/flask --app bookshelf setup-token
 kubectl -n bookshelf exec -it deploy/bookshelf -- /app/venv/bin/flask --app bookshelf create-admin admin@example.com
 ```
 

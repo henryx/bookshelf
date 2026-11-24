@@ -6,8 +6,14 @@
     <p class="error" role="alert">{{ error }}</p>
   {% endfor %}
 
+  <label for="setup-token">Setup token</label>
+  {{ form.setup_token(id="setup-token", autocomplete="off", spellcheck="false",
+                      required=True, autofocus=True, aria_describedby="setup-token-hint") }}
+  <p id="setup-token-hint" class="hint">In the app's log, or shown by <code>flask --app bookshelf setup-token</code>.</p>
+  {% for error in form.setup_token.errors %}<p class="error">{{ error }}</p>{% endfor %}
+
   <label for="email">Admin email</label>
-  {{ form.email(id="email", autocomplete="username", required=True, autofocus=True) }}
+  {{ form.email(id="email", autocomplete="username", required=True) }}
   {% for error in form.email.errors %}<p class="error">{{ error }}</p>{% endfor %}
 
   {% include "_new_password_fields.html" %}

@@ -143,16 +143,20 @@ Decisions:
 ### First run
 
 When the database has no schema (no `USERS` table) or no admin, every request except static files is redirected
-to a setup wizard (`/setup`). The wizard asks for an email and a password (entered twice), creates any missing
+to a setup wizard (`/setup`). The wizard asks for the setup token, an email and a password (entered twice), creates any missing
 schema (`init_db`), creates the admin and logs them in, on their (empty) collection. Once an admin exists the wizard returns 404.
 
 Decisions:
 
  - The wizard also appears when the schema exists but no admin does (e.g. `init-db` was run but not
    `create-admin`), since the app cannot be used from the web without an admin.
- - The wizard is open to the first visitor, with no setup token. Known risk: if the app is reachable by others
-   before setup is finished, anyone can create the admin. The administrator must finish setup first, or use the
-   CLI (`init-db`, `create-admin`), which stays available.
+ - The wizard asks for a setup token, so a visitor who reaches the app before its operator cannot make
+   themselves admin. The token is derived from `APP_SECRET_KEY` (HMAC-SHA256, 20 base32 characters in groups of
+   five), so every worker and pod asks for the same one with no state to share; each process logs it (warning)
+   the first time it serves the wizard, and `flask setup-token` shows it. Case, spaces and dashes are ignored
+   when it is typed. A wrong token is refused before anything is written, and logged with the client's IP.
+   The token stays the same while the secret key does, but it is good for nothing once an admin exists.
+   The CLI (`init-db`, `create-admin`) stays available.
  - The check runs on requests, not when the app starts: every gunicorn worker must notice when setup is done,
    and CLI commands should not query the database just to start. Each process caches "setup done" once it has
    seen an admin, so after setup the check costs nothing.

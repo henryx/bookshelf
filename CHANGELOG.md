@@ -4,6 +4,15 @@ All notable changes to Bookshelf, newest first. Each version is released as the 
 `quay.io/enricobianchi/bookshelf:<version>` and, from 1.0.2, as the Helm chart
 `oci://quay.io/enricobianchi/bookshelf-chart --version <version>`.
 
+## Unreleased
+
+### Changes
+
+- **Setup token:** the first-run wizard (`/setup`) asks for a setup token, so whoever reaches a new install first
+  can no longer make themselves admin. The app logs the token when it first shows the wizard, and
+  `flask --app bookshelf setup-token` prints it (it is derived from `APP_SECRET_KEY`). Installs that already have
+  an admin see no change.
+
 ## 1.5.0 (2026-11-24)
 
 ### New

@@ -1,6 +1,6 @@
 from collections.abc import Sequence
 
-from flask import current_app
+from flask import current_app, request
 from flask_wtf import FlaskForm
 from flask_wtf.file import FileAllowed, FileField, FileRequired
 from wtforms import (
@@ -46,6 +46,7 @@ from bookshelf.models.users import (
     Role,
     validate_new_password,
 )
+from bookshelf.setup_token import token_matches
 
 __all__ = [
     "AccountForm",
@@ -118,6 +119,17 @@ class NewAccountForm(FlaskForm):
 
     def validate_password(self, field: PasswordField) -> None:
         _check_new_password(field.data or "")
+
+
+class SetupForm(NewAccountForm):
+    """The first admin, created by whoever has the setup token."""
+
+    setup_token = StringField("Setup token", validators=[DataRequired()])
+
+    def validate_setup_token(self, field: StringField) -> None:
+        if not token_matches(field.data or "", current_app.config["SECRET_KEY"]):
+            current_app.logger.warning("Wrong setup token from %s", request.remote_addr)
+            raise ValidationError("Wrong setup token.")
 
 
 NO_GOOGLE_PASSWORD = "A user logging in with Google has no password: leave it empty."

@@ -28,6 +28,7 @@ from bookshelf.models.users import (
     set_role,
     validate_new_password,
 )
+from bookshelf.setup_token import setup_token
 
 __all__ = ["init_app"]
 
@@ -74,6 +75,13 @@ def _prompt_new_password(label: str) -> str:
             click.echo(f"Error: {e}", err=True)
             continue
         return password
+
+
+@click.command("setup-token")
+@with_appcontext
+def setup_token_command() -> None:
+    """Show the token the setup wizard asks for."""
+    click.echo(setup_token(current_app.config["SECRET_KEY"]))
 
 
 @click.command("create-admin")
@@ -404,6 +412,7 @@ def list_users_command(admin_email: str) -> None:
 def init_app(app: Flask) -> None:
     app.cli.add_command(init_db_command)
     app.cli.add_command(prune_login_failures_command)
+    app.cli.add_command(setup_token_command)
     app.cli.add_command(create_admin_command)
     app.cli.add_command(create_user_command)
     app.cli.add_command(reset_user_password_command)

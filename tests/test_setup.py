@@ -6,9 +6,13 @@ from flask.testing import FlaskClient
 
 from bookshelf.db import get_session
 from bookshelf.models.users import Role, User, create_user, find_by_email
+from bookshelf.setup_token import setup_token
 
 HTMX = {"HX-Request": "true"}
+# The token of test.env's APP_SECRET_KEY.
+TOKEN = setup_token("test-secret-key")
 ADMIN = {
+    "setup_token": TOKEN,
     "email": " Admin@Example.com ",
     "password": "s3cret-password",
     "confirm": "s3cret-password",
@@ -58,6 +62,7 @@ def test_setup_page_shows_form(empty_db_app: Flask):
     html = rv.get_data(as_text=True)
 
     assert rv.status_code == 200
+    assert 'name="setup_token"' in html
     assert 'name="email"' in html
     assert 'name="confirm"' in html
 
@@ -214,3 +219,46 @@ def test_setup_page_notes_configured_min_length(empty_db_app: Flask):
     assert 'id="password-hint"' in html
     assert "At least 20 characters." in html
     assert 'aria-describedby="password-hint"' in html
+
+
+def test_setup_token_is_derived_from_the_secret_key():
+    """Every worker and pod sharing the secret key asks for the same token."""
+    assert setup_token("test-secret-key") == TOKEN
+    assert setup_token("another-secret-key") != TOKEN
+
+
+@pytest.mark.parametrize("token", ["", "wrong-token", TOKEN[:-1]])
+def test_setup_rejects_wrong_token(empty_db_app: Flask, token: str):
+    client = empty_db_app.test_client()
+
+    rv = client.post("/setup", data={**ADMIN, "setup_token": token})
+
+    assert rv.status_code == 200
+    assert 'class="error"' in rv.get_data(as_text=True)
+    assert client.get("/").headers["Location"] == "/setup"
+
+
+def test_setup_token_ignores_case_spaces_and_dashes(empty_db_app: Flask):
+    typed = f"  {TOKEN.lower().replace('-', ' ')} "
+
+    rv = empty_db_app.test_client().post("/setup", data={**ADMIN, "setup_token": typed})
+
+    assert rv.status_code == 302
+    assert _admin(empty_db_app) is not None
+
+
+def test_setup_page_logs_token_once(empty_db_app: Flask, caplog):
+    client = empty_db_app.test_client()
+
+    client.get("/setup")
+    client.get("/setup")
+
+    logged = [m for m in caplog.messages if TOKEN in m]
+    assert len(logged) == 1
+
+
+def test_setup_token_command_prints_token(empty_db_app: Flask):
+    rv = empty_db_app.test_cli_runner().invoke(args=["setup-token"])
+
+    assert rv.exit_code == 0, rv.output
+    assert TOKEN in rv.output

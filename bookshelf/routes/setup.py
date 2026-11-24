@@ -13,7 +13,8 @@ from bookshelf.models.users import (
     create_user,
 )
 from bookshelf.routes import htmx_redirect, is_htmx
-from bookshelf.routes.forms import NewAccountForm
+from bookshelf.routes.forms import SetupForm
+from bookshelf.setup_token import setup_token
 
 __all__ = ["setup_done", "setup_needed", "setup_route"]
 
@@ -23,6 +24,19 @@ setup_route = Blueprint("setup", __name__)
 _DONE_KEY = "bookshelf.setup_done"
 # Set once this process has seen the schema up to date.
 _SCHEMA_CURRENT_KEY = "bookshelf.schema_current"
+# Set once this process has logged the setup token.
+_TOKEN_LOGGED_KEY = "bookshelf.setup_token_logged"
+
+
+def _log_token_once() -> None:
+    """Log the token the first time this process serves the wizard."""
+    if current_app.extensions.get(_TOKEN_LOGGED_KEY):
+        return
+    current_app.logger.warning(
+        "Setup is not done: the setup wizard (/setup) asks for the token %s",
+        setup_token(current_app.config["SECRET_KEY"]),
+    )
+    current_app.extensions[_TOKEN_LOGGED_KEY] = True
 
 
 def setup_needed(session: Session) -> bool:
@@ -78,7 +92,8 @@ def require_setup() -> BaseResponse | None:
     return htmx_redirect(url_for("setup.wizard"))
 
 
-def _render_setup(form: NewAccountForm) -> str:
+def _render_setup(form: SetupForm) -> str:
+    _log_token_once()
     template = "_setup_form.html" if is_htmx() else "setup.html"
     return render_template(template, form=form)
 
@@ -86,7 +101,7 @@ def _render_setup(form: NewAccountForm) -> str:
 @setup_route.route("/setup", methods=("GET", "POST"))
 def wizard() -> BaseResponse | str:
     """Create the schema and the first admin, then log the admin in."""
-    form = NewAccountForm()
+    form = SetupForm()
     if not form.validate_on_submit():
         return _render_setup(form)
 
