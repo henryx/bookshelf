@@ -138,8 +138,8 @@ def _list_query(
     collection: bool,
 ) -> Callable[[int, int], _PageQuery]:
     """
-    The query for one page of books at an offset: a page of books, then a
-    row per author, in the page's order and each book's author order, with
+    The query for one page of books at an offset: the page of books (a CTE,
+    p), then a row per author, in the page's order and each book's author order, with
     the current user's copies and, last, the number of books matching the
     search on every page (TOTAL), so the one scan the search needs also
     counts them. With `collection`, only the books in the user's collection.
@@ -175,7 +175,7 @@ def _list_query(
             )
             .offset(offset)
             .limit(page_size)
-            .subquery("p")
+            .cte("p")
         )
         copies, is_read = (
             (page.c.copies, page.c.is_read)

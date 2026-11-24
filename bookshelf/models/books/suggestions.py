@@ -164,14 +164,14 @@ def suggest_books(
                 )
             )
             order = ["isbn"]
-    # Up to SUGGESTIONS_LIMIT books, then a row per author as in the lists
-    # (one with None for a book without authors).
+    # Up to SUGGESTIONS_LIMIT books (a CTE, s), then a row per author as in
+    # the lists (one with None for a book without authors).
     books = select(BookRow.id, BookRow.title, BookRow.isbn, BookRow.publication_year)
     found = (
         books.where(condition)
         .order_by(*(books.selected_columns[name] for name in order))
         .limit(SUGGESTIONS_LIMIT)
-        .subquery("s")
+        .cte("s")
     )
     rows = session.execute(
         select(
