@@ -72,11 +72,9 @@ def create_app(overrides: Mapping[str, object] | None = None) -> Flask:
     app.context_processor(lambda: {"app_version": app_version})
     if cfg.trusted_proxies:
         # Client IP, scheme and host from X-Forwarded-*, set by that many proxies.
-        # Flask's documented pattern; ty rejects assigning to a method.
+        # Flask's documented pattern.
         n = cfg.trusted_proxies
-        app.wsgi_app = ProxyFix(  # ty: ignore[invalid-assignment]
-            app.wsgi_app, x_for=n, x_proto=n, x_host=n
-        )
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=n, x_proto=n, x_host=n)
 
     app.register_error_handler(Exception, handle_error)
     app.after_request(add_security_headers)
