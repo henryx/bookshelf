@@ -637,13 +637,18 @@ def test_users_page_shows_the_last_login(
     html = admin_client.get("/admin/users").get_data(as_text=True)
 
     assert "<th>Last login</th>" in html
-    reader = re.search(r"<tr>(?:(?!</tr>).)*reader@example\.com.*?</tr>", html, re.DOTALL)
+    reader = re.search(
+        r"<tr>(?:(?!</tr>).)*reader@example\.com.*?</tr>", html, re.DOTALL
+    )
     assert reader and "<td>Never</td>" in reader[0]
     # The admin logged in to see the page: their row shows when, in UTC.
     last_login = _existing(db_app, admin.email).last_login_at
     assert last_login is not None
     stamp = last_login.strftime("%Y-%m-%d %H:%M")
-    assert f'<time datetime="{last_login.strftime("%Y-%m-%dT%H:%MZ")}">{stamp} UTC</time>' in html
+    assert (
+        f'<time datetime="{last_login.strftime("%Y-%m-%dT%H:%MZ")}">{stamp} UTC</time>'
+        in html
+    )
 
 
 def test_switch_a_user_to_google(admin_client: FlaskClient, db_app: Flask, user: User):

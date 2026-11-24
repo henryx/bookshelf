@@ -48,7 +48,11 @@ def _password_hash_nullable() -> bool:
 def v0_conn(
     empty_db_app: Flask, migrations: Callable[..., None]
 ) -> Iterator[RawConnection]:
-    """A connection to a database at revision 0001, holding a user."""
+    """
+    A connection to a database at revision 0001, holding a user; init_db then
+    knows the revisions up to 0002 only, so later ones do not change what
+    these tests see.
+    """
     migrations(last="0001")
     with empty_db_app.app_context():
         init_db(get_engine())
@@ -60,7 +64,7 @@ def v0_conn(
                 (uuid4(),),
             )
         conn.commit()
-        migrations()
+        migrations(last="0002")
         yield conn
 
 
@@ -70,8 +74,8 @@ def _refresh(conn: RawConnection) -> None:
         conn.commit()
 
 
-def _upgrade_to_head(conn: RawConnection) -> None:
-    """init_db, then a new transaction of `conn`, which sees its changes."""
+def _upgrade_to_0002(conn: RawConnection) -> None:
+    """init_db (up to 0002), then a new transaction of `conn`, which sees its changes."""
     init_db(get_engine())
     _refresh(conn)
 
@@ -86,7 +90,7 @@ def _run_revision(apply: Callable[[], None]) -> None:
 
 
 def test_existing_users_log_in_locally(v0_conn: RawConnection):
-    _upgrade_to_head(v0_conn)
+    _upgrade_to_0002(v0_conn)
 
     with v0_conn.cursor() as cur:
         cur.execute(
@@ -154,7 +158,7 @@ def test_credentials_match_the_auth_method(
     subject: str | None,
     allowed: bool,
 ):
-    _upgrade_to_head(v0_conn)
+    _upgrade_to_0002(v0_conn)
     try:
         with v0_conn.cursor() as cur:
             cur.execute(_INSERT, (uuid4(), method, password_hash, subject))
