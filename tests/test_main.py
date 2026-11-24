@@ -34,7 +34,7 @@ def _add_book(
 ) -> None:
     with app.app_context():
         session = get_session()
-        book_id = uuid4().bytes
+        book_id = uuid4()
         with raw(session).cursor() as cur:
             cur.execute(
                 "INSERT INTO BOOKS (ID, TITLE, ISBN, PUBLICATION_YEAR, CREATED_AT) "
@@ -49,7 +49,7 @@ def _add_book(
                     (name, surname),
                 )
                 row = cur.fetchone()
-                author_id = row[0] if row else uuid4().bytes
+                author_id = row[0] if row else uuid4()
                 if row is None:
                     cur.execute(
                         "INSERT INTO AUTHORS (ID, NAME, SURNAME) VALUES (?, ?, ?)",
@@ -149,6 +149,38 @@ def test_unknown_sort_falls_back_to_title(db_app, client):
 def test_search_matches_title_author_or_isbn(db_app, client, search, expected):
     _add_book(db_app, "Dune", ("Frank Herbert",), isbn="9780441172719")
     _add_book(db_app, "Ancillary Justice", ("Someone", "Ann Leckie"))
+
+    html = client.get("/catalogue", query_string={"q": search}).get_data(as_text=True)
+
+    assert _titles(html) == expected
+
+
+@pytest.mark.firebird
+def test_search_finds_text_inside_words(db_app, client):
+    """Firebird: the title or an author's name contains the text, as typed."""
+    _add_book(db_app, "Dune", ("Frank Herbert",))
+
+    html = client.get("/catalogue", query_string={"q": "une"}).get_data(as_text=True)
+
+    assert _titles(html) == ["Dune"]
+
+
+@pytest.mark.postgresql
+@pytest.mark.parametrize(
+    ("search", "expected"),
+    [
+        ("herbert dune", ["Dune"]),  # words of the title and authors, any order
+        ("dun herb", ["Dune"]),  # starts of words
+        ("runs", ["The Running Man"]),  # stemmed: run
+        ("the", ["Dune", "The Running Man"]),  # only a stop word: every book
+        ("une", []),  # not inside a word
+        ("dune king", []),  # every word must match
+    ],
+)
+def test_search_matches_words(db_app, client, search, expected):
+    """PostgreSQL: a full-text search of the title and authors, stemmed."""
+    _add_book(db_app, "Dune", ("Frank Herbert",))
+    _add_book(db_app, "The Running Man", ("Stephen King",))
 
     html = client.get("/catalogue", query_string={"q": search}).get_data(as_text=True)
 

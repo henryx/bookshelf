@@ -1,11 +1,26 @@
 import os
+from enum import StrEnum
 
-__all__ = ["MIN_PASSWORD_LENGTH", "Config"]
+__all__ = [
+    "DEFAULT_SEARCH_LANGUAGE",
+    "MIN_PASSWORD_LENGTH",
+    "Config",
+    "DatabaseBackend",
+]
 
 # Lowest minimum length APP_MIN_PASSWORD_LENGTH may set, and its default.
 MIN_PASSWORD_LENGTH = 12
+# PostgreSQL's text search configuration unless APP_SEARCH_LANGUAGE says.
+DEFAULT_SEARCH_LANGUAGE = "english"
 # Highest TCP port number.
 MAX_PORT = 65535
+
+
+class DatabaseBackend(StrEnum):
+    """The database servers Bookshelf runs on: one per deployment."""
+
+    FIREBIRD = "firebird"
+    POSTGRESQL = "postgresql"
 
 
 class Config:
@@ -14,7 +29,23 @@ class Config:
         return _required("APP_SECRET_KEY")
 
     @property
+    def db_backend(self) -> DatabaseBackend:
+        """The database server: Firebird (the default) or PostgreSQL."""
+        value = os.environ.get("APP_DB_BACKEND", DatabaseBackend.FIREBIRD.value)
+        try:
+            return DatabaseBackend(value)
+        except ValueError:
+            choices = ", ".join(backend.value for backend in DatabaseBackend)
+            raise RuntimeError(
+                f"APP_DB_BACKEND must be one of {choices}, got {value!r}"
+            ) from None
+
+    @property
     def db_dsn(self) -> str:
+        """
+        The database: a firebird-driver DSN for Firebird (`host:path`,
+        `host/port:path`), `host[:port]/database` for PostgreSQL.
+        """
         return _required("APP_DB_DSN")
 
     @property
@@ -24,6 +55,15 @@ class Config:
     @property
     def db_password(self) -> str:
         return _required("APP_DB_PASSWORD")
+
+    @property
+    def search_language(self) -> str:
+        """
+        PostgreSQL's text search configuration for the book and author
+        searches (stemming and stop words): english unless set; init-db
+        records it. Firebird ignores it.
+        """
+        return os.environ.get("APP_SEARCH_LANGUAGE") or DEFAULT_SEARCH_LANGUAGE
 
     @property
     def db_pool_size(self) -> int:

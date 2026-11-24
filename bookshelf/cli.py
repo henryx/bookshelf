@@ -36,7 +36,7 @@ __all__ = ["init_app"]
 @with_appcontext
 def init_db_command() -> None:
     """Create missing database tables, columns, constraints and indexes."""
-    init_db(get_engine())
+    init_db(get_engine(), search_language=current_app.config["SEARCH_LANGUAGE"])
     click.echo("Database initialised.")
 
 

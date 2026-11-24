@@ -8,11 +8,12 @@ import pytest
 from alembic.operations import Operations
 from alembic.runtime.migration import MigrationContext
 from alembic.script import ScriptDirectory
-from firebird.driver import Connection, DatabaseError
 from flask import Flask
-from raw_db import raw
+from raw_db import RawConnection, raw, table_columns, table_constraints
+from sqlalchemy.exc import DBAPIError
 
 from bookshelf.db import get_engine, get_session
+from bookshelf.db.catalog import column_nullable
 from bookshelf.db.schema import MIGRATIONS, init_db
 
 REVISION: ModuleType = ScriptDirectory(str(MIGRATIONS)).get_revision("0002").module
@@ -29,38 +30,24 @@ V0_CONSTRAINTS = {
 }
 
 
-def _columns(conn: Connection) -> list[str]:
-    with conn.cursor() as cur:
-        cur.execute(
-            "SELECT TRIM(RDB$FIELD_NAME) FROM RDB$RELATION_FIELDS "
-            "WHERE RDB$RELATION_NAME = 'USERS' ORDER BY RDB$FIELD_POSITION"
-        )
-        return [column for (column,) in cur.fetchall()]
+def _columns(conn: RawConnection) -> list[str]:
+    return table_columns(conn, "USERS")
 
 
-def _constraints(conn: Connection) -> set[str]:
-    with conn.cursor() as cur:
-        cur.execute(
-            "SELECT TRIM(RDB$CONSTRAINT_NAME) FROM RDB$RELATION_CONSTRAINTS "
-            "WHERE RDB$RELATION_NAME = 'USERS' AND RDB$CONSTRAINT_TYPE <> 'NOT NULL'"
-        )
-        return {name for (name,) in cur.fetchall()}
+def _constraints(conn: RawConnection) -> set[str]:
+    return table_constraints(conn, "USERS")
 
 
-def _password_hash_nullable(conn: Connection) -> bool:
-    with conn.cursor() as cur:
-        cur.execute(
-            "SELECT RDB$NULL_FLAG FROM RDB$RELATION_FIELDS "
-            "WHERE RDB$RELATION_NAME = 'USERS' AND RDB$FIELD_NAME = 'PASSWORD_HASH'"
-        )
-        (null_flag,) = cur.fetchone()
-    return not null_flag
+def _password_hash_nullable() -> bool:
+    session = get_session()
+    session.rollback()
+    return column_nullable(session.connection(), "USERS", "PASSWORD_HASH")
 
 
 @pytest.fixture
 def v0_conn(
     empty_db_app: Flask, migrations: Callable[..., None]
-) -> Iterator[Connection]:
+) -> Iterator[RawConnection]:
     """A connection to a database at revision 0001, holding a user."""
     migrations(last="0001")
     with empty_db_app.app_context():
@@ -70,20 +57,20 @@ def v0_conn(
             cur.execute(
                 "INSERT INTO USERS (ID, EMAIL, PASSWORD_HASH) "
                 "VALUES (?, 'reader@example.com', 'hash')",
-                (uuid4().bytes,),
+                (uuid4(),),
             )
         conn.commit()
         migrations()
         yield conn
 
 
-def _refresh(conn: Connection) -> None:
+def _refresh(conn: RawConnection) -> None:
     """End `conn`'s transaction, if any: its next one sees what others did."""
     if conn.is_active():
         conn.commit()
 
 
-def _upgrade_to_head(conn: Connection) -> None:
+def _upgrade_to_head(conn: RawConnection) -> None:
     """init_db, then a new transaction of `conn`, which sees its changes."""
     init_db(get_engine())
     _refresh(conn)
@@ -98,7 +85,7 @@ def _run_revision(apply: Callable[[], None]) -> None:
         apply()
 
 
-def test_existing_users_log_in_locally(v0_conn: Connection):
+def test_existing_users_log_in_locally(v0_conn: RawConnection):
     _upgrade_to_head(v0_conn)
 
     with v0_conn.cursor() as cur:
@@ -107,7 +94,7 @@ def test_existing_users_log_in_locally(v0_conn: Connection):
         )
         assert cur.fetchall() == [("reader@example.com", "hash", "LOCAL", None)]
     assert _columns(v0_conn) == [*V0_COLUMNS, "AUTH_METHOD", "GOOGLE_SUBJECT"]
-    assert _password_hash_nullable(v0_conn)
+    assert _password_hash_nullable()
     assert _constraints(v0_conn) == V0_CONSTRAINTS | {
         "CHK_USERS_AUTH_METHOD",
         "CHK_USERS_CREDENTIALS",
@@ -116,7 +103,7 @@ def test_existing_users_log_in_locally(v0_conn: Connection):
 
 
 @pytest.mark.parametrize("applied", range(len(REVISION.CHANGES)))
-def test_rollback_after_failing_at_each_change(v0_conn: Connection, applied: int):
+def test_rollback_after_failing_at_each_change(v0_conn: RawConnection, applied: int):
     """`upgrade` stopped after `applied` changes: downgrade restores revision 0001."""
     with get_engine().connect() as conn:
         for change in REVISION.CHANGES[:applied]:
@@ -127,14 +114,14 @@ def test_rollback_after_failing_at_each_change(v0_conn: Connection, applied: int
     _refresh(v0_conn)
 
     assert _columns(v0_conn) == V0_COLUMNS
-    assert not _password_hash_nullable(v0_conn)
+    assert not _password_hash_nullable()
     assert _constraints(v0_conn) == V0_CONSTRAINTS
     with v0_conn.cursor() as cur:
         cur.execute("SELECT EMAIL, PASSWORD_HASH FROM USERS")
         assert cur.fetchall() == [("reader@example.com", "hash")]
 
 
-def test_upgrade_run_twice_changes_nothing_more(v0_conn: Connection):
+def test_upgrade_run_twice_changes_nothing_more(v0_conn: RawConnection):
     _run_revision(REVISION.upgrade)
     _run_revision(REVISION.upgrade)
     _refresh(v0_conn)
@@ -161,7 +148,7 @@ _INSERT = (
     ],
 )
 def test_credentials_match_the_auth_method(
-    v0_conn: Connection,
+    v0_conn: RawConnection,
     method: str,
     password_hash: str | None,
     subject: str | None,
@@ -170,10 +157,10 @@ def test_credentials_match_the_auth_method(
     _upgrade_to_head(v0_conn)
     try:
         with v0_conn.cursor() as cur:
-            cur.execute(_INSERT, (uuid4().bytes, method, password_hash, subject))
+            cur.execute(_INSERT, (uuid4(), method, password_hash, subject))
         _refresh(v0_conn)
         inserted = True
-    except DatabaseError:  # a check constraint refusing the row
+    except DBAPIError:  # a check constraint refusing the row
         v0_conn.rollback()
         inserted = False
 

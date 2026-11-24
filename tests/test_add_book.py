@@ -7,7 +7,6 @@ from concurrent.futures import ThreadPoolExecutor
 from uuid import uuid4
 
 import pytest
-from firebird.driver import connect
 from flask import Flask
 from flask.testing import FlaskClient
 from raw_db import raw
@@ -151,7 +150,7 @@ def test_add_book_saves_it_in_the_catalogue_and_collection(db_app, client, user)
     copies = _scalar(
         db_app,
         "SELECT COPIES FROM COLLECTION_BOOKS WHERE USER_ID = ? AND BOOK_ID = ?",
-        (user.id.bytes, book_id),
+        (user.id, book_id),
     )
     assert copies == 2
 
@@ -390,32 +389,23 @@ def test_add_book_model_returns_id_listed_in_catalogue(db_app, user):
     ]
 
 
-def test_add_book_uses_author_added_concurrently(db_app, user):
+def test_add_book_uses_author_added_concurrently(db_app, user, other_conn):
     """
     An author committed by someone else after this transaction started is not
     visible to it, so its insert clashes: the book gets that author instead.
     """
-    cfg = db_app.config
     with db_app.app_context():
         session = get_session()
         with raw(session).cursor() as cur:
             # Start this request's transaction, as loading the user does.
             cur.execute("SELECT COUNT(*) FROM AUTHORS")
             cur.fetchone()
-        with (
-            connect(
-                cfg["DATABASE_DSN"],
-                user=cfg["DATABASE_USER"],
-                password=cfg["DATABASE_PASSWORD"],
-                charset="UTF8",
-            ) as other,
-            other.cursor() as cur,
-        ):
+        with other_conn.cursor() as cur:
             cur.execute(
                 "INSERT INTO AUTHORS (ID, NAME, SURNAME) VALUES (?, ?, ?)",
-                (uuid4().bytes, "Frank", "Herbert"),
+                (uuid4(), "Frank", "Herbert"),
             )
-            other.commit()
+        other_conn.commit()
 
         add_book(
             session,
@@ -432,33 +422,25 @@ def test_add_book_uses_author_added_concurrently(db_app, user):
     assert _scalar(db_app, "SELECT COUNT(*) FROM AUTHORS") == 1
 
 
-def _wait_until_author_insert_blocks(app: Flask) -> None:
-    """
-    Wait until another attachment's author insert is running, i.e. waiting for
-    the lock on the uncommitted author. Each check is a new transaction, so it
-    sees fresh monitoring data.
-    """
+def _wait_until_author_insert_blocks(waiting: Callable[[str], bool]) -> None:
+    """Wait until the author insert waits for the lock on the uncommitted author."""
     deadline = time.monotonic() + 10
     while time.monotonic() < deadline:
-        running = _scalar(
-            app,
-            "SELECT COUNT(*) FROM MON$STATEMENTS "
-            "WHERE MON$STATE = 1 AND MON$ATTACHMENT_ID <> CURRENT_CONNECTION "
-            "AND MON$SQL_TEXT CONTAINING 'INSERT INTO AUTHORS'",
-        )
-        if running:
+        if waiting("INSERT INTO AUTHORS"):
             return
         time.sleep(0.05)
     pytest.fail("The author insert never started waiting")
 
 
-def test_add_book_uses_author_committed_while_inserting(db_app, user, other_conn):
+def test_add_book_uses_author_committed_while_inserting(
+    db_app, user, other_conn, waiting
+):
     """
     Someone else's new author, still uncommitted when the book looks it up,
     is committed while the book's insert of the same author waits: the insert
     clashes, and the book gets their author.
     """
-    theirs = uuid4().bytes
+    theirs = uuid4()
     with other_conn.cursor() as cur:
         cur.execute(
             "INSERT INTO AUTHORS (ID, NAME, SURNAME) VALUES (?, ?, ?)",
@@ -476,7 +458,7 @@ def test_add_book_uses_author_committed_while_inserting(db_app, user, other_conn
     with ThreadPoolExecutor(max_workers=1) as executor:
         added = executor.submit(add)
         try:
-            _wait_until_author_insert_blocks(db_app)
+            _wait_until_author_insert_blocks(waiting)
         finally:
             # Always release the lock, or the executor would wait forever.
             other_conn.commit()

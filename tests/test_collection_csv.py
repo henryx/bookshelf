@@ -2,6 +2,7 @@
 
 import csv
 import io
+from typing import cast
 
 import pytest
 from flask import Flask
@@ -54,7 +55,8 @@ def _collection(app: Flask, user: User) -> list[tuple[str, int | None, bool]]:
 def _catalogue_size(app: Flask) -> int:
     with app.app_context(), raw(get_session()).cursor() as cur:
         cur.execute("SELECT COUNT(*) FROM BOOKS")
-        return cur.fetchone()[0]
+        (count,) = cur.fetchone() or (0,)
+        return cast(int, count)
 
 
 def _import(app: Flask, user: User, text: str):

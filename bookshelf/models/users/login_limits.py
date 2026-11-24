@@ -3,12 +3,14 @@
 import logging
 from datetime import datetime
 
-from sqlalchemy import ColumnElement, delete, func, insert, literal_column, select
+from sqlalchemy import delete, func, insert, select
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
-from bookshelf.db import UPDATE_CONFLICT, execute_change, has_gds_code
+from bookshelf.config import DatabaseBackend
+from bookshelf.db import backend_of, execute_change, is_update_conflict
 from bookshelf.db.orm import LoginFailureRow, UserRow
+from bookshelf.db.sql import minutes_ago, record_key
 from bookshelf.models.users.model import normalise_email
 
 # Concurrent refused attempts that may each have to retry removing their row.
@@ -51,7 +53,7 @@ def start_login_attempt(
         delete(LoginFailureRow).where(
             LoginFailureRow.email == email,
             LoginFailureRow.ip_address == ip,
-            LoginFailureRow.attempted_at <= _minutes_ago(window_minutes),
+            LoginFailureRow.attempted_at <= minutes_ago(window_minutes),
         ),
     )
     attempted_at = session.scalars(
@@ -86,14 +88,15 @@ def _remove_attempt(
     any row with the same email, IP and time is indistinguishable from it, so
     one of them is deleted. Concurrent refused attempts may pick the same row:
     Firebird then fails all but one with an update conflict, and the others
-    try again, now seeing that row gone.
+    try again, now seeing that row gone; PostgreSQL skips a row another
+    removal holds, picking the next.
     """
     for _ in range(_REMOVE_ATTEMPT_TRIES - 1):
         try:
             _delete_one_failure(session, email, ip, attempted_at)
             return
         except DBAPIError as e:
-            if not has_gds_code(e, UPDATE_CONFLICT):
+            if not is_update_conflict(e):
                 raise
             session.rollback()
             logger.debug("Retrying removal of refused login for %s from %s", email, ip)
@@ -103,11 +106,10 @@ def _remove_attempt(
 def _delete_one_failure(
     session: Session, email: str, ip: str, attempted_at: datetime
 ) -> None:
-    # The table has no key: the row is picked by its record key, RDB$DB_KEY.
-    # The subquery's unqualified RDB$DB_KEY is its own table's.
-    record_key = literal_column("RDB$DB_KEY")
+    # The table has no key: the row is picked by its record key. The
+    # subquery's unqualified key is its own table's.
     first = (
-        select(record_key)
+        select(record_key())
         .select_from(LoginFailureRow)
         .where(
             LoginFailureRow.email == email,
@@ -116,9 +118,13 @@ def _delete_one_failure(
         )
         .limit(1)
         .correlate(None)
-        .scalar_subquery()
     )
-    execute_change(session, delete(LoginFailureRow).where(record_key == first))
+    if backend_of(session) is DatabaseBackend.POSTGRESQL:
+        # Firebird 3 has no SKIP LOCKED; it has the update conflict above.
+        first = first.with_for_update(skip_locked=True)
+    execute_change(
+        session, delete(LoginFailureRow).where(record_key() == first.scalar_subquery())
+    )
     session.commit()
 
 
@@ -131,7 +137,7 @@ def _over_limit(
     max_ip_failures: int,
     window_minutes: int,
 ) -> bool:
-    since = _minutes_ago(window_minutes)
+    since = minutes_ago(window_minutes)
     email_failures = (
         session.scalar(
             select(func.count()).where(
@@ -164,7 +170,7 @@ def prune_login_failures(session: Session, *, window_minutes: int) -> int:
     deleted = execute_change(
         session,
         delete(LoginFailureRow).where(
-            LoginFailureRow.attempted_at <= _minutes_ago(window_minutes)
+            LoginFailureRow.attempted_at <= minutes_ago(window_minutes)
         ),
     ).rowcount
     session.commit()
@@ -181,8 +187,3 @@ def clear_login_failures(session: Session, email: str, ip: str) -> None:
         ),
     )
     session.commit()
-
-
-def _minutes_ago(minutes: int) -> ColumnElement[datetime]:
-    """The database's current time less `minutes` (its clock, as ATTEMPTED_AT's)."""
-    return func.dateadd(literal_column("MINUTE"), -minutes, func.current_timestamp())

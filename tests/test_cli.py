@@ -1,10 +1,14 @@
 from collections.abc import Callable
+from typing import cast
 
 import pytest
 from flask import Flask
 from raw_db import raw
+from sqlalchemy import insert
 
 from bookshelf.db import get_session
+from bookshelf.db.orm import LoginFailureRow
+from bookshelf.db.sql import minutes_ago as database_minutes_ago
 from bookshelf.models.books import NewBook, add_book
 from bookshelf.models.users import (
     AuthMethod,
@@ -576,19 +580,20 @@ def test_create_user_rejects_invalid_email(db_app: Flask, admin: User):
 def _add_failure(app: Flask, email: str, minutes_ago: int) -> None:
     with app.app_context():
         session = get_session()
-        with raw(session).cursor() as cur:
-            cur.execute(
-                "INSERT INTO LOGIN_FAILURES (EMAIL, IP_ADDRESS, ATTEMPTED_AT) "
-                "VALUES (?, ?, DATEADD(? MINUTE TO CURRENT_TIMESTAMP))",
-                (email, "192.0.2.1", -minutes_ago),
+        session.execute(
+            insert(LoginFailureRow).values(
+                email=email,
+                ip_address="192.0.2.1",
+                attempted_at=database_minutes_ago(minutes_ago),
             )
+        )
         session.commit()
 
 
 def _failure_emails(app: Flask) -> list[str]:
     with app.app_context(), raw(get_session()).cursor() as cur:
         cur.execute("SELECT EMAIL FROM LOGIN_FAILURES ORDER BY EMAIL")
-        return [email for (email,) in cur.fetchall()]
+        return [cast(str, email) for (email,) in cur.fetchall()]
 
 
 def test_prune_login_failures_removes_only_expired(db_app: Flask):
@@ -817,9 +822,9 @@ def _owned(app: Flask, user: User) -> dict[str, int]:
         cur.execute(
             "SELECT b.TITLE, cb.COPIES FROM COLLECTION_BOOKS cb "
             "JOIN BOOKS b ON b.ID = cb.BOOK_ID WHERE cb.USER_ID = ?",
-            (user.id.bytes,),
+            (user.id,),
         )
-        return dict(cur.fetchall())
+        return {cast(str, title): cast(int, copies) for title, copies in cur.fetchall()}
 
 
 def _copy(

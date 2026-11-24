@@ -42,10 +42,12 @@ def create_app(overrides: Mapping[str, object] | None = None) -> Flask:
     app = Flask("bookshelf")
     app.config.update(
         SECRET_KEY=cfg.secret_key,
+        DATABASE_BACKEND=cfg.db_backend,
         DATABASE_DSN=cfg.db_dsn,
         DATABASE_USER=cfg.db_user,
         DATABASE_PASSWORD=cfg.db_password,
         DATABASE_POOL_SIZE=cfg.db_pool_size,
+        SEARCH_LANGUAGE=cfg.search_language,
         SESSION_COOKIE_SECURE=cfg.cookie_secure,
         SESSION_COOKIE_SAMESITE="Lax",
         REMEMBER_COOKIE_SECURE=cfg.cookie_secure,

@@ -8,12 +8,12 @@ from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
 from bookshelf.db import (
-    FOREIGN_KEY_VIOLATION,
-    UNIQUE_KEY_VIOLATION,
     execute_change,
-    has_gds_code,
+    is_foreign_key_violation,
+    is_unique_violation,
     read_committed,
     retry_after_concurrent_delete,
+    try_change,
 )
 from bookshelf.db.orm import (
     AuthorRow,
@@ -79,7 +79,7 @@ def _author_id(session: Session, author: Author) -> UUID:
         return author_id
     author_id = uuid4()
     try:
-        execute_change(
+        try_change(
             session,
             insert(AuthorRow).values(
                 id=author_id, name=author.name, surname=author.surname
@@ -89,7 +89,7 @@ def _author_id(session: Session, author: Author) -> UUID:
         # Committed by someone else since the lookup: use theirs. The
         # transaction is read committed (see add_book), so it sees that row.
         existing = _find_author(session, author)
-        if not has_gds_code(e, UNIQUE_KEY_VIOLATION) or existing is None:
+        if not is_unique_violation(e) or existing is None:
             raise
         return existing
     return author_id
@@ -139,7 +139,7 @@ def _delete_unused_authors(session: Session, author_ids: list[UUID]) -> list[UUI
     deleted = []
     for author_id in author_ids:
         try:
-            result = execute_change(
+            result = try_change(
                 session,
                 delete(AuthorRow).where(
                     AuthorRow.id == author_id,
@@ -150,7 +150,7 @@ def _delete_unused_authors(session: Session, author_ids: list[UUID]) -> list[UUI
             )
         except DBAPIError as e:
             # A book being added at this moment uses it: keep it.
-            if not has_gds_code(e, FOREIGN_KEY_VIOLATION):
+            if not is_foreign_key_violation(e):
                 raise
             logger.info(
                 "Author %s kept: a book being saved at this moment uses it", author_id
@@ -181,7 +181,7 @@ def _insert_book(
     read: bool,
 ) -> None:
     try:
-        execute_change(
+        try_change(
             session,
             insert(BookRow).values(
                 id=book_id,
@@ -196,7 +196,7 @@ def _insert_book(
         )
     except DBAPIError as e:
         # The ID is new, so the only key that can clash is the ISBN.
-        if isbn is not None and has_gds_code(e, UNIQUE_KEY_VIOLATION):
+        if isbn is not None and is_unique_violation(e):
             raise BookExistsError(isbn) from e
         raise
     _insert_authors(session, book_id, book.authors)
@@ -242,14 +242,14 @@ def _set_isbn(session: Session, book_id: UUID, isbn: str) -> None:
     date: only _replace_isbn (admins) changes one.
     """
     try:
-        result = execute_change(
+        result = try_change(
             session,
             update(BookRow)
             .where(BookRow.id == book_id, BookRow.isbn.is_(None))
             .values(isbn=isbn),
         )
     except DBAPIError as e:
-        if has_gds_code(e, UNIQUE_KEY_VIOLATION):
+        if is_unique_violation(e):
             raise BookExistsError(isbn) from e
         raise
     if result.rowcount == 0:
@@ -259,11 +259,11 @@ def _set_isbn(session: Session, book_id: UUID, isbn: str) -> None:
 def _replace_isbn(session: Session, book_id: UUID, isbn: str | None) -> None:
     """Set a book's ISBN, whatever it was, or remove it (None)."""
     try:
-        execute_change(
+        try_change(
             session, update(BookRow).where(BookRow.id == book_id).values(isbn=isbn)
         )
     except DBAPIError as e:
-        if isbn is not None and has_gds_code(e, UNIQUE_KEY_VIOLATION):
+        if isbn is not None and is_unique_violation(e):
             raise BookExistsError(isbn) from e
         raise
 
@@ -344,12 +344,10 @@ def _delete_book(session: Session, book_id: UUID) -> DeletedBook:
         authors = _author_ids(session, book_id)
         try:
             # Its BOOK_AUTHORS and BOOK_CATEGORIES rows go with it (ON DELETE CASCADE).
-            result = execute_change(
-                session, delete(BookRow).where(BookRow.id == book_id)
-            )
+            result = try_change(session, delete(BookRow).where(BookRow.id == book_id))
         except DBAPIError as e:
             # FK_COLLECTION_BOOKS_BOOK: someone owns it.
-            if has_gds_code(e, FOREIGN_KEY_VIOLATION):
+            if is_foreign_key_violation(e):
                 raise BookInCollectionError(title) from e
             raise
         if result.rowcount == 0:

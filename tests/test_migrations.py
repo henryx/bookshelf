@@ -1,20 +1,21 @@
 """Migrations: init_db takes a database to the latest revision."""
 
 from collections.abc import Callable
+from typing import cast
 from uuid import uuid4
 
 import pytest
 from alembic.operations import Operations
 from alembic.runtime.migration import MigrationContext
 from alembic.script import ScriptDirectory
-from firebird.driver import Connection
 from flask import Flask
-from raw_db import raw
+from raw_db import RawConnection, raw
 from sqlalchemy import Connection as SAConnection
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 
 from bookshelf.db import get_engine, get_session
 from bookshelf.db.catalog import column_exists
+from bookshelf.db.orm import UUIDType
 from bookshelf.db.schema import (
     MIGRATIONS,
     SchemaTooNewError,
@@ -74,8 +75,9 @@ class AddBookThenFail:
 
     def upgrade(self, conn: SAConnection) -> None:
         conn.execute(
-            text("INSERT INTO BOOKS (ID, TITLE) VALUES (:id, 'Dune')"),
-            {"id": uuid4().bytes},
+            text("INSERT INTO BOOKS (ID, TITLE) VALUES (:id, 'Dune')").bindparams(
+                bindparam("id", uuid4(), type_=UUIDType())
+            )
         )
         raise RuntimeError("upgrade failed")
 
@@ -83,7 +85,7 @@ class AddBookThenFail:
         pass
 
 
-def _conn() -> Connection:
+def _conn() -> RawConnection:
     """The app context's connection, in a new transaction: it sees what init_db did."""
     session = get_session()
     session.rollback()
@@ -96,11 +98,11 @@ def _behind() -> bool:
     return schema_behind(session.connection())
 
 
-def _setting(conn: Connection, name: str) -> str | None:
+def _setting(conn: RawConnection, name: str) -> str | None:
     with conn.cursor() as cur:
         cur.execute('SELECT "VALUE" FROM SETTINGS WHERE NAME = ?', (name,))
         row = cur.fetchone()
-    return row[0] if row else None
+    return cast(str, row[0]) if row else None
 
 
 def _state() -> tuple[list[str], str | None]:
@@ -108,7 +110,7 @@ def _state() -> tuple[list[str], str | None]:
     conn = _conn()
     with conn.cursor() as cur:
         cur.execute("SELECT TRIM(VERSION_NUM) FROM ALEMBIC_VERSION")
-        revisions = [revision for (revision,) in cur.fetchall()]
+        revisions = [cast(str, revision) for (revision,) in cur.fetchall()]
     return revisions, _setting(conn, "SCHEMA_UPGRADE_STEP")
 
 
@@ -130,22 +132,20 @@ def _has_column(table: str, column: str) -> bool:
 def _notes() -> list[str | None]:
     with _conn().cursor() as cur:
         cur.execute("SELECT NOTE FROM BOOKS")
-        return [note for (note,) in cur.fetchall()]
+        return [cast(str | None, note) for (note,) in cur.fetchall()]
 
 
 def _book_count() -> int:
     with _conn().cursor() as cur:
         cur.execute("SELECT COUNT(*) FROM BOOKS")
-        (count,) = cur.fetchone()
-    return count
+        (count,) = cur.fetchone() or (0,)
+    return cast(int, count)
 
 
 def _add_book() -> None:
     conn = _conn()
     with conn.cursor() as cur:
-        cur.execute(
-            "INSERT INTO BOOKS (ID, TITLE) VALUES (?, 'Dune')", (uuid4().bytes,)
-        )
+        cur.execute("INSERT INTO BOOKS (ID, TITLE) VALUES (?, 'Dune')", (uuid4(),))
     conn.commit()
 
 
@@ -277,9 +277,10 @@ def test_a_failed_revisions_uncommitted_work_is_discarded(
         assert _state() == (["0002"], None)
 
 
-# From the upgrade steps of releases before 1.5.0
+# From the upgrade steps of releases before 1.5.0 (Firebird only)
 
 
+@pytest.mark.firebird  # releases before 1.5.0 ran on Firebird only
 def test_a_database_at_schema_version_1_is_stamped(empty_db_app: Flask, migrations):
     """Releases 1.2.0 to 1.4.x leave SCHEMA_VERSION 1: revision 0002."""
     migrations()
@@ -301,6 +302,7 @@ def test_a_database_at_schema_version_1_is_stamped(empty_db_app: Flask, migratio
         assert not _behind()
 
 
+@pytest.mark.firebird  # releases before 1.5.0 ran on Firebird only
 def test_a_database_without_versions_is_at_revision_0001(
     empty_db_app: Flask, migrations
 ):
@@ -319,6 +321,7 @@ def test_a_database_without_versions_is_at_revision_0001(
         assert not _behind()
 
 
+@pytest.mark.firebird  # releases before 1.5.0 ran on Firebird only
 def test_a_step_left_halfway_before_alembic_is_rolled_back_then_applied(
     empty_db_app: Flask, migrations
 ):
@@ -340,6 +343,7 @@ def test_a_step_left_halfway_before_alembic_is_rolled_back_then_applied(
         assert _has_column("USERS", "GOOGLE_SUBJECT")
 
 
+@pytest.mark.firebird  # releases before 1.5.0 ran on Firebird only
 def test_a_schema_version_newer_than_the_code_is_refused(
     empty_db_app: Flask, migrations
 ):
@@ -355,6 +359,7 @@ def test_a_schema_version_newer_than_the_code_is_refused(
             _init()
 
 
+@pytest.mark.firebird  # releases before 1.5.0 ran on Firebird only
 def test_a_newer_step_left_halfway_before_alembic_is_refused(
     empty_db_app: Flask, migrations
 ):
@@ -423,7 +428,8 @@ def test_a_second_init_db_waits_for_the_first(app: Flask, other_conn, race):
             'UPDATE SETTINGS SET "VALUE" = "VALUE" WHERE NAME = \'SCHEMA_UPGRADE_LOCK\''
         )
 
-    race(lambda _session: _init(), "UPDATE SETTINGS", commit=False)
+    # Firebird waits to lock the row; PostgreSQL earlier, adding it if missing.
+    race(lambda _session: _init(), "SETTINGS", commit=False)
 
 
 # Requests

@@ -6,9 +6,9 @@ from collections.abc import Callable
 from uuid import UUID, uuid4
 
 import pytest
-from firebird.driver import Connection
 from flask import Flask
 from flask.testing import FlaskClient
+from raw_db import RawConnection
 from sqlalchemy.exc import DBAPIError
 
 from bookshelf.db import get_session
@@ -105,7 +105,7 @@ def test_book_in_a_collection_cannot_be_deleted(db_app, user):
 def test_delete_a_book_deleted_after_it_was_looked_up(
     db_app: Flask,
     user: User,
-    other_conn: Connection,
+    other_conn: RawConnection,
     monkeypatch: pytest.MonkeyPatch,
 ):
     """Another request deletes it between the lookup and the delete."""
@@ -114,7 +114,7 @@ def test_delete_a_book_deleted_after_it_was_looked_up(
 
     def deleted_meanwhile(cur, book_id):
         with other_conn.cursor() as other:
-            other.execute("DELETE FROM BOOKS WHERE ID = ?", (book_id.bytes,))
+            other.execute("DELETE FROM BOOKS WHERE ID = ?", (book_id,))
         other_conn.commit()
         return author_ids(cur, book_id)
 
@@ -147,7 +147,7 @@ def test_delete_a_book_deleted_meanwhile_is_unknown(db_app, user, other_conn, ra
     dune = _book(db_app, user, NewBook("Dune", authors=(FRANK,)))
     # Another admin deletes it, not yet committed.
     with other_conn.cursor() as cur:
-        cur.execute("DELETE FROM BOOKS WHERE ID = ?", (dune.bytes,))
+        cur.execute("DELETE FROM BOOKS WHERE ID = ?", (dune,))
 
     with pytest.raises(UnknownBookError):
         race(lambda session: delete_book(session, dune), "DELETE FROM BOOKS")
@@ -159,12 +159,17 @@ def test_delete_a_book_whose_author_is_removed_meanwhile(
     dune = _book(db_app, user, NewBook("Dune", authors=(FRANK,)))
     # Someone editing it removes its author, not yet committed.
     with other_conn.cursor() as cur:
-        cur.execute("DELETE FROM BOOK_AUTHORS WHERE BOOK_ID = ?", (dune.bytes,))
+        cur.execute("DELETE FROM BOOK_AUTHORS WHERE BOOK_ID = ?", (dune,))
 
     deleted = race(lambda session: delete_book(session, dune), "DELETE FROM BOOKS")
 
-    assert deleted == DeletedBook("Dune", ())
+    # Firebird runs the delete again, finding the book without authors;
+    # PostgreSQL goes on, and deletes the author the edit left without books.
+    # Either way, an author is reported deleted only when gone.
+    assert isinstance(deleted, DeletedBook)
+    assert deleted.title == "Dune"
     assert not _exists(db_app, dune)
+    assert bool(deleted.authors_deleted) is (FRANK not in _authors(db_app))
 
 
 def test_book_details_count_the_collections_holding_it(db_app, user, admin):

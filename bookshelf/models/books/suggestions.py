@@ -8,6 +8,7 @@ from sqlalchemy import ColumnElement, String, literal, or_, select
 from sqlalchemy.orm import InstrumentedAttribute, Session
 
 from bookshelf.db.orm import AuthorRow, BookAuthorRow, BookCategoryRow, BookRow
+from bookshelf.db.sql import starts_with_ci
 from bookshelf.models.books.isbn import isbn_searches
 from bookshelf.models.books.model import (
     CATEGORY_MAX_LENGTH,
@@ -61,7 +62,7 @@ def _starts_with(
     `column` starts with `text`; STARTING WITH follows the columns'
     UNICODE_CI collation, so case is ignored.
     """
-    return column.op("STARTING WITH", is_comparison=True)(literal(text, String(length)))
+    return starts_with_ci(column, literal(text, String(length)))
 
 
 def suggest_publishers(session: Session, text: str) -> list[str]:

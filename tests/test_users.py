@@ -6,9 +6,9 @@ from datetime import datetime
 from uuid import UUID
 
 import pytest
-from firebird.driver import Connection, DatabaseError
+from firebird.driver import DatabaseError
 from flask import Flask
-from raw_db import raw
+from raw_db import RawConnection, raw
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
@@ -132,10 +132,10 @@ def test_database_rejects_blank_or_untrimmed_names(
     with db_app.app_context():
         session = get_session()
         with (
-            pytest.raises(DatabaseError, match=constraint),
+            pytest.raises(DBAPIError, match=f"(?i){constraint}"),
             raw(session).cursor() as cur,
         ):
-            cur.execute(queries[column], (value, user.id.bytes))
+            cur.execute(queries[column], (value, user.id))
         session.rollback()
 
 
@@ -190,12 +190,10 @@ def test_database_rejects_email_not_lowercase_and_trimmed(
     with db_app.app_context():
         session = get_session()
         with (
-            pytest.raises(DatabaseError, match="CHK_USERS_EMAIL_NORMALISED"),
+            pytest.raises(DBAPIError, match="(?i)CHK_USERS_EMAIL_NORMALISED"),
             raw(session).cursor() as cur,
         ):
-            cur.execute(
-                "UPDATE USERS SET EMAIL = ? WHERE ID = ?", (email, user.id.bytes)
-            )
+            cur.execute("UPDATE USERS SET EMAIL = ? WHERE ID = ?", (email, user.id))
         session.rollback()
 
 
@@ -203,12 +201,10 @@ def test_database_rejects_unknown_role(db_app: Flask, user: User):
     with db_app.app_context():
         session = get_session()
         with (
-            pytest.raises(DatabaseError, match="CHK_USERS_ROLE"),
+            pytest.raises(DBAPIError, match="(?i)CHK_USERS_ROLE"),
             raw(session).cursor() as cur,
         ):
-            cur.execute(
-                "UPDATE USERS SET ROLE = 'SUPERUSER' WHERE ID = ?", (user.id.bytes,)
-            )
+            cur.execute("UPDATE USERS SET ROLE = 'SUPERUSER' WHERE ID = ?", (user.id,))
         session.rollback()
 
 
@@ -306,7 +302,7 @@ def test_admin_can_be_deleted_or_demoted_while_another_remains(
 
 
 def test_admins_removing_each_other_at_once_leave_one(
-    db_app: Flask, other_conn: Connection, password: str
+    db_app: Flask, other_conn: RawConnection, password: str
 ):
     first = _admin(db_app, "first@example.com", password)
     second = _admin(db_app, "second@example.com", password)
@@ -323,7 +319,7 @@ def test_admins_removing_each_other_at_once_leave_one(
     with other_conn.cursor() as cur:
         cur.execute(
             "UPDATE USERS SET ROLE = ? WHERE ID = ?",
-            (Role.REGULAR.value, first.id.bytes),
+            (Role.REGULAR.value, first.id),
         )
     # ...while this one deletes the second.
     thread = threading.Thread(target=delete_second)
@@ -522,10 +518,11 @@ def test_malformed_session_id_finds_nobody(db_app: Flask, user: User, session_id
         assert find_by_session_id(get_session(), session_id) is None
 
 
+@pytest.mark.firebird  # PostgreSQL skips a row another removal holds
 def test_refused_login_removal_retries_after_a_conflict(
     db_app: Flask,
     user: User,
-    other_conn: Connection,
+    other_conn: RawConnection,
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ):
@@ -569,7 +566,7 @@ def test_refused_login_removal_retries_after_a_conflict(
         )
         with raw(session).cursor() as cur:
             cur.execute("SELECT COUNT(*) FROM LOGIN_FAILURES")
-            (failures,) = cur.fetchone()
+            (failures,) = cur.fetchone() or (0,)
 
     assert not allowed
     assert len(calls) == 2

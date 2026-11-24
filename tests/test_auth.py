@@ -1,13 +1,18 @@
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
+from typing import cast
+from uuid import UUID
 
 from flask import Flask
 from flask.testing import FlaskClient
 from raw_db import raw
+from sqlalchemy import insert, select
 
 from bookshelf import create_app
 from bookshelf.db import get_session
+from bookshelf.db.orm import LoginFailureRow, UserRow
+from bookshelf.db.sql import minutes_ago as database_minutes_ago
 from bookshelf.models.users import (
     Role,
     User,
@@ -176,14 +181,17 @@ def test_ip_block_does_not_affect_other_ips(
 def _add_old_failures(app: Flask, email: str, times: int, minutes_ago: int) -> None:
     with app.app_context():
         session = get_session()
-        with raw(session).cursor() as cur:
-            for _ in range(times):
-                cur.execute(
-                    "INSERT INTO LOGIN_FAILURES (ID, EMAIL, IP_ADDRESS, ATTEMPTED_AT) "
-                    "VALUES ((SELECT ID FROM USERS WHERE EMAIL = ?), ?, ?, "
-                    "DATEADD(? MINUTE TO CURRENT_TIMESTAMP))",
-                    (email, email, CLIENT_IP, -minutes_ago),
+        for _ in range(times):
+            session.execute(
+                insert(LoginFailureRow).values(
+                    id=select(UserRow.id)
+                    .where(UserRow.email == email)
+                    .scalar_subquery(),
+                    email=email,
+                    ip_address=CLIENT_IP,
+                    attempted_at=database_minutes_ago(minutes_ago),
                 )
+            )
         session.commit()
 
 
@@ -410,21 +418,21 @@ def test_blocked_attempt_is_not_counted(db_client: FlaskClient, user: User):
 def _failures(email: str) -> int:
     with raw(get_session()).cursor() as cur:
         cur.execute("SELECT COUNT(*) FROM LOGIN_FAILURES WHERE EMAIL = ?", (email,))
-        (count,) = cur.fetchone()
-    return count
+        (count,) = cur.fetchone() or (0,)
+    return cast(int, count)
 
 
-def _failure_ids(email: str) -> list[bytes | None]:
+def _failure_ids(email: str) -> list[UUID | None]:
     with raw(get_session()).cursor() as cur:
         cur.execute("SELECT ID FROM LOGIN_FAILURES WHERE EMAIL = ?", (email,))
-        return [user_id for (user_id,) in cur.fetchall()]
+        return [cast(UUID | None, user_id) for (user_id,) in cur.fetchall()]
 
 
 def test_failure_references_user_of_known_email(db_client: FlaskClient, user: User):
     _login(db_client, user.email.upper(), "wrong")
 
     with db_client.application.app_context():
-        assert _failure_ids(user.email) == [user.id.bytes]
+        assert _failure_ids(user.email) == [user.id]
 
 
 def test_failure_of_unknown_email_has_no_user(db_client: FlaskClient):

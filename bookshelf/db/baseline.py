@@ -2,11 +2,18 @@
 The 1.0.0 schema, frozen: never edit a definition here. Revision 0001
 (bookshelf/migrations/versions/) creates whatever of it is missing; every
 change since is a later revision.
+
+The definitions are Firebird's, and PostgreSQL's too, but for what
+POSTGRESQL_COLLATIONS and POSTGRESQL_INDEXES replace: unquoted names fold to
+lower case there, UUID is a type of its own, and COLLATE may follow NOT NULL.
 """
 
 from sqlalchemy import Connection, text
 
+from bookshelf.config import DatabaseBackend
+from bookshelf.db import backend_of
 from bookshelf.db.catalog import (
+    collation_exists,
     constraint_exists,
     domain_exists,
     index_exists,
@@ -17,6 +24,8 @@ __all__ = [
     "CONSTRAINTS",
     "DOMAINS",
     "INDEXES",
+    "POSTGRESQL_COLLATIONS",
+    "POSTGRESQL_INDEXES",
     "TABLES",
     "create_missing",
     "create_settings",
@@ -260,13 +269,39 @@ INDEXES: dict[str, str] = {
 }
 
 
+# PostgreSQL: Firebird's UNICODE_CI, a collation ignoring case (not accents)
+# that is not built in. Nondeterministic, so equal ignoring case also for
+# UNIQUE; LIKE takes it from PostgreSQL 18. Replaces DOMAINS: PostgreSQL has a
+# UUID type.
+POSTGRESQL_COLLATIONS: dict[str, str] = {
+    "UNICODE_CI": (
+        "CREATE COLLATION UNICODE_CI "
+        "(provider = icu, locale = 'und-u-ks-level2', deterministic = false)"
+    ),
+}
+
+# PostgreSQL: the indexes INDEXES writes in Firebird's own syntax.
+POSTGRESQL_INDEXES: dict[str, str] = {
+    "IDX_BOOKS_CREATED_AT": (
+        "CREATE INDEX IDX_BOOKS_CREATED_AT ON BOOKS (CREATED_AT DESC)"
+    ),
+}
+
+
 def create_missing(conn: Connection) -> None:
     """Create each domain, table, constraint and index not there yet, in order."""
+    match backend_of(conn):
+        case DatabaseBackend.FIREBIRD:
+            first = (domain_exists, DOMAINS)
+            indexes = INDEXES
+        case DatabaseBackend.POSTGRESQL:
+            first = (collation_exists, POSTGRESQL_COLLATIONS)
+            indexes = INDEXES | POSTGRESQL_INDEXES
     for exists, ddls in (
-        (domain_exists, DOMAINS),
+        first,
         (table_exists, TABLES),
         (constraint_exists, CONSTRAINTS),
-        (index_exists, INDEXES),
+        (index_exists, indexes),
     ):
         for name, ddl in ddls.items():
             if not exists(conn, name):

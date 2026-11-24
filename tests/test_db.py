@@ -1,55 +1,84 @@
+from typing import cast
 from uuid import uuid4
 
 import pytest
-from firebird.driver import Connection, DatabaseError, connect
+from firebird.driver import DatabaseError
 from flask import Flask
-from raw_db import raw
+from psycopg.errors import lookup
+from raw_db import BACKEND, RawConnection, raw
 from sqlalchemy import insert, select
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
 from bookshelf import create_app
+from bookshelf.config import DatabaseBackend
 from bookshelf.db import (
     close_pool,
     execute_change,
     get_session,
-    has_gds_code,
+    is_concurrent_delete,
+    is_foreign_key_violation,
+    is_unique_violation,
+    is_update_conflict,
     read_committed,
     retry_after_concurrent_delete,
 )
 from bookshelf.db.orm import UserRow
 
 
+def _one(session: Session | RawConnection, sql: str, *params: object) -> object:
+    conn = session if isinstance(session, RawConnection) else raw(session)
+    with conn.cursor() as cur:
+        cur.execute(sql, params)
+        row = cur.fetchone()
+    assert row is not None
+    return row[0]
+
+
 def _attachment_id(session: Session) -> int:
-    with raw(session).cursor() as cur:
-        cur.execute("SELECT CURRENT_CONNECTION FROM RDB$DATABASE")
-        (attachment_id,) = cur.fetchone()
-    return attachment_id
+    """The server's ID of the session's connection."""
+    sql = {
+        DatabaseBackend.FIREBIRD: "SELECT CURRENT_CONNECTION FROM RDB$DATABASE",
+        DatabaseBackend.POSTGRESQL: "SELECT pg_backend_pid()",
+    }
+    return cast(int, _one(session, sql[BACKEND]))
 
 
-def _isolation(session: Session) -> int:
-    """The current transaction's isolation (MON$ISOLATION_MODE: 2 is read committed)."""
-    with raw(session).cursor() as cur:
-        cur.execute(
+def _kill(conn: RawConnection, attachment_id: int) -> None:
+    """End another connection, as a server restart or an admin would."""
+    sql = {
+        DatabaseBackend.FIREBIRD: (
+            "DELETE FROM MON$ATTACHMENTS WHERE MON$ATTACHMENT_ID = ?"
+        ),
+        DatabaseBackend.POSTGRESQL: "SELECT pg_terminate_backend(?)",
+    }
+    with conn.cursor() as cur:
+        cur.execute(sql[BACKEND], (attachment_id,))
+    conn.commit()
+
+
+def _read_committed(session: Session) -> bool:
+    """Whether the session's transaction is read committed."""
+    if BACKEND is DatabaseBackend.FIREBIRD:
+        # MON$ISOLATION_MODE 2 and 3 are read committed.
+        mode = _one(
+            session,
             "SELECT MON$ISOLATION_MODE FROM MON$TRANSACTIONS "
-            "WHERE MON$TRANSACTION_ID = CURRENT_TRANSACTION"
+            "WHERE MON$TRANSACTION_ID = CURRENT_TRANSACTION",
         )
-        (mode,) = cur.fetchone()
-    return mode
+        return mode in (2, 3)
+    return _one(session, "SHOW transaction_isolation") == "read committed"
 
 
 def _user_count(session: Session) -> int:
-    with raw(session).cursor() as cur:
-        cur.execute("SELECT COUNT(*) FROM USERS")
-        (count,) = cur.fetchone()
-    return count
+    return cast(int, _one(session, "SELECT COUNT(*) FROM USERS"))
 
 
-def _add_user(conn: Connection, email: str) -> None:
+def _add_user(conn: RawConnection, email: str) -> None:
     with conn.cursor() as cur:
         cur.execute(
             "INSERT INTO USERS (ID, EMAIL, PASSWORD_HASH) VALUES (?, ?, ?)",
-            (uuid4().bytes, email, "hash"),
+            (uuid4(), email, "hash"),
         )
 
 
@@ -73,28 +102,22 @@ def test_closed_connection_is_not_reused(app: Flask):
     with app.app_context():
         session = get_session()
         first = _attachment_id(session)
-        conn = raw(session)
-        conn.rollback()
-        conn.close()
+        dbapi_connection = session.connection().connection.dbapi_connection
+        assert dbapi_connection is not None
+        # Back in the pool first, as a connection the server closes while idle.
+        session.rollback()
+        dbapi_connection.close()
     with app.app_context():
         assert _attachment_id(get_session()) != first
 
 
-def test_connection_killed_while_idle_is_replaced(app: Flask):
+def test_connection_killed_while_idle_is_replaced(
+    app: Flask, other_conn: RawConnection
+):
     with app.app_context():
         killed = _attachment_id(get_session())
 
-    cfg = app.config
-    with connect(
-        cfg["DATABASE_DSN"],
-        user=cfg["DATABASE_USER"],
-        password=cfg["DATABASE_PASSWORD"],
-    ) as killer:
-        with killer.cursor() as cur:
-            cur.execute(
-                "DELETE FROM MON$ATTACHMENTS WHERE MON$ATTACHMENT_ID = ?", (killed,)
-            )
-        killer.commit()
+    _kill(other_conn, killed)
 
     with app.app_context():
         assert _attachment_id(get_session()) != killed
@@ -121,7 +144,9 @@ def test_idle_connections_are_capped_at_pool_size():
 # Transactions
 
 
-def test_transactions_are_snapshots_by_default(db_app: Flask, other_conn: Connection):
+def test_transactions_are_snapshots_by_default(
+    db_app: Flask, other_conn: RawConnection
+):
     with db_app.app_context():
         session = get_session()
         assert _user_count(session) == 0
@@ -132,7 +157,7 @@ def test_transactions_are_snapshots_by_default(db_app: Flask, other_conn: Connec
 
 
 def test_read_committed_sees_what_others_committed(
-    db_app: Flask, other_conn: Connection
+    db_app: Flask, other_conn: RawConnection
 ):
     with db_app.app_context():
         session = get_session()
@@ -141,7 +166,7 @@ def test_read_committed_sees_what_others_committed(
         other_conn.commit()
 
         with read_committed(session):
-            assert _isolation(session) == 2
+            assert _read_committed(session)
             assert _user_count(session) == 1
 
 
@@ -151,7 +176,7 @@ def test_read_committed_ends_with_its_transaction(db_app: Flask):
         with read_committed(session):
             session.commit()
 
-        assert _isolation(session) != 2
+        assert not _read_committed(session)
 
 
 def test_read_committed_rolls_back_when_its_block_raises(db_app: Flask):
@@ -177,19 +202,33 @@ def test_a_change_with_returning_is_refused(db_app: Flask):
 
 # Errors
 
-ERASED_RECORD = 335544382
+
+def _error(gds_code: int, sqlstate: str) -> DBAPIError:
+    """A database error, as SQLAlchemy raises it from the backend's driver."""
+    match BACKEND:
+        case DatabaseBackend.FIREBIRD:
+            error = DatabaseError(f"error {gds_code}")
+            error.gds_codes = (gds_code,)
+            return DBAPIError("UPDATE", None, error)
+        case DatabaseBackend.POSTGRESQL:
+            return DBAPIError("UPDATE", None, lookup(sqlstate)(f"error {sqlstate}"))
 
 
-def _database_error(code: int) -> DBAPIError:
-    error = DatabaseError(f"error {code}")
-    error.gds_codes = (code,)
-    return DBAPIError("UPDATE", None, error)
+def _concurrent_delete() -> DBAPIError:
+    return _error(335544382, "40001")
 
 
-def test_gds_codes_are_read_from_the_driver_error():
-    assert has_gds_code(_database_error(ERASED_RECORD), ERASED_RECORD)
-    assert not has_gds_code(_database_error(ERASED_RECORD), 1)
-    assert not has_gds_code(RuntimeError("not a database error"), ERASED_RECORD)
+def _unique_violation() -> DBAPIError:
+    return _error(335544665, "23505")
+
+
+def test_errors_are_told_apart():
+    assert is_concurrent_delete(_concurrent_delete())
+    assert is_unique_violation(_unique_violation())
+    assert not is_unique_violation(_concurrent_delete())
+    assert is_foreign_key_violation(_error(335544466, "23503"))
+    assert is_update_conflict(_error(335544451, "40001"))
+    assert not is_unique_violation(RuntimeError("not a database error"))
 
 
 def test_run_again_after_a_concurrent_delete():
@@ -198,7 +237,7 @@ def test_run_again_after_a_concurrent_delete():
     def run() -> str:
         calls.append(1)
         if len(calls) == 1:
-            raise _database_error(ERASED_RECORD)
+            raise _concurrent_delete()
         return "done"
 
     assert retry_after_concurrent_delete(run) == "done"
@@ -210,7 +249,7 @@ def test_run_again_only_once():
 
     def run() -> None:
         calls.append(1)
-        raise _database_error(ERASED_RECORD)
+        raise _concurrent_delete()
 
     with pytest.raises(DBAPIError):
         retry_after_concurrent_delete(run)
@@ -222,7 +261,7 @@ def test_other_database_errors_are_not_run_again():
 
     def run() -> None:
         calls.append(1)
-        raise _database_error(335544665)
+        raise _unique_violation()
 
     with pytest.raises(DBAPIError):
         retry_after_concurrent_delete(run)

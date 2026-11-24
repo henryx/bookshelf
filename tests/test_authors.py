@@ -9,9 +9,9 @@ from collections.abc import Callable
 from uuid import UUID, uuid4
 
 import pytest
-from firebird.driver import Connection
 from flask import Flask
 from flask.testing import FlaskClient
+from raw_db import RawConnection
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
@@ -109,6 +109,31 @@ def test_list_authors_searches_and_pages(db_app, user):
     )
 
 
+@pytest.mark.firebird
+def test_list_authors_finds_text_inside_names(db_app, user):
+    """Firebird: "name surname" contains the text, as typed."""
+    _book(db_app, user, "Dune", FRANK)
+
+    with db_app.app_context():
+        found = list_authors(get_session(), "rank herb")
+
+    assert [e.author for e in found.authors] == [FRANK]
+
+
+@pytest.mark.postgresql
+def test_list_authors_matches_words(db_app, user):
+    """PostgreSQL: each word starts a word of the name or surname, in any order."""
+    _book(db_app, user, "Dune", FRANK, Author("Brian", "Herbert"))
+
+    with db_app.app_context():
+        session = get_session()
+        found = list_authors(session, "herb fra")
+        inside = list_authors(session, "rank")
+
+    assert [e.author for e in found.authors] == [FRANK]
+    assert inside.authors == []
+
+
 def test_find_author(db_app, user):
     _book(db_app, user, "Dune", FRANK)
     entry = _entry(db_app, FRANK)
@@ -167,7 +192,7 @@ def test_very_long_search_lists_no_author(db_app, user):
 
 
 def test_rename_to_a_name_created_meanwhile_merges(
-    db_app, user, other_conn: Connection, caplog
+    db_app, user, other_conn: RawConnection, caplog
 ):
     dune = _book(db_app, user, "Dune", FRNAK)
     entry = _entry(db_app, FRNAK)
@@ -183,7 +208,7 @@ def test_rename_to_a_name_created_meanwhile_merges(
     with other_conn.cursor() as cur:
         cur.execute(
             "INSERT INTO AUTHORS (ID, NAME, SURNAME) VALUES (?, ?, ?)",
-            (uuid4().bytes, "Frank", "Herbert"),
+            (uuid4(), "Frank", "Herbert"),
         )
     # ...while this one renames Frnak to him.
     thread = threading.Thread(target=rename)
@@ -203,7 +228,7 @@ def test_rename_to_a_name_created_meanwhile_merges(
 
 
 def _name_taken_and_given_up(
-    monkeypatch: pytest.MonkeyPatch, other_conn: Connection, *, times: int
+    monkeypatch: pytest.MonkeyPatch, other_conn: RawConnection, *, times: int
 ) -> list[None]:
     """
     Another request creates an author with the new name just before each of
@@ -217,7 +242,7 @@ def _name_taken_and_given_up(
         calls.append(None)
         if len(calls) > times:
             return rename(session, author_id, author)
-        namesake = uuid4().bytes
+        namesake = uuid4()
         with other_conn.cursor() as other:
             other.execute(
                 "INSERT INTO AUTHORS (ID, NAME, SURNAME) VALUES (?, ?, ?)",
@@ -236,7 +261,7 @@ def _name_taken_and_given_up(
 
 
 def test_rename_to_a_name_taken_and_given_up_meanwhile_tries_again(
-    db_app, user, other_conn: Connection, monkeypatch: pytest.MonkeyPatch
+    db_app, user, other_conn: RawConnection, monkeypatch: pytest.MonkeyPatch
 ):
     dune = _book(db_app, user, "Dune", FRNAK)
     entry = _entry(db_app, FRNAK)
@@ -250,7 +275,7 @@ def test_rename_to_a_name_taken_and_given_up_meanwhile_tries_again(
 
 
 def test_rename_gives_up_when_the_name_keeps_being_taken_and_given_up(
-    db_app, user, other_conn: Connection, monkeypatch: pytest.MonkeyPatch
+    db_app, user, other_conn: RawConnection, monkeypatch: pytest.MonkeyPatch
 ):
     _book(db_app, user, "Dune", FRNAK)
     entry = _entry(db_app, FRNAK)
@@ -264,7 +289,7 @@ def test_rename_gives_up_when_the_name_keeps_being_taken_and_given_up(
 
 
 def test_merge_keeps_an_author_a_book_being_saved_uses(
-    db_app, user, other_conn: Connection, caplog
+    db_app, user, other_conn: RawConnection, caplog
 ):
     dune = _book(db_app, user, "Dune", FRNAK)
     _book(db_app, user, "Dune Messiah", FRANK)
@@ -283,7 +308,7 @@ def test_merge_keeps_an_author_a_book_being_saved_uses(
         cur.execute(
             "INSERT INTO BOOK_AUTHORS (BOOK_ID, AUTHOR_ID, SORT_ORDER) "
             "VALUES (?, ?, 1)",
-            (emma.bytes, entry.id.bytes),
+            (emma, entry.id),
         )
     # ...while this one merges Frnak into Frank Herbert.
     thread = threading.Thread(target=rename)
@@ -319,18 +344,18 @@ def test_merge_passes_on_unexpected_database_errors(
     assert _all(db_app) == [(FRANK, 1), (FRNAK, 1)]
 
 
-def _delete_book(conn: Connection, book_id: UUID) -> None:
+def _delete_book(conn: RawConnection, book_id: UUID) -> None:
     """Delete a book (out of its collection first), left uncommitted."""
     with conn.cursor() as cur:
-        cur.execute("DELETE FROM COLLECTION_BOOKS WHERE BOOK_ID = ?", (book_id.bytes,))
-        cur.execute("DELETE FROM BOOKS WHERE ID = ?", (book_id.bytes,))
+        cur.execute("DELETE FROM COLLECTION_BOOKS WHERE BOOK_ID = ?", (book_id,))
+        cur.execute("DELETE FROM BOOKS WHERE ID = ?", (book_id,))
 
 
-def _delete_book_and_author(conn: Connection, book_id: UUID, entry: AuthorEntry):
+def _delete_book_and_author(conn: RawConnection, book_id: UUID, entry: AuthorEntry):
     """What deleting an author's last book does, left uncommitted."""
     _delete_book(conn, book_id)
     with conn.cursor() as cur:
-        cur.execute("DELETE FROM AUTHORS WHERE ID = ?", (entry.id.bytes,))
+        cur.execute("DELETE FROM AUTHORS WHERE ID = ?", (entry.id,))
 
 
 def test_rename_an_author_deleted_meanwhile(db_app, user, other_conn, race):

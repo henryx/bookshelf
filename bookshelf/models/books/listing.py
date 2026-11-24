@@ -24,7 +24,7 @@ from bookshelf.db.orm import (
     BookAuthorRow,
     BookRow,
     CollectionBookRow,
-    UUIDBytes,
+    UUIDType,
 )
 from bookshelf.models.books.isbn import isbn_searches
 from bookshelf.models.books.model import (
@@ -72,14 +72,14 @@ def _matches(search: str, author_id: UUID | None) -> ColumnElement[bool]:
     BOOK_MATCHES function (db/schema.py) holds the condition.
     """
     isbn, isbn_13 = isbn_searches(search)
-    return func.BOOK_MATCHES(
+    return func.book_matches(
         BookRow.id,
         BookRow.title,
         BookRow.isbn,
         literal(search, String(SEARCH_MAX_LENGTH)),
         literal(isbn, String(SEARCH_MAX_LENGTH)),
         literal(isbn_13, String(SEARCH_MAX_LENGTH)),
-        literal(author_id, UUIDBytes),
+        literal(author_id, UUIDType),
         type_=Boolean,
     )
 

@@ -20,10 +20,12 @@ from sqlalchemy import (
     SmallInteger,
     String,
     TypeDecorator,
+    Uuid,
     func,
     text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.types import TypeEngine
 from sqlalchemy_firebird.types import FBBINARY
 
 __all__ = [
@@ -34,28 +36,41 @@ __all__ = [
     "BookRow",
     "CollectionBookRow",
     "LoginFailureRow",
-    "UUIDBytes",
+    "UUIDType",
     "UserRow",
 ]
 
 
-class UUIDBytes(TypeDecorator[UUID]):
+class UUIDType(TypeDecorator[UUID]):
     """
-    A UUID stored as its 16 raw bytes (the UUID domain: CHAR(16) CHARACTER SET
-    OCTETS). Bound as OCTETS too: as CHAR(16) in the UTF8 connection's
-    character set, the bytes would be read as text and refused or changed.
+    A UUID. Firebird stores its 16 raw bytes (the UUID domain: CHAR(16)
+    CHARACTER SET OCTETS), bound as OCTETS too: as CHAR(16) in the UTF8
+    connection's character set, the bytes would be read as text and refused
+    or changed. PostgreSQL has a UUID type of its own.
     """
 
     impl = FBBINARY(16)
     cache_ok = True
 
-    def process_bind_param(self, value: UUID | None, dialect: Dialect) -> bytes | None:
-        return None if value is None else value.bytes
+    def load_dialect_impl(self, dialect: Dialect) -> TypeEngine[UUID] | TypeEngine[str]:
+        if dialect.name == "postgresql":
+            return dialect.type_descriptor(Uuid(as_uuid=True))
+        # Typed as a string by sqlalchemy-firebird: it carries the bytes.
+        return dialect.type_descriptor(FBBINARY(16))
+
+    def process_bind_param(
+        self, value: UUID | None, dialect: Dialect
+    ) -> UUID | bytes | None:
+        if value is None or dialect.name == "postgresql":
+            return value
+        return value.bytes
 
     def process_result_value(
-        self, value: bytes | None, dialect: Dialect
+        self, value: UUID | bytes | None, dialect: Dialect
     ) -> UUID | None:
-        return None if value is None else UUID(bytes=value)
+        if value is None or isinstance(value, UUID):
+            return value
+        return UUID(bytes=value)
 
 
 class Base(DeclarativeBase):
@@ -65,7 +80,7 @@ class Base(DeclarativeBase):
 class UserRow(Base):
     __tablename__ = "users"
 
-    id: Mapped[UUID] = mapped_column(UUIDBytes, primary_key=True)
+    id: Mapped[UUID] = mapped_column(UUIDType, primary_key=True)
     email: Mapped[str] = mapped_column(String(254))
     password_hash: Mapped[str | None] = mapped_column(String(255))
     role: Mapped[str] = mapped_column(String(16), server_default=text("'REGULAR'"))
@@ -85,7 +100,7 @@ class LoginFailureRow(Base):
 
     __tablename__ = "login_failures"
 
-    id: Mapped[UUID | None] = mapped_column(UUIDBytes)
+    id: Mapped[UUID | None] = mapped_column(UUIDType)
     email: Mapped[str] = mapped_column(String(254), primary_key=True)
     ip_address: Mapped[str] = mapped_column(String(45), primary_key=True)
     attempted_at: Mapped[datetime] = mapped_column(
@@ -96,7 +111,7 @@ class LoginFailureRow(Base):
 class BookRow(Base):
     __tablename__ = "books"
 
-    id: Mapped[UUID] = mapped_column(UUIDBytes, primary_key=True)
+    id: Mapped[UUID] = mapped_column(UUIDType, primary_key=True)
     title: Mapped[str] = mapped_column(String(255))
     isbn: Mapped[str | None] = mapped_column(String(13))
     publisher: Mapped[str | None] = mapped_column(String(255))
@@ -119,7 +134,7 @@ class BookRow(Base):
 class AuthorRow(Base):
     __tablename__ = "authors"
 
-    id: Mapped[UUID] = mapped_column(UUIDBytes, primary_key=True)
+    id: Mapped[UUID] = mapped_column(UUIDType, primary_key=True)
     name: Mapped[str] = mapped_column(String(127), server_default=text("''"))
     surname: Mapped[str] = mapped_column(String(127))
 
@@ -128,10 +143,10 @@ class BookAuthorRow(Base):
     __tablename__ = "book_authors"
 
     book_id: Mapped[UUID] = mapped_column(
-        UUIDBytes, ForeignKey("books.id"), primary_key=True
+        UUIDType, ForeignKey("books.id"), primary_key=True
     )
     author_id: Mapped[UUID] = mapped_column(
-        UUIDBytes, ForeignKey("authors.id"), primary_key=True
+        UUIDType, ForeignKey("authors.id"), primary_key=True
     )
     sort_order: Mapped[int] = mapped_column(SmallInteger)
 
@@ -142,7 +157,7 @@ class BookCategoryRow(Base):
     __tablename__ = "book_categories"
 
     book_id: Mapped[UUID] = mapped_column(
-        UUIDBytes, ForeignKey("books.id"), primary_key=True
+        UUIDType, ForeignKey("books.id"), primary_key=True
     )
     category: Mapped[str] = mapped_column(String(64), primary_key=True)
 
@@ -151,10 +166,10 @@ class CollectionBookRow(Base):
     __tablename__ = "collection_books"
 
     user_id: Mapped[UUID] = mapped_column(
-        UUIDBytes, ForeignKey("users.id"), primary_key=True
+        UUIDType, ForeignKey("users.id"), primary_key=True
     )
     book_id: Mapped[UUID] = mapped_column(
-        UUIDBytes, ForeignKey("books.id"), primary_key=True
+        UUIDType, ForeignKey("books.id"), primary_key=True
     )
     copies: Mapped[int] = mapped_column(SmallInteger, server_default=text("1"))
     is_read: Mapped[bool] = mapped_column(Boolean, server_default=text("FALSE"))

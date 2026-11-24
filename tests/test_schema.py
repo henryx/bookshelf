@@ -1,85 +1,154 @@
-from firebird.driver import Connection
+import pytest
 from flask import Flask
-from raw_db import raw
+from raw_db import BACKEND, RawConnection, raw, table_columns
 
+from bookshelf.config import DatabaseBackend
 from bookshelf.db import get_engine, get_session
 from bookshelf.db.baseline import CONSTRAINTS, TABLES
 from bookshelf.db.orm import Base
-from bookshelf.db.schema import init_db
+from bookshelf.db.schema import UnknownSearchLanguageError, init_db
+from bookshelf.models.books import NewBook, add_book, list_books
+from bookshelf.models.users import create_user
 
 
-def _columns(conn: Connection, table: str) -> list[str]:
+def _rows(
+    conn: RawConnection, sql: dict[DatabaseBackend, str], *params: object
+) -> list[tuple[object, ...]]:
     with conn.cursor() as cur:
-        cur.execute(
-            "SELECT TRIM(RDB$FIELD_NAME) FROM RDB$RELATION_FIELDS "
-            "WHERE RDB$RELATION_NAME = ? ORDER BY RDB$FIELD_POSITION",
-            (table,),
-        )
-        return [column for (column,) in cur.fetchall()]
+        cur.execute(sql[BACKEND], params)
+        return cur.fetchall()
 
 
-def _domain(conn: Connection, table: str, column: str) -> str:
-    with conn.cursor() as cur:
-        cur.execute(
-            "SELECT TRIM(RDB$FIELD_SOURCE) FROM RDB$RELATION_FIELDS "
-            "WHERE RDB$RELATION_NAME = ? AND RDB$FIELD_NAME = ?",
-            (table, column),
-        )
-        (domain,) = cur.fetchone()
-    return domain
+def _columns(conn: RawConnection, table: str) -> list[str]:
+    return table_columns(conn, table)
 
 
-def _nullable(conn: Connection, table: str, column: str) -> bool:
-    with conn.cursor() as cur:
-        cur.execute(
-            "SELECT RDB$NULL_FLAG FROM RDB$RELATION_FIELDS "
-            "WHERE RDB$RELATION_NAME = ? AND RDB$FIELD_NAME = ?",
-            (table, column),
-        )
-        (null_flag,) = cur.fetchone()
-    return not null_flag
+def _domain(conn: RawConnection, table: str, column: str) -> str:
+    """The column's domain; PostgreSQL's columns have its UUID type instead."""
+    ((domain,),) = _rows(
+        conn,
+        {
+            DatabaseBackend.FIREBIRD: (
+                "SELECT TRIM(RDB$FIELD_SOURCE) FROM RDB$RELATION_FIELDS "
+                "WHERE RDB$RELATION_NAME = ? AND RDB$FIELD_NAME = ?"
+            ),
+            DatabaseBackend.POSTGRESQL: (
+                "SELECT UPPER(udt_name) FROM information_schema.columns "
+                "WHERE table_schema = current_schema() "
+                "AND table_name = LOWER(?) AND UPPER(column_name) = ?"
+            ),
+        },
+        table,
+        column,
+    )
+    return str(domain)
 
 
-def _constraints(conn: Connection, table: str) -> dict[str, str]:
+def _nullable(conn: RawConnection, table: str, column: str) -> bool:
+    ((not_null,),) = _rows(
+        conn,
+        {
+            DatabaseBackend.FIREBIRD: (
+                "SELECT COALESCE(RDB$NULL_FLAG, 0) FROM RDB$RELATION_FIELDS "
+                "WHERE RDB$RELATION_NAME = ? AND RDB$FIELD_NAME = ?"
+            ),
+            DatabaseBackend.POSTGRESQL: (
+                "SELECT CASE is_nullable WHEN 'NO' THEN 1 ELSE 0 END "
+                "FROM information_schema.columns "
+                "WHERE table_schema = current_schema() "
+                "AND table_name = LOWER(?) AND UPPER(column_name) = ?"
+            ),
+        },
+        table,
+        column,
+    )
+    return not not_null
+
+
+def _constraints(conn: RawConnection, table: str) -> dict[str, str]:
     """Named constraints of a table: name -> type (Firebird's own NOT NULL ones aside)."""
-    with conn.cursor() as cur:
-        cur.execute(
-            "SELECT TRIM(RDB$CONSTRAINT_NAME), TRIM(RDB$CONSTRAINT_TYPE) "
-            "FROM RDB$RELATION_CONSTRAINTS "
-            "WHERE RDB$RELATION_NAME = ? AND RDB$CONSTRAINT_TYPE <> 'NOT NULL'",
-            (table,),
-        )
-        return dict(cur.fetchall())
+    rows = _rows(
+        conn,
+        {
+            DatabaseBackend.FIREBIRD: (
+                "SELECT TRIM(RDB$CONSTRAINT_NAME), TRIM(RDB$CONSTRAINT_TYPE) "
+                "FROM RDB$RELATION_CONSTRAINTS "
+                "WHERE RDB$RELATION_NAME = ? AND RDB$CONSTRAINT_TYPE <> 'NOT NULL'"
+            ),
+            DatabaseBackend.POSTGRESQL: (
+                "SELECT UPPER(c.conname), CASE c.contype "
+                "WHEN 'p' THEN 'PRIMARY KEY' WHEN 'u' THEN 'UNIQUE' "
+                "WHEN 'c' THEN 'CHECK' WHEN 'f' THEN 'FOREIGN KEY' END "
+                "FROM pg_catalog.pg_constraint c "
+                "JOIN pg_catalog.pg_class t ON t.oid = c.conrelid "
+                "WHERE t.relnamespace = current_schema()::regnamespace "
+                "AND t.relname = LOWER(?) AND c.contype IN ('p', 'u', 'c', 'f')"
+            ),
+        },
+        table,
+    )
+    return {str(name): str(kind) for name, kind in rows}
 
 
-def _reference(conn: Connection, constraint: str) -> tuple[str, str, str] | None:
-    """(column, referenced table, delete rule) of a foreign key."""
-    with conn.cursor() as cur:
-        cur.execute(
-            "SELECT TRIM(s.RDB$FIELD_NAME), TRIM(pk.RDB$RELATION_NAME), "
-            "TRIM(r.RDB$DELETE_RULE) "
-            "FROM RDB$RELATION_CONSTRAINTS fk "
-            "JOIN RDB$REF_CONSTRAINTS r ON r.RDB$CONSTRAINT_NAME = fk.RDB$CONSTRAINT_NAME "
-            "JOIN RDB$RELATION_CONSTRAINTS pk "
-            "ON pk.RDB$CONSTRAINT_NAME = r.RDB$CONST_NAME_UQ "
-            "JOIN RDB$INDEX_SEGMENTS s ON s.RDB$INDEX_NAME = fk.RDB$INDEX_NAME "
-            "WHERE fk.RDB$CONSTRAINT_NAME = ?",
-            (constraint,),
-        )
-        return cur.fetchone()
+def _reference(conn: RawConnection, constraint: str) -> tuple[object, ...] | None:
+    """
+    (column, referenced table, delete rule) of a foreign key. PostgreSQL's
+    default rule, NO ACTION, refuses the delete as Firebird's RESTRICT does.
+    """
+    rows = _rows(
+        conn,
+        {
+            DatabaseBackend.FIREBIRD: (
+                "SELECT TRIM(s.RDB$FIELD_NAME), TRIM(pk.RDB$RELATION_NAME), "
+                "TRIM(r.RDB$DELETE_RULE) "
+                "FROM RDB$RELATION_CONSTRAINTS fk "
+                "JOIN RDB$REF_CONSTRAINTS r "
+                "ON r.RDB$CONSTRAINT_NAME = fk.RDB$CONSTRAINT_NAME "
+                "JOIN RDB$RELATION_CONSTRAINTS pk "
+                "ON pk.RDB$CONSTRAINT_NAME = r.RDB$CONST_NAME_UQ "
+                "JOIN RDB$INDEX_SEGMENTS s ON s.RDB$INDEX_NAME = fk.RDB$INDEX_NAME "
+                "WHERE fk.RDB$CONSTRAINT_NAME = ?"
+            ),
+            DatabaseBackend.POSTGRESQL: (
+                "SELECT UPPER(a.attname), UPPER(r.relname), "
+                "CASE c.confdeltype WHEN 'c' THEN 'CASCADE' ELSE 'RESTRICT' END "
+                "FROM pg_catalog.pg_constraint c "
+                "JOIN pg_catalog.pg_class r ON r.oid = c.confrelid "
+                "JOIN pg_catalog.pg_attribute a "
+                "ON a.attrelid = c.conrelid AND a.attnum = c.conkey[1] "
+                "WHERE c.connamespace = current_schema()::regnamespace "
+                "AND c.conname = LOWER(?)"
+            ),
+        },
+        constraint,
+    )
+    return rows[0] if rows else None
 
 
-def _index_columns(conn: Connection, index: str) -> list[str]:
-    with conn.cursor() as cur:
-        cur.execute(
-            "SELECT TRIM(RDB$FIELD_NAME) FROM RDB$INDEX_SEGMENTS "
-            "WHERE RDB$INDEX_NAME = ? ORDER BY RDB$FIELD_POSITION",
-            (index,),
-        )
-        return [column for (column,) in cur.fetchall()]
+def _index_columns(conn: RawConnection, index: str) -> list[str]:
+    rows = _rows(
+        conn,
+        {
+            DatabaseBackend.FIREBIRD: (
+                "SELECT TRIM(RDB$FIELD_NAME) FROM RDB$INDEX_SEGMENTS "
+                "WHERE RDB$INDEX_NAME = ? ORDER BY RDB$FIELD_POSITION"
+            ),
+            DatabaseBackend.POSTGRESQL: (
+                "SELECT UPPER(a.attname) FROM pg_catalog.pg_index x "
+                "JOIN pg_catalog.pg_class i ON i.oid = x.indexrelid "
+                "CROSS JOIN LATERAL UNNEST(x.indkey) WITH ORDINALITY AS k(attnum, n) "
+                "JOIN pg_catalog.pg_attribute a "
+                "ON a.attrelid = x.indrelid AND a.attnum = k.attnum "
+                "WHERE i.relnamespace = current_schema()::regnamespace "
+                "AND i.relname = LOWER(?) ORDER BY k.n"
+            ),
+        },
+        index,
+    )
+    return [str(column) for (column,) in rows]
 
 
-def _assert_complete_schema(conn: Connection) -> None:
+def _assert_complete_schema(conn: RawConnection) -> None:
     assert _columns(conn, "SETTINGS") == ["NAME", "VALUE"]
     assert not _nullable(conn, "SETTINGS", "VALUE")
     assert _constraints(conn, "SETTINGS") == {"PK_SETTINGS": "PRIMARY KEY"}
@@ -231,16 +300,29 @@ def _assert_complete_schema(conn: Connection) -> None:
     ]
 
 
-def _function_arguments(conn: Connection, function: str) -> list[str]:
-    """A PSQL function's arguments in order, its return value (position 0) left out."""
-    with conn.cursor() as cur:
-        cur.execute(
-            "SELECT TRIM(RDB$ARGUMENT_NAME) FROM RDB$FUNCTION_ARGUMENTS "
-            "WHERE RDB$FUNCTION_NAME = ? AND RDB$ARGUMENT_POSITION > 0 "
-            "ORDER BY RDB$ARGUMENT_POSITION",
-            (function,),
-        )
-        return [name for (name,) in cur.fetchall()]
+def _function_arguments(conn: RawConnection, function: str) -> list[str]:
+    """
+    A function's arguments in order (Firebird's return value, position 0,
+    left out); PostgreSQL's are named with a P_ prefix, left out too.
+    """
+    rows = _rows(
+        conn,
+        {
+            DatabaseBackend.FIREBIRD: (
+                "SELECT TRIM(RDB$ARGUMENT_NAME) FROM RDB$FUNCTION_ARGUMENTS "
+                "WHERE RDB$FUNCTION_NAME = ? AND RDB$ARGUMENT_POSITION > 0 "
+                "ORDER BY RDB$ARGUMENT_POSITION"
+            ),
+            DatabaseBackend.POSTGRESQL: (
+                "SELECT SUBSTRING(UPPER(a.name) FROM 3) FROM pg_catalog.pg_proc p "
+                "CROSS JOIN LATERAL UNNEST(p.proargnames) WITH ORDINALITY AS a(name, n) "
+                "WHERE p.pronamespace = current_schema()::regnamespace "
+                "AND p.proname = LOWER(?) ORDER BY a.n"
+            ),
+        },
+        function,
+    )
+    return [str(name) for (name,) in rows]
 
 
 def test_session_database_has_complete_schema(db_app: Flask):
@@ -287,3 +369,35 @@ def test_constraints_are_kept_out_of_table_creation():
         ddl.startswith("ALTER TABLE ") and f"ADD CONSTRAINT {name} " in ddl
         for name, ddl in CONSTRAINTS.items()
     )
+
+
+def _add_book_and_search(password: str, *searches: str) -> list[list[str]]:
+    """Add a user and "The Running Man", then search the catalogue."""
+    session = get_session()
+    user = create_user(session, "reader@example.com", password)
+    add_book(session, user.id, NewBook("The Running Man"))
+    return [
+        [book.title for book in list_books(session, user.id, search).books]
+        for search in searches
+    ]
+
+
+@pytest.mark.postgresql
+def test_init_db_records_the_search_language(empty_db_app: Flask, password: str):
+    """Without stemming ("simple"), "runs" no longer finds "Running"."""
+    with empty_db_app.app_context():
+        init_db(get_engine(), search_language="simple")
+
+        assert _add_book_and_search(password, "runs", "runn") == [
+            [],
+            ["The Running Man"],
+        ]
+
+
+@pytest.mark.postgresql
+def test_init_db_refuses_an_unknown_search_language(empty_db_app: Flask):
+    with (
+        empty_db_app.app_context(),
+        pytest.raises(UnknownSearchLanguageError, match="klingon"),
+    ):
+        init_db(get_engine(), search_language="klingon")

@@ -2,14 +2,14 @@
 
 import re
 from collections.abc import Callable
+from typing import cast
 from urllib.parse import parse_qs, urlsplit
 from uuid import UUID, uuid4
 
 import pytest
-from firebird.driver import Connection
 from flask import Flask
 from flask.testing import FlaskClient
-from raw_db import raw
+from raw_db import RawConnection, raw
 from sqlalchemy.exc import DBAPIError
 
 from bookshelf import create_app
@@ -74,10 +74,10 @@ def _copies(app: Flask, user: User, book_id: UUID) -> int | None:
     with app.app_context(), raw(get_session()).cursor() as cur:
         cur.execute(
             "SELECT COPIES FROM COLLECTION_BOOKS WHERE USER_ID = ? AND BOOK_ID = ?",
-            (user.id.bytes, book_id.bytes),
+            (user.id, book_id),
         )
         row = cur.fetchone()
-        return row[0] if row else None
+        return cast(int, row[0]) if row else None
 
 
 def _collection(app: Flask, user: User) -> dict[UUID, tuple[int, bool]]:
@@ -85,14 +85,16 @@ def _collection(app: Flask, user: User) -> dict[UUID, tuple[int, bool]]:
     with app.app_context(), raw(get_session()).cursor() as cur:
         cur.execute(
             "SELECT BOOK_ID, COPIES, IS_READ FROM COLLECTION_BOOKS WHERE USER_ID = ?",
-            (user.id.bytes,),
+            (user.id,),
         )
-        return {UUID(bytes=b): (c, r) for b, c, r in cur.fetchall()}
+        return {
+            cast(UUID, b): (cast(int, c), cast(bool, r)) for b, c, r in cur.fetchall()
+        }
 
 
 def _in_catalogue(app: Flask, book_id: UUID) -> bool:
     with app.app_context(), raw(get_session()).cursor() as cur:
-        cur.execute("SELECT 1 FROM BOOKS WHERE ID = ?", (book_id.bytes,))
+        cur.execute("SELECT 1 FROM BOOKS WHERE ID = ?", (book_id,))
         return cur.fetchone() is not None
 
 
@@ -230,11 +232,11 @@ CHANGES = {
 }
 
 
-def _remove_uncommitted(conn: Connection, user: User, book_id: UUID) -> None:
+def _remove_uncommitted(conn: RawConnection, user: User, book_id: UUID) -> None:
     with conn.cursor() as cur:
         cur.execute(
             "DELETE FROM COLLECTION_BOOKS WHERE USER_ID = ? AND BOOK_ID = ?",
-            (user.id.bytes, book_id.bytes),
+            (user.id, book_id),
         )
 
 

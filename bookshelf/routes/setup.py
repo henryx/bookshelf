@@ -90,7 +90,7 @@ def wizard() -> BaseResponse | str:
     if not form.validate_on_submit():
         return _render_setup(form)
 
-    init_db(get_engine())
+    init_db(get_engine(), search_language=current_app.config["SEARCH_LANGUAGE"])
     session = get_session()
     # A new transaction: this request's began before init_db created the schema.
     session.rollback()

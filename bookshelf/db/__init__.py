@@ -8,6 +8,7 @@ from firebird.driver import Connection as FirebirdConnection
 from firebird.driver import DatabaseError, Isolation, connect, tpb
 from flask import Flask, current_app, g
 from sqlalchemy import (
+    URL,
     Connection,
     CursorResult,
     Engine,
@@ -22,33 +23,40 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import ConnectionPoolEntry
 from sqlalchemy_firebird.firebird import FBDialect_firebird
 
+from bookshelf.config import DatabaseBackend
+
 __all__ = [
-    "ERASED_RECORD",
-    "FOREIGN_KEY_VIOLATION",
-    "UNIQUE_KEY_VIOLATION",
-    "UPDATE_CONFLICT",
+    "backend_of",
     "close_pool",
     "create_db_engine",
     "execute_change",
     "get_engine",
     "get_session",
-    "has_gds_code",
     "init_app",
+    "is_concurrent_delete",
+    "is_foreign_key_violation",
+    "is_unique_violation",
+    "is_update_conflict",
     "read_committed",
     "retry_after_concurrent_delete",
+    "try_change",
 ]
 
 _ENGINE_KEY = "bookshelf.db_engine"
 _SESSIONS_KEY = "bookshelf.db_sessions"
 
-# Firebird GDS codes the models handle.
-UNIQUE_KEY_VIOLATION = 335544665
-FOREIGN_KEY_VIOLATION = 335544466
-# Another transaction changed or deleted the row meanwhile (lock conflict).
-UPDATE_CONFLICT = 335544451
-# "Cannot update erased record": a row the statement changes was deleted by a
-# transaction it waited for, which then committed.
-ERASED_RECORD = 335544382
+# The database errors the models handle: Firebird's GDS code and
+# PostgreSQL's SQLSTATE for each.
+_UNIQUE_KEY_VIOLATION = (335544665, "23505")
+_FOREIGN_KEY_VIOLATION = (335544466, "23503")
+# Another transaction changed or deleted the row meanwhile: Firebird's lock
+# conflict, PostgreSQL's serialization failure.
+_UPDATE_CONFLICT = (335544451, "40001")
+# A row the statement changes was deleted by a transaction it waited for,
+# which then committed: Firebird's "cannot update erased record". PostgreSQL
+# raises it only in a repeatable read transaction, as a serialization
+# failure; read committed, it skips the row.
+_CONCURRENT_DELETE = (335544382, "40001")
 
 # The execution option naming a transaction's parameters (see read_committed);
 # without it, a transaction uses the driver's default (snapshot).
@@ -100,16 +108,46 @@ class FirebirdDialect(FBDialect_firebird):
 registry.register("firebird.bookshelf", __name__, "FirebirdDialect")
 
 
-def create_db_engine(dsn: str, user: str, password: str, *, pool_size: int) -> Engine:
+def create_db_engine(
+    backend: DatabaseBackend, dsn: str, user: str, password: str, *, pool_size: int
+) -> Engine:
     """
-    An engine on the Firebird database `dsn` (a firebird-driver DSN, as
-    `host/port:path`). It keeps up to `pool_size` idle connections; more may be
-    open at once, and the extra ones are closed when returned. Connections are
-    opened on first use, so each gunicorn worker opens its own (as long as
-    nothing queries the database before the fork), and checked before reuse:
-    a dead one is replaced.
+    An engine on the database `dsn` (see Config.db_dsn). It keeps up to
+    `pool_size` idle connections; more may be open at once, and the extra
+    ones are closed when returned. Connections are opened on first use, so
+    each gunicorn worker opens its own (as long as nothing queries the
+    database before the fork), and checked before reuse: a dead one is
+    replaced. Transactions are snapshots unless read_committed asks
+    otherwise: Firebird's default, PostgreSQL's repeatable read.
     """
+    match backend:
+        case DatabaseBackend.FIREBIRD:
+            return _firebird_engine(dsn, user, password, pool_size)
+        case DatabaseBackend.POSTGRESQL:
+            return _postgresql_engine(dsn, user, password, pool_size)
 
+
+def _postgresql_engine(dsn: str, user: str, password: str, pool_size: int) -> Engine:
+    address, _, database = dsn.partition("/")
+    host, _, port = address.partition(":")
+    url = URL.create(
+        "postgresql+psycopg",
+        username=user,
+        password=password,
+        host=host,
+        port=int(port) if port else None,
+        database=database,
+    )
+    return create_engine(
+        url,
+        pool_size=pool_size,
+        max_overflow=-1,
+        pool_pre_ping=True,
+        isolation_level="REPEATABLE READ",
+    )
+
+
+def _firebird_engine(dsn: str, user: str, password: str, pool_size: int) -> Engine:
     def open_connection() -> FirebirdConnection:
         return connect(dsn, user=user, password=password, charset="UTF8")
 
@@ -146,9 +184,18 @@ def _set_transaction_parameters(conn: Connection) -> None:
     )
 
 
+def backend_of(bind: Session | Connection | Engine) -> DatabaseBackend:
+    """The database server a session, connection or engine talks to."""
+    engine = bind.get_bind() if isinstance(bind, Session) else bind
+    if engine.dialect.name == "postgresql":
+        return DatabaseBackend.POSTGRESQL
+    return DatabaseBackend.FIREBIRD
+
+
 def init_app(app: Flask) -> None:
     cfg = app.config
     engine = create_db_engine(
+        DatabaseBackend(cfg["DATABASE_BACKEND"]),
         str(cfg["DATABASE_DSN"]),
         str(cfg["DATABASE_USER"]),
         str(cfg["DATABASE_PASSWORD"]),
@@ -199,7 +246,12 @@ def read_committed(session: Session) -> Generator[Session]:
     see that row, though its inserts clash with it.
     """
     session.rollback()
-    session.connection(execution_options={_TPB_OPTION: READ_COMMITTED_TPB})
+    match backend_of(session):
+        case DatabaseBackend.FIREBIRD:
+            options = {_TPB_OPTION: READ_COMMITTED_TPB}
+        case DatabaseBackend.POSTGRESQL:
+            options = {"isolation_level": "READ COMMITTED"}
+    session.connection(execution_options=options)
     try:
         yield session
     except BaseException:
@@ -226,10 +278,40 @@ def execute_change(session: Session, statement: Executable) -> CursorResult:
     return result
 
 
-def has_gds_code(error: BaseException, code: int) -> bool:
-    """True when `error` is a Firebird error carrying this GDS code."""
+def try_change(session: Session, statement: Executable) -> CursorResult:
+    """
+    execute_change in a savepoint, for a change whose error the caller
+    handles: when it fails, only the change is undone, and the transaction
+    goes on. PostgreSQL would otherwise refuse every later statement of the
+    transaction; Firebird keeps it going either way.
+    """
+    with session.begin_nested():
+        return execute_change(session, statement)
+
+
+def _has_error(error: BaseException, codes: tuple[int, str]) -> bool:
+    """True when `error` is the database error these codes name (see above)."""
+    gds_code, sqlstate = codes
     orig = error.orig if isinstance(error, DBAPIError) else error
-    return isinstance(orig, DatabaseError) and code in orig.gds_codes
+    if isinstance(orig, DatabaseError):
+        return gds_code in orig.gds_codes
+    return getattr(orig, "sqlstate", None) == sqlstate
+
+
+def is_unique_violation(error: BaseException) -> bool:
+    return _has_error(error, _UNIQUE_KEY_VIOLATION)
+
+
+def is_foreign_key_violation(error: BaseException) -> bool:
+    return _has_error(error, _FOREIGN_KEY_VIOLATION)
+
+
+def is_update_conflict(error: BaseException) -> bool:
+    return _has_error(error, _UPDATE_CONFLICT)
+
+
+def is_concurrent_delete(error: BaseException) -> bool:
+    return _has_error(error, _CONCURRENT_DELETE)
 
 
 def retry_after_concurrent_delete[T](run: Callable[[], T]) -> T:
@@ -242,7 +324,7 @@ def retry_after_concurrent_delete[T](run: Callable[[], T]) -> T:
     try:
         return run()
     except DBAPIError as e:
-        if not has_gds_code(e, ERASED_RECORD):
+        if not is_concurrent_delete(e):
             raise
         logger.info("Running again after a concurrent delete: %s", e.orig)
     return run()

@@ -6,7 +6,7 @@ from sqlalchemy import delete, insert, update
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
-from bookshelf.db import UNIQUE_KEY_VIOLATION, execute_change, has_gds_code
+from bookshelf.db import execute_change, is_unique_violation
 from bookshelf.db.orm import UserRow
 from bookshelf.models.users.listing import row_to_user
 from bookshelf.models.users.model import (
@@ -45,21 +45,23 @@ def create_user(
     email = normalise_email(email)
     password_hash = credentials(email, auth_method, password, min_password_length)
     try:
-        row = session.scalars(
-            insert(UserRow)
-            .values(
-                id=uuid4(),
-                email=email,
-                password_hash=password_hash,
-                role=role.value,
-                name=name,
-                surname=surname,
-                auth_method=auth_method.value,
-            )
-            .returning(UserRow)
-        ).one()
+        # In a savepoint: a clash ends only the insert (see try_change).
+        with session.begin_nested():
+            row = session.scalars(
+                insert(UserRow)
+                .values(
+                    id=uuid4(),
+                    email=email,
+                    password_hash=password_hash,
+                    role=role.value,
+                    name=name,
+                    surname=surname,
+                    auth_method=auth_method.value,
+                )
+                .returning(UserRow)
+            ).one()
     except DBAPIError as e:
-        if has_gds_code(e, UNIQUE_KEY_VIOLATION):
+        if is_unique_violation(e):
             raise UserExistsError(email) from e
         raise
     session.commit()

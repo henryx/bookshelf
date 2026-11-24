@@ -7,14 +7,15 @@ from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
 from bookshelf.db import (
-    FOREIGN_KEY_VIOLATION,
-    UNIQUE_KEY_VIOLATION,
     execute_change,
-    has_gds_code,
+    is_foreign_key_violation,
+    is_unique_violation,
     read_committed,
     retry_after_concurrent_delete,
+    try_change,
 )
 from bookshelf.db.orm import AuthorRow, BookAuthorRow
+from bookshelf.db.sql import matches_search
 from bookshelf.models.books import PAGE_SIZE, SEARCH_MAX_LENGTH, Author
 
 __all__ = [
@@ -75,11 +76,9 @@ class Renamed:
 
 
 def _matches(search: str) -> ColumnElement[bool]:
-    """The author's "name surname" contains the text, ignoring case."""
+    """The author's "name surname" matches the search (see matches_search)."""
     full_name = AuthorRow.name + literal(" ", String(1)) + AuthorRow.surname
-    return full_name.op("CONTAINING", is_comparison=True)(
-        literal(search, String(SEARCH_MAX_LENGTH))
-    )
+    return matches_search(full_name, literal(search, String(SEARCH_MAX_LENGTH)))
 
 
 # An author's ID, NAME, SURNAME and the number of their books.
@@ -145,14 +144,14 @@ def _namesake(
 def _rename(session: Session, author_id: UUID, author: Author) -> bool:
     """Give the author this name; False if another author took it meanwhile."""
     try:
-        result = execute_change(
+        result = try_change(
             session,
             update(AuthorRow)
             .where(AuthorRow.id == author_id)
             .values(name=author.name, surname=author.surname),
         )
     except DBAPIError as e:
-        if not has_gds_code(e, UNIQUE_KEY_VIOLATION):
+        if not is_unique_violation(e):
             raise
         logger.info(
             "Author %s: %r was created meanwhile, merging into it",
@@ -185,12 +184,10 @@ def _merge(session: Session, author_id: UUID, into: UUID) -> None:
         .values(author_id=into),
     )
     try:
-        result = execute_change(
-            session, delete(AuthorRow).where(AuthorRow.id == author_id)
-        )
+        result = try_change(session, delete(AuthorRow).where(AuthorRow.id == author_id))
     except DBAPIError as e:
         # A book being added at this moment uses it: keep it, with that book.
-        if not has_gds_code(e, FOREIGN_KEY_VIOLATION):
+        if not is_foreign_key_violation(e):
             raise
         logger.info(
             "Author %s kept after merging: a book being saved at this moment uses it",

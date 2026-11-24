@@ -1,5 +1,6 @@
 import re
 from collections.abc import Callable
+from typing import cast
 from uuid import uuid4
 
 import pytest
@@ -92,9 +93,7 @@ def test_demoted_admin_loses_access(
     with db_app.app_context():
         session = get_session()
         with raw(session).cursor() as cur:
-            cur.execute(
-                "UPDATE USERS SET ROLE = 'REGULAR' WHERE ID = ?", (admin.id.bytes,)
-            )
+            cur.execute("UPDATE USERS SET ROLE = 'REGULAR' WHERE ID = ?", (admin.id,))
         session.commit()
 
     assert admin_client.get("/admin/users").status_code == 403
@@ -738,9 +737,9 @@ def _owned(app: Flask, user: User) -> dict[str, int]:
         cur.execute(
             "SELECT b.TITLE, cb.COPIES FROM COLLECTION_BOOKS cb "
             "JOIN BOOKS b ON b.ID = cb.BOOK_ID WHERE cb.USER_ID = ?",
-            (user.id.bytes,),
+            (user.id,),
         )
-        return dict(cur.fetchall())
+        return {cast(str, title): cast(int, copies) for title, copies in cur.fetchall()}
 
 
 def _copy(client: FlaskClient, source: User, target: str, mode: str, **kw):

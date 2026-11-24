@@ -1,8 +1,16 @@
-"""Lookups in Firebird's system tables: whether a schema object exists."""
+"""
+Lookups in the database's own catalog: whether a schema object exists.
+Names are given as the DDL writes them, unquoted (upper case): Firebird
+stores them so, PostgreSQL folds them to lower case.
+"""
 
-from sqlalchemy import Connection, text
+from sqlalchemy import Connection, TextClause, text
+
+from bookshelf.config import DatabaseBackend
+from bookshelf.db import backend_of
 
 __all__ = [
+    "collation_exists",
     "column_exists",
     "column_nullable",
     "constraint_exists",
@@ -12,68 +20,135 @@ __all__ = [
 ]
 
 
+def _exists(
+    conn: Connection, queries: dict[DatabaseBackend, TextClause], **names: str
+) -> bool:
+    backend = backend_of(conn)
+    if backend is DatabaseBackend.POSTGRESQL:
+        names = {key: name.lower() for key, name in names.items()}
+    return conn.execute(queries[backend], names).first() is not None
+
+
 def table_exists(conn: Connection, name: str) -> bool:
-    return (
-        conn.execute(
-            text("SELECT 1 FROM RDB$RELATIONS WHERE RDB$RELATION_NAME = :name"),
-            {"name": name},
-        ).first()
-        is not None
+    return _exists(
+        conn,
+        {
+            DatabaseBackend.FIREBIRD: text(
+                "SELECT 1 FROM RDB$RELATIONS WHERE RDB$RELATION_NAME = :name"
+            ),
+            DatabaseBackend.POSTGRESQL: text(
+                "SELECT 1 FROM pg_catalog.pg_tables "
+                "WHERE schemaname = current_schema() AND tablename = :name"
+            ),
+        },
+        name=name,
     )
 
 
 def column_exists(conn: Connection, table: str, column: str) -> bool:
-    return (
-        conn.execute(
-            text(
+    return _exists(
+        conn,
+        {
+            DatabaseBackend.FIREBIRD: text(
                 "SELECT 1 FROM RDB$RELATION_FIELDS "
                 "WHERE RDB$RELATION_NAME = :table AND RDB$FIELD_NAME = :column"
             ),
-            {"table": table, "column": column},
-        ).first()
-        is not None
+            DatabaseBackend.POSTGRESQL: text(
+                "SELECT 1 FROM information_schema.columns "
+                "WHERE table_schema = current_schema() "
+                "AND table_name = :table AND column_name = :column"
+            ),
+        },
+        table=table,
+        column=column,
     )
 
 
 def column_nullable(conn: Connection, table: str, column: str) -> bool:
-    null_flag = conn.execute(
-        text(
-            "SELECT RDB$NULL_FLAG FROM RDB$RELATION_FIELDS "
-            "WHERE RDB$RELATION_NAME = :table AND RDB$FIELD_NAME = :column"
-        ),
-        {"table": table, "column": column},
-    ).scalar_one()
-    return not null_flag
+    return not _exists(
+        conn,
+        {
+            DatabaseBackend.FIREBIRD: text(
+                "SELECT 1 FROM RDB$RELATION_FIELDS "
+                "WHERE RDB$RELATION_NAME = :table AND RDB$FIELD_NAME = :column "
+                "AND RDB$NULL_FLAG = 1"
+            ),
+            DatabaseBackend.POSTGRESQL: text(
+                "SELECT 1 FROM information_schema.columns "
+                "WHERE table_schema = current_schema() "
+                "AND table_name = :table AND column_name = :column "
+                "AND is_nullable = 'NO'"
+            ),
+        },
+        table=table,
+        column=column,
+    )
 
 
 def constraint_exists(conn: Connection, name: str) -> bool:
-    return (
-        conn.execute(
-            text(
+    return _exists(
+        conn,
+        {
+            DatabaseBackend.FIREBIRD: text(
                 "SELECT 1 FROM RDB$RELATION_CONSTRAINTS "
                 "WHERE RDB$CONSTRAINT_NAME = :name"
             ),
-            {"name": name},
-        ).first()
-        is not None
+            DatabaseBackend.POSTGRESQL: text(
+                "SELECT 1 FROM pg_catalog.pg_constraint c "
+                "JOIN pg_catalog.pg_namespace n ON n.oid = c.connamespace "
+                "WHERE n.nspname = current_schema() AND c.conname = :name"
+            ),
+        },
+        name=name,
     )
 
 
 def domain_exists(conn: Connection, name: str) -> bool:
-    return (
-        conn.execute(
-            text("SELECT 1 FROM RDB$FIELDS WHERE RDB$FIELD_NAME = :name"),
-            {"name": name},
-        ).first()
-        is not None
+    return _exists(
+        conn,
+        {
+            DatabaseBackend.FIREBIRD: text(
+                "SELECT 1 FROM RDB$FIELDS WHERE RDB$FIELD_NAME = :name"
+            ),
+            DatabaseBackend.POSTGRESQL: text(
+                "SELECT 1 FROM pg_catalog.pg_type t "
+                "JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace "
+                "WHERE n.nspname = current_schema() AND t.typname = :name"
+            ),
+        },
+        name=name,
     )
 
 
 def index_exists(conn: Connection, name: str) -> bool:
-    return (
-        conn.execute(
-            text("SELECT 1 FROM RDB$INDICES WHERE RDB$INDEX_NAME = :name"),
-            {"name": name},
-        ).first()
-        is not None
+    return _exists(
+        conn,
+        {
+            DatabaseBackend.FIREBIRD: text(
+                "SELECT 1 FROM RDB$INDICES WHERE RDB$INDEX_NAME = :name"
+            ),
+            DatabaseBackend.POSTGRESQL: text(
+                "SELECT 1 FROM pg_catalog.pg_indexes "
+                "WHERE schemaname = current_schema() AND indexname = :name"
+            ),
+        },
+        name=name,
+    )
+
+
+def collation_exists(conn: Connection, name: str) -> bool:
+    """PostgreSQL only: Firebird's collations are built in."""
+    return _exists(
+        conn,
+        {
+            DatabaseBackend.FIREBIRD: text(
+                "SELECT 1 FROM RDB$COLLATIONS WHERE RDB$COLLATION_NAME = :name"
+            ),
+            DatabaseBackend.POSTGRESQL: text(
+                "SELECT 1 FROM pg_catalog.pg_collation c "
+                "JOIN pg_catalog.pg_namespace n ON n.oid = c.collnamespace "
+                "WHERE n.nspname = current_schema() AND c.collname = :name"
+            ),
+        },
+        name=name,
     )

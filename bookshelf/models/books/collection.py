@@ -9,7 +9,6 @@ from sqlalchemy import (
     delete,
     exists,
     false,
-    func,
     insert,
     literal,
     select,
@@ -19,14 +18,15 @@ from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session, aliased
 
 from bookshelf.db import (
-    FOREIGN_KEY_VIOLATION,
-    UNIQUE_KEY_VIOLATION,
     execute_change,
-    has_gds_code,
+    is_foreign_key_violation,
+    is_unique_violation,
     read_committed,
     retry_after_concurrent_delete,
+    try_change,
 )
-from bookshelf.db.orm import CollectionBookRow, UUIDBytes
+from bookshelf.db.orm import CollectionBookRow, UUIDType
+from bookshelf.db.sql import least
 from bookshelf.models.books.model import (
     MAX_COPIES,
     CopiedCollection,
@@ -50,16 +50,16 @@ def add_to_collection(
     the catalogue has no such book.
     """
     try:
-        execute_change(
+        try_change(
             session,
             insert(CollectionBookRow).values(
                 user_id=user_id, book_id=book_id, copies=copies, is_read=read
             ),
         )
     except DBAPIError as e:
-        if has_gds_code(e, FOREIGN_KEY_VIOLATION):
+        if is_foreign_key_violation(e):
             raise UnknownBookError(book_id) from e
-        if not has_gds_code(e, UNIQUE_KEY_VIOLATION):
+        if not is_unique_violation(e):
             raise
         return False
     session.commit()
@@ -135,7 +135,7 @@ def copy_collection(
                             target.user_id == target_id, exists().where(source_entry)
                         )
                         .values(
-                            copies=func.MINVALUE(
+                            copies=least(
                                 target.copies + source_copies.scalar_subquery(),
                                 literal(MAX_COPIES, SmallInteger),
                             )
@@ -150,7 +150,7 @@ def copy_collection(
                 insert(target).from_select(
                     ["user_id", "book_id", "copies", "is_read"],
                     select(
-                        literal(target_id, UUIDBytes),
+                        literal(target_id, UUIDType),
                         source.book_id,
                         source.copies,
                         false(),

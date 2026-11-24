@@ -6,13 +6,13 @@ import threading
 import time
 from collections.abc import Callable
 from dataclasses import replace
+from typing import cast
 from uuid import UUID, uuid4
 
 import pytest
-from firebird.driver import Connection
 from flask import Flask
 from flask.testing import FlaskClient
-from raw_db import raw
+from raw_db import RawConnection, raw
 from sqlalchemy.exc import DBAPIError
 
 from bookshelf.db import get_session
@@ -187,7 +187,7 @@ def test_update_book_saves_authors_publisher_and_year(db_app, user):
 def _author_names(db_app: Flask) -> list[str]:
     with db_app.app_context(), raw(get_session()).cursor() as cur:
         cur.execute("SELECT NAME || '/' || SURNAME FROM AUTHORS ORDER BY SURNAME, NAME")
-        return [name for (name,) in cur.fetchall()]
+        return [cast(str, name) for (name,) in cur.fetchall()]
 
 
 def test_an_author_no_book_uses_any_more_is_deleted(db_app, user):
@@ -206,7 +206,7 @@ def test_an_author_no_book_uses_any_more_is_deleted(db_app, user):
 
 
 def test_an_author_being_linked_meanwhile_is_kept(
-    db_app, user, other_conn: Connection, caplog
+    db_app, user, other_conn: RawConnection, caplog
 ):
     book_id = _book(
         db_app, user, NewBook("Dune", authors=(Author("Frank", "Herbert"),))
@@ -225,7 +225,7 @@ def test_an_author_being_linked_meanwhile_is_kept(
         cur.execute(
             "INSERT INTO BOOK_AUTHORS (BOOK_ID, AUTHOR_ID, SORT_ORDER) "
             "SELECT ?, ID, 1 FROM AUTHORS",
-            (other_id.bytes,),
+            (other_id,),
         )
     # ...while this one removes the author from Dune.
     thread = threading.Thread(target=remove_author)
