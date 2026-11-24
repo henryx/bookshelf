@@ -94,10 +94,13 @@ def _camera(page: Page, code: str | None, detector: str = _NO_DETECTOR) -> None:
 
 
 def _open_scanner(page: Page) -> None:
+    """
+    Press Scan. Whether the scanner stays open is the test's to check: a
+    barcode read from the first frame closes it at once.
+    """
     page.get_by_role("link", name="Add book").click()
     expect(page.locator("#add-book-dialog")).to_be_visible()
     page.get_by_role("button", name="Scan").click()
-    expect(page.locator("#book-scan-dialog")).to_be_visible()
 
 
 def _expect_camera_stopped(page: Page) -> None:

@@ -24,6 +24,8 @@ def test_rename_an_author_in_the_dialog(
 ):
     reader_page.locator("details.avatar summary").click()
     reader_page.get_by_role("link", name="Authors").click()
+    # Loaded, so htmx listens: typed sooner, the search would never be sent.
+    reader_page.wait_for_url(f"{live_server}/authors/")
     reader_page.get_by_label("Search authors").fill("herb")
     expect(reader_page.locator(".author-name")).to_have_text(["Herbert, Frnak"])
 
