@@ -3,6 +3,8 @@
 A self-hosted web app to manage a book library, built with Flask, HTMX and Firebird or PostgreSQL.
 Requirements and decisions are in [docs/bookshelf.md](docs/bookshelf.md).
 
+![Your collection: the books you own, with their authors, year, copies and whether you have read them](docs/screenshots/collection.png)
+
 ## Requirements
 
 - Python 3.14+
