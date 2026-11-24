@@ -423,6 +423,18 @@ def test_collection_page_requires_login(db_client):
     assert "/login" in rv.headers["Location"]
 
 
+@pytest.mark.parametrize(("size", "shown"), [(None, 10), ("50", 11)])
+def test_collection_page_size(db_app, client, user, size, shown):
+    for n in range(11):
+        _book(db_app, user, f"Book {n:02}")
+
+    query = {"size": size} if size else {}
+    html = client.get("/", query_string=query).get_data(as_text=True)
+
+    assert len(_titles(html)) == shown
+    assert '<select id="book-search-size" name="size">' in html
+
+
 def test_collection_page_lists_own_books_with_copies(db_app, client, user, other):
     book_id = _book(db_app, user, "Dune", copies=2)
     _book(db_app, other, "Emma")

@@ -433,6 +433,41 @@ def test_authors_search_with_htmx_returns_only_the_list(db_app, client, user):
     assert "Herbert" not in html
 
 
+@pytest.mark.parametrize(("size", "shown"), [(None, 10), ("50", 11)])
+def test_authors_page_size(db_app, client, user, size, shown):
+    for n in range(11):
+        _book(db_app, user, f"Book {n:02}", Author("", f"Surname{n:02}"))
+
+    query = {"size": size} if size else {}
+    html = client.get("/authors/", query_string=query).get_data(as_text=True)
+
+    assert len(re.findall(r'<a class="author-name"', html)) == shown
+    assert '<select id="author-search-size" name="size">' in html
+
+
+def test_authors_links_keep_the_page_size(db_app, client, user):
+    for n in range(51):
+        _book(db_app, user, f"Book {n:02}", Author("", f"Surname{n:02}"))
+
+    html = client.get("/authors/?size=50").get_data(as_text=True)
+
+    page_links = re.findall(r'href="(/authors/\?[^"]*page=2[^"]*)"', html)
+    rename = re.search(r'href="(/authors/[0-9a-f-]+\?[^"]*)"', html)
+    assert page_links and "size=50" in page_links[0]
+    assert rename is not None and "size=50" in rename.group(1)
+
+
+def test_rename_form_keeps_the_page_size(db_app, client, user):
+    _book(db_app, user, "Dune", FRANK)
+    entry = _entry(db_app, FRANK)
+
+    html = client.get(f"/authors/{entry.id}?size=50", headers=HTMX).get_data(
+        as_text=True
+    )
+
+    assert '<input type="hidden" name="size" value="50">' in html
+
+
 def test_authors_page_is_in_the_account_menu(client):
     html = client.get("/catalogue").get_data(as_text=True)
 

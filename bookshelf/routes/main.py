@@ -17,6 +17,8 @@ from werkzeug.wrappers import Response as BaseResponse
 from bookshelf.db import get_session
 from bookshelf.models.authors import AuthorEntry, find_author
 from bookshelf.models.books import (
+    PAGE_SIZE,
+    PAGE_SIZES,
     SEARCH_MAX_LENGTH,
     Author,
     Book,
@@ -42,7 +44,7 @@ from bookshelf.models.books import (
     unique_categories,
     update_book,
 )
-from bookshelf.routes import htmx_redirect, is_htmx
+from bookshelf.routes import htmx_redirect, is_htmx, page_size
 from bookshelf.routes.forms import BookForm, EditBookForm
 
 __all__ = [
@@ -56,7 +58,8 @@ __all__ = [
 
 main_route = Blueprint("main", __name__)
 
-type ListState = tuple[str, Sort, int]
+# A book list's search, order, page and page size.
+type ListState = tuple[str, Sort, int, int]
 
 
 def _sort(value: str | None) -> Sort:
@@ -68,10 +71,10 @@ def _sort(value: str | None) -> Sort:
 
 
 def list_state(values: MultiDict[str, str]) -> ListState:
-    """A book list's search, order and page, from a query string or a form."""
+    """A book list's search, order, page and page size, from a query string or a form."""
     search = values.get("q", "").strip()
     page = values.get("page", 1, type=int) or 1
-    return search, _sort(values.get("sort")), page
+    return search, _sort(values.get("sort")), page, page_size(values)
 
 
 def _author_param(values: MultiDict[str, str]) -> UUID | None:
@@ -95,16 +98,17 @@ def author_filter(values: MultiDict[str, str]) -> AuthorEntry | None:
 
 def list_url(endpoint: str, values: MultiDict[str, str]) -> str:
     """
-    The URL of a book list (`endpoint`) showing the search, order, page and
-    author in `values`.
+    The URL of a book list (`endpoint`) showing the search, order, page,
+    page size and author in `values`.
     """
-    search, sort, page = list_state(values)
+    search, sort, page, size = list_state(values)
     return url_for(
         endpoint,
         author=_author_param(values),
         q=search or None,
         sort=None if sort is Sort.TITLE else sort.value,
         page=page if page > 1 else None,
+        size=None if size == PAGE_SIZE else size,
     )
 
 
@@ -116,7 +120,7 @@ def render_catalogue(
     books) in `values`: the list alone when `partial`, else the main page.
     `notice` is shown above it.
     """
-    search, sort, page = list_state(values)
+    search, sort, page, size = list_state(values)
     author = author_filter(values)
     books = list_books(
         get_session(),
@@ -125,6 +129,7 @@ def render_catalogue(
         sort,
         page,
         author_id=author.id if author else None,
+        page_size=size,
     )
     return render_template(
         "_book_list.html" if partial else "main.html",
@@ -133,6 +138,9 @@ def render_catalogue(
         search=search,
         sort=sort,
         sorts=Sort,
+        size=size,
+        page_sizes=PAGE_SIZES,
+        default_size=PAGE_SIZE,
         search_max_length=SEARCH_MAX_LENGTH,
         list_endpoint="main.index",
         notice=notice,
@@ -318,7 +326,7 @@ def _render_book(
         template = "_book_details.html"
     else:
         template = "_edit_book_form.html"
-    search, sort, page = list_state(values)
+    search, sort, page, size = list_state(values)
     endpoint = book_list_endpoint(values)
     return render_template(
         template,
@@ -329,6 +337,7 @@ def _render_book(
         search=search,
         sort=sort,
         page=page,
+        size=size,
         back_url=list_url(endpoint, values),
     )
 

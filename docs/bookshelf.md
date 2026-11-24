@@ -613,7 +613,9 @@ Decisions:
  - The main page is the book list, with a search box. There is no separate dashboard page.
  - One search box searches title, author and ISBN together. There are no separate filters (by author or category).
  - The list is sorted by title by default; the user can sort it by author or by date added instead.
- - The list is shown in pages of 50 books.
+ - The list is shown in pages of 10 books; "Show", next to the order, makes them 50 or 100. The size is kept, as
+   the search and order are, by the page links, the rows' buttons and the book dialog, and is part of the
+   list's address (`size`, left out for 10); changing it goes back to the first page.
  - On the phone, books are shown as a list of rows, not a grid (books have no covers; see Books).
  - Each row shows the title, the authors ("Name Surname", in their order) and the publication year. Each author
    links to their books (see "One author's books"); in "Your collection", to their books in the collection.
@@ -644,7 +646,7 @@ Known limitations:
 Status: built at `/`, linked from the account menu; the first page, shown after login and by the
 "Bookshelf" title.
 
-The books the user owns, from the shared catalogue: the same list as the main page (search, order, pages of 50),
+The books the user owns, from the shared catalogue: the same list as the main page (search, order, pages of 10, 50 or 100),
 showing only their books. Each row shows the number of copies ("Copies · 2", read-only: they are changed in
 the book's dialog, see "Editing a book"), a "Read" checkbox and a "Remove" button.
 It can be limited to one author's books (`/?author=<id>`, see "One author's books").
@@ -688,7 +690,7 @@ Known limitations:
 Status: built at `/authors`, linked from the account menu.
 
 Every author in the catalogue, by surname then name ("Herbert, Frank"; "Homer" alone), with how many books are
-theirs, a search box (name or surname, ignoring case) and pages of 50. An author's name opens their books; each
+theirs, a search box (name or surname, ignoring case) and pages of 10, 50 or 100 ("Show", as on the main page). An author's name opens their books; each
 row's "Rename" opens a dialog to change the author's name and surname, for every book at once.
 
 Decisions:

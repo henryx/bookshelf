@@ -14,6 +14,8 @@ from werkzeug.wrappers import Response as BaseResponse
 
 from bookshelf.db import get_session
 from bookshelf.models.books import (
+    PAGE_SIZE,
+    PAGE_SIZES,
     SEARCH_MAX_LENGTH,
     Book,
     Sort,
@@ -47,11 +49,11 @@ def _render_collection(
     error: str | None = None,
 ) -> str:
     """
-    The user's collection with the search, order, page and author (one
+    The user's collection with the search, order, page, page size and author (one
     author's books) in `values`: the list alone when `partial`, else the page. `notice` or `error` is shown
     above it.
     """
-    search, sort, page = list_state(values)
+    search, sort, page, size = list_state(values)
     author = author_filter(values)
     books = list_collection(
         get_session(),
@@ -60,6 +62,7 @@ def _render_collection(
         sort,
         page,
         author_id=author.id if author else None,
+        page_size=size,
     )
     return render_template(
         "_book_list.html" if partial else "collection.html",
@@ -67,6 +70,9 @@ def _render_collection(
         search=search,
         sort=sort,
         sorts=Sort,
+        size=size,
+        page_sizes=PAGE_SIZES,
+        default_size=PAGE_SIZE,
         search_max_length=SEARCH_MAX_LENGTH,
         list_endpoint="collection.index",
         author=author,

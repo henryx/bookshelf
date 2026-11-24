@@ -10,7 +10,7 @@ from flask.testing import FlaskClient
 from raw_db import raw
 
 from bookshelf.db import get_session
-from bookshelf.models.books import PAGE_SIZE, Sort, list_books
+from bookshelf.models.books import PAGE_SIZE, PAGE_SIZES, Sort, list_books
 from bookshelf.models.users import User
 
 HTMX = {"HX-Request": "true"}
@@ -224,7 +224,7 @@ def test_books_shown_in_pages(db_app, client):
     second = client.get("/catalogue?page=2").get_data(as_text=True)
 
     assert len(_titles(first)) == PAGE_SIZE
-    assert _titles(second) == ["Book 050", "Book 051"]
+    assert _titles(second) == [f"Book {PAGE_SIZE:03}", f"Book {PAGE_SIZE + 1:03}"]
     assert "Page 1 of 2" in first
     assert "page=2" in first
     assert f"{PAGE_SIZE + 2} books" in first
@@ -240,6 +240,61 @@ def test_page_links_keep_search_and_sort(db_app, client):
     assert links
     assert "q=book" in links[0]
     assert "sort=added" in links[0]
+
+
+def test_ten_books_a_page_by_default():
+    assert PAGE_SIZE == 10
+    assert PAGE_SIZES == (10, 50, 100)
+
+
+@pytest.mark.parametrize(
+    ("size", "shown"),
+    [(None, 10), ("50", 11), ("100", 11), ("7", 10), ("abc", 10)],
+    ids=["default", "50", "100", "not-offered", "not-a-number"],
+)
+def test_page_size_is_one_of_those_offered(db_app, client, size, shown):
+    for n in range(11):
+        _add_book(db_app, f"Book {n:03}")
+
+    query = {"size": size} if size else {}
+    html = client.get("/catalogue", query_string=query).get_data(as_text=True)
+
+    assert len(_titles(html)) == shown
+
+
+@pytest.mark.parametrize(("size", "selected"), [(None, "10"), ("100", "100")])
+def test_search_form_offers_the_page_sizes(db_app, client, size, selected):
+    query = {"size": size} if size else {}
+    html = client.get("/catalogue", query_string=query).get_data(as_text=True)
+
+    select = re.search(
+        r'<select id="book-search-size" name="size">(.*?)</select>', html, re.DOTALL
+    )
+    assert select is not None
+    assert re.findall(r'<option value="(\d+)"', select.group(1)) == ["10", "50", "100"]
+    assert re.findall(r'<option value="(\d+)" selected', select.group(1)) == [selected]
+
+
+def test_links_and_forms_keep_the_page_size(db_app, client):
+    for n in range(51):
+        _add_book(db_app, f"Book {n:03}")
+
+    html = client.get("/catalogue?size=50").get_data(as_text=True)
+
+    page_links = re.findall(r'href="(/catalogue\?[^"]*page=2[^"]*)"', html)
+    book_link = re.search(r'<a class="book-title" href="([^"]*)"', html)
+    assert page_links and "size=50" in page_links[0]
+    assert book_link is not None and "size=50" in book_link.group(1)
+    assert '<input type="hidden" name="size" value="50">' in html
+
+
+def test_default_page_size_is_left_out_of_links(db_app, client):
+    for n in range(11):
+        _add_book(db_app, f"Book {n:03}")
+
+    html = client.get("/catalogue").get_data(as_text=True)
+
+    assert 'href="/catalogue?page=2"' in html
 
 
 @pytest.mark.parametrize("page", ["0", "-3", "abc", "99"])

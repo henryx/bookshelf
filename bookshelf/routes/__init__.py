@@ -1,5 +1,8 @@
 from flask import Response, redirect, request
+from werkzeug.datastructures import MultiDict
 from werkzeug.wrappers import Response as BaseResponse
+
+from bookshelf.models.books import PAGE_SIZE, PAGE_SIZES
 
 __all__ = [
     "account",
@@ -9,6 +12,7 @@ __all__ = [
     "htmx_redirect",
     "is_htmx",
     "main",
+    "page_size",
     "pwa",
     "setup",
     "suggestions",
@@ -30,3 +34,9 @@ def htmx_redirect(url: str) -> BaseResponse:
     resp = Response(status=204)
     resp.headers["HX-Redirect"] = url
     return resp
+
+
+def page_size(values: MultiDict[str, str]) -> int:
+    """A list's page size (`size`): one of PAGE_SIZES, else PAGE_SIZE."""
+    size = values.get("size", type=int)
+    return size if size in PAGE_SIZES else PAGE_SIZE

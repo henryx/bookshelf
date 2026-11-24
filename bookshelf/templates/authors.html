@@ -4,15 +4,24 @@
 {% block hero %}
   {% call hero() %}
     {% include "_topbar.html" %}
-    {# Without JavaScript a plain GET; with htmx typing reloads only the list. #}
+    {# Without JavaScript a plain GET; with htmx typing or changing the page size reloads
+       only the list, from its first page. #}
     <form class="book-search" role="search" method="get" action="{{ url_for('authors.index') }}"
           hx-get="{{ url_for('authors.index') }}"
-          hx-trigger="submit, input changed delay:300ms from:#author-search-q"
+          hx-trigger="submit, input changed delay:300ms from:#author-search-q, change from:#author-search-size"
           hx-target="#author-list" hx-push-url="true" hx-sync="this:replace"
           hx-indicator="#author-search-indicator" hx-disabled-elt="find button">
       <input id="author-search-q" type="search" name="q" value="{{ search }}"
              maxlength="{{ search_max_length }}" placeholder="Name or surname"
              aria-label="Search authors">
+      <label>
+        <span class="hint">Show</span>
+        <select id="author-search-size" name="size">
+          {%- for option in page_sizes %}
+          <option value="{{ option }}" {%- if option == size %} selected{% endif %}>{{ option }}</option>
+          {%- endfor %}
+        </select>
+      </label>
       <button type="submit">Search</button>
       <span id="author-search-indicator" class="htmx-indicator">…</span>
     </form>

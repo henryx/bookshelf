@@ -6,6 +6,12 @@ All notable changes to Bookshelf, newest first. Each version is released as the 
 
 ## Unreleased
 
+### New
+
+- **Page size:** "Show", next to the order in the catalogue and the collection and next to the search on the
+  authors page, shows 10, 50 or 100 a page. Lists now show 10 a page unless you choose more (they showed 50).
+  The size is part of the list's address, so a bookmark or the browser's history keeps it.
+
 ### Changes
 
 - The app reads and writes the database through the SQLAlchemy ORM (with `sqlalchemy-firebird`), and its schema

@@ -8,11 +8,12 @@
 {% set in_collection = list_endpoint == "collection.index" %}
 {% macro page_link(number, label) -%}
   {%- set url = url_for(list_endpoint, author=author_id, q=search or None,
-                        sort=None if sort == sorts.TITLE else sort.value, page=number) -%}
+                        sort=None if sort == sorts.TITLE else sort.value, page=number,
+                        size=None if size == default_size else size) -%}
   <a href="{{ url }}" hx-get="{{ url }}" hx-target="#book-list" hx-push-url="true"
      hx-indicator="#book-pages-indicator">{{ label }}</a>
 {%- endmacro %}
-{# A row button's form: posts to url, keeping the list's search, order and page, so
+{# A row button's form: posts to url, keeping the list's search, order, page and size, so
    the list comes back as it was (without JavaScript, the redirect keeps them). #}
 {% macro row_form(url, form_class="", trigger=None) -%}
   <form class="{{ form_class }}" method="post" action="{{ url }}"
@@ -23,6 +24,7 @@
     <input type="hidden" name="q" value="{{ search }}">
     <input type="hidden" name="sort" value="{{ sort }}">
     <input type="hidden" name="page" value="{{ books.page }}">
+    <input type="hidden" name="size" value="{{ size }}">
     {{ caller() }}
   </form>
 {%- endmacro %}
@@ -38,7 +40,8 @@
                                   list="collection" if in_collection else None,
                                   author=author_id, q=search or None,
                                   sort=None if sort == sorts.TITLE else sort.value,
-                                  page=books.page if books.page > 1 else None) %}
+                                  page=books.page if books.page > 1 else None,
+                                  size=None if size == default_size else size) %}
         <a class="book-title" href="{{ book_url }}" hx-get="{{ book_url }}"
            hx-target="#book-dialog-body" hx-indicator="closest li">{{ book.title }}</a>
         {# Each author links to their books in this same list. #}

@@ -21,8 +21,8 @@ from bookshelf.models.authors import (
     list_authors,
     rename_author,
 )
-from bookshelf.models.books import SEARCH_MAX_LENGTH
-from bookshelf.routes import htmx_redirect, is_htmx
+from bookshelf.models.books import PAGE_SIZE, PAGE_SIZES, SEARCH_MAX_LENGTH
+from bookshelf.routes import htmx_redirect, is_htmx, page_size
 from bookshelf.routes.forms import RenameAuthorForm
 
 __all__ = ["authors_route"]
@@ -30,26 +30,35 @@ __all__ = ["authors_route"]
 authors_route = Blueprint("authors", __name__, url_prefix="/authors")
 
 
-def _list_state(values: MultiDict[str, str]) -> tuple[str, int]:
-    """The authors list's search and page, from a query string or a form."""
-    return values.get("q", "").strip(), values.get("page", 1, type=int) or 1
+def _list_state(values: MultiDict[str, str]) -> tuple[str, int, int]:
+    """The authors list's search, page and page size, from a query string or a form."""
+    search = values.get("q", "").strip()
+    return search, values.get("page", 1, type=int) or 1, page_size(values)
 
 
 def _list_url(values: MultiDict[str, str]) -> str:
-    search, page = _list_state(values)
-    return url_for("authors.index", q=search or None, page=page if page > 1 else None)
+    search, page, size = _list_state(values)
+    return url_for(
+        "authors.index",
+        q=search or None,
+        page=page if page > 1 else None,
+        size=None if size == PAGE_SIZE else size,
+    )
 
 
 @authors_route.route("/", methods=("GET",))
 @login_required
 def index() -> str:
     """Every author, with their books. htmx searches and page changes get only the list."""
-    search, page = _list_state(request.args)
+    search, page, size = _list_state(request.args)
     partial = is_htmx() and not request.headers.get("HX-History-Restore-Request")
     return render_template(
         "_author_list.html" if partial else "authors.html",
-        authors=list_authors(get_session(), search, page),
+        authors=list_authors(get_session(), search, page, page_size=size),
         search=search,
+        size=size,
+        page_sizes=PAGE_SIZES,
+        default_size=PAGE_SIZE,
         search_max_length=SEARCH_MAX_LENGTH,
     )
 
@@ -60,15 +69,16 @@ def _render_rename(
     """
     Full page without htmx; with htmx, the form alone (the rename dialog's
     content, and the response when it has errors). `values`: the list's
-    search and page, to go back to.
+    search, page and page size, to go back to.
     """
-    search, page = _list_state(values)
+    search, page, size = _list_state(values)
     return render_template(
         "_rename_author_form.html" if is_htmx() else "author.html",
         form=form,
         entry=entry,
         search=search,
         page=page,
+        size=size,
         back_url=_list_url(values),
     )
 

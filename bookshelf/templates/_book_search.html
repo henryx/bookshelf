@@ -1,8 +1,9 @@
-{# The search box and order of a book list (list_endpoint: main.index or collection.index).
-   Without JavaScript it is a plain GET; with htmx typing or changing the order reloads only the list. #}
+{# The search box, order and page size of a book list (list_endpoint: main.index or
+   collection.index). Without JavaScript it is a plain GET; with htmx typing or changing
+   the order or size reloads only the list, from its first page. #}
 <form class="book-search" role="search" method="get" action="{{ url_for(list_endpoint) }}"
       hx-get="{{ url_for(list_endpoint) }}"
-      hx-trigger="submit, input changed delay:300ms from:#book-search-q, change from:#book-search-sort"
+      hx-trigger="submit, input changed delay:300ms from:#book-search-q, change from:#book-search-sort, change from:#book-search-size"
       hx-target="#book-list" hx-push-url="true" hx-sync="this:replace"
       hx-indicator="#book-search-indicator" hx-disabled-elt="find button">
   {# One author's books: the search and order keep to them. #}
@@ -16,6 +17,14 @@
       <option value="{{ sorts.TITLE }}" {%- if sort == sorts.TITLE %} selected{% endif %}>Title</option>
       <option value="{{ sorts.AUTHOR }}" {%- if sort == sorts.AUTHOR %} selected{% endif %}>Author</option>
       <option value="{{ sorts.ADDED }}" {%- if sort == sorts.ADDED %} selected{% endif %}>Date added</option>
+    </select>
+  </label>
+  <label>
+    <span class="hint">Show</span>
+    <select id="book-search-size" name="size">
+      {%- for option in page_sizes %}
+      <option value="{{ option }}" {%- if option == size %} selected{% endif %}>{{ option }}</option>
+      {%- endfor %}
     </select>
   </label>
   <button type="submit">Search</button>

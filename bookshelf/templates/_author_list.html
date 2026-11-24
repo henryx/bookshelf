@@ -1,9 +1,10 @@
 {# The authors list and its page links: part of authors.html, and the htmx response for
    searches and pages. Each author's name links to their books (the catalogue limited to
    them); each row's Rename link opens the rename dialog (without JavaScript,
-   the rename page), keeping the list's search and page to come back to. #}
+   the rename page), keeping the list's search, page and size to come back to. #}
 {% macro page_link(number, label) -%}
-  {%- set url = url_for("authors.index", q=search or None, page=number) -%}
+  {%- set url = url_for("authors.index", q=search or None, page=number,
+                        size=None if size == default_size else size) -%}
   <a href="{{ url }}" hx-get="{{ url }}" hx-target="#author-list" hx-push-url="true"
      hx-indicator="#author-pages-indicator">{{ label }}</a>
 {%- endmacro %}
@@ -12,7 +13,8 @@
   <ul class="authors">
     {% for entry in authors.authors %}
       {% set url = url_for("authors.rename", author_id=entry.id, q=search or None,
-                           page=authors.page if authors.page > 1 else None) %}
+                           page=authors.page if authors.page > 1 else None,
+                           size=None if size == default_size else size) %}
       <li>
         <a class="author-name" href="{{ url_for('main.index', author=entry.id) }}">
           {{- entry.author.surname }}{% if entry.author.name %}, {{ entry.author.name }}{% endif -%}

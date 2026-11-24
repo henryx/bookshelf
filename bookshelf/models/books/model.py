@@ -4,7 +4,10 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from uuid import UUID
 
-PAGE_SIZE = 50
+# Books or authors a list page shows: one of PAGE_SIZES, chosen in the list's
+# search form; PAGE_SIZE unless chosen.
+PAGE_SIZES = (10, 50, 100)
+PAGE_SIZE = 10
 # BOOK_CATEGORIES.CATEGORY; a longer text matches no category.
 CATEGORY_MAX_LENGTH = 64
 # The longest searched text (TITLE, or an author's name and surname); a
