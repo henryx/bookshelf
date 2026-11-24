@@ -283,6 +283,101 @@ docker exec <container> /app/venv/bin/flask --app bookshelf init-db
 
 New check constraints apply to rows written from then on; Firebird does not recheck existing rows.
 
+### Docker Compose
+
+To run the published image with its database, save this as `compose.yaml` (here with PostgreSQL):
+
+```yaml
+services:
+  app:
+    image: quay.io/enricobianchi/bookshelf:latest  # or a version, e.g. :1.4.2
+    ports:
+      - "8080:8080"
+    environment:
+      APP_SECRET_KEY: ${APP_SECRET_KEY:?set it in .env}
+      APP_DB_BACKEND: postgresql
+      APP_DB_DSN: db/bookshelf
+      APP_DB_USER: bookshelf
+      APP_DB_PASSWORD: ${DB_PASSWORD:?set it in .env}
+      # Behind a reverse proxy terminating HTTPS: 1 (see "Configuration").
+      APP_TRUSTED_PROXIES: ${APP_TRUSTED_PROXIES:-0}
+      APP_COOKIE_SECURE: ${APP_COOKIE_SECURE:-true}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  db:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: bookshelf
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?set it in .env}
+      POSTGRES_DB: bookshelf
+    volumes:
+      - db-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bookshelf -d bookshelf"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  db-data:
+```
+
+and put its secrets in a `.env` file next to it, kept out of version control:
+
+```sh
+printf 'APP_SECRET_KEY=%s\nDB_PASSWORD=%s\n' "$(openssl rand -hex 32)" "$(openssl rand -base64 18)" > .env
+```
+
+Then create the schema and the first admin, and start it:
+
+```sh
+docker compose up -d db
+docker compose run --rm app /app/venv/bin/flask --app bookshelf init-db
+docker compose run --rm app /app/venv/bin/flask --app bookshelf create-admin admin@example.com
+docker compose up -d
+```
+
+The app is at <http://localhost:8080>; serve it over HTTPS (cookies are `Secure`), or for a local try add
+`APP_COOKIE_SECURE=false` to `.env`. After pulling a new image (`docker compose pull`), run `init-db` again
+as above before `docker compose up -d` (see above). The hourly prune, from cron:
+
+```sh
+0 * * * * cd /path/to/bookshelf && docker compose exec -T app /app/venv/bin/flask --app bookshelf prune-login-failures
+```
+
+With Firebird instead, the app's `environment` drops `APP_DB_BACKEND` and points at the Firebird database,
+and `db` becomes Firebird 3 (add `FIREBIRD_ROOT_PASSWORD` to `.env`):
+
+```yaml
+  app:
+    environment:
+      APP_DB_DSN: db:/var/lib/firebird/data/bookshelf.fdb
+      # APP_SECRET_KEY, APP_DB_USER, APP_DB_PASSWORD, … as above
+
+  db:
+    image: firebirdsql/firebird:3.0.14
+    environment:
+      FIREBIRD_ROOT_PASSWORD: ${FIREBIRD_ROOT_PASSWORD:?set it in .env}
+      FIREBIRD_DATABASE: bookshelf.fdb
+      FIREBIRD_DATABASE_DEFAULT_CHARSET: UTF8
+      FIREBIRD_USER: bookshelf
+      FIREBIRD_PASSWORD: ${DB_PASSWORD:?set it in .env}
+    volumes:
+      - db-data:/var/lib/firebird/data
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/127.0.0.1/3050'"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+```
+
+Back up the database before upgrading: `pg_dump` (`docker compose exec db pg_dump -U bookshelf bookshelf`)
+or Firebird's `gbak`.
+
 ## Schema changes
 
 Data access goes through the SQLAlchemy ORM, on Firebird (`sqlalchemy-firebird`'s dialect on `firebird-driver`) or
