@@ -498,7 +498,7 @@ it, and a test checks that every mapped table and column is in the schema the mi
   and the authors' names (in any order: "herbert dune"); ISBNs still contain their digits. The functions
   `BOOK_MATCHES` and, on PostgreSQL, `SEARCH_MATCHES` hold the conditions (`FUNCTIONS` and `POSTGRESQL_HELPERS`
   in `bookshelf/db/schema/functions.py`). Suggestions (title, author, publisher, category) start with the text on both.
-- `FirebirdDialect` (`bookshelf/db/__init__.py`, URL `firebird+bookshelf://`) fixes what sqlalchemy-firebird gets
+- `FirebirdDialect` (`bookshelf/db/engine.py`, URL `firebird+bookshelf://`) fixes what sqlalchemy-firebird gets
   wrong with firebird-driver 2.x: closing (`do_terminate`) and checking (`do_ping`) pooled connections.
 - Column types carry no collation: the dialect repeats a column's type in each parameter's `CAST`, and Firebird
   refuses a collation there. Comparisons still follow the columns' `UNICODE_CI`: Firebird's own, and on
