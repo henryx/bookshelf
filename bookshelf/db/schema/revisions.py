@@ -14,11 +14,12 @@ from alembic.runtime.migration import MigrationContext
 from alembic.script import Script, ScriptDirectory
 from alembic.script.revision import RevisionError
 from alembic.util import CommandError
-from sqlalchemy import Connection, text
+from sqlalchemy import Connection, delete, insert, select, update
 
 from bookshelf.config import DatabaseBackend
 from bookshelf.db import backend_of
 from bookshelf.db.catalog import table_exists
+from bookshelf.db.orm import SettingRow
 
 __all__ = ["MIGRATIONS", "SchemaTooNewError", "schema_behind", "upgrade"]
 
@@ -30,6 +31,9 @@ MIGRATIONS = Path(__file__).parent.parent.parent / "migrations"
 # The revision matching each SCHEMA_VERSION of the upgrade steps of releases
 # before 1.5.0 (version n is after step n): version 0 is the 1.0.0 schema.
 LEGACY_REVISIONS = ("0001", "0002")
+
+# The setting naming the revision being applied or rolled back, while it is.
+UPGRADE_STEP = "SCHEMA_UPGRADE_STEP"
 
 
 class FirebirdImpl(DefaultImpl):
@@ -120,16 +124,14 @@ def _stamp_legacy(
     version = _legacy_setting(conn, "SCHEMA_VERSION") or 0
     if version >= len(LEGACY_REVISIONS):
         raise SchemaTooNewError(f"(upgrade step {version})")
-    step = _legacy_setting(conn, "SCHEMA_UPGRADE_STEP")
+    step = _legacy_setting(conn, UPGRADE_STEP)
     if step is not None:
         if step >= len(LEGACY_REVISIONS):
             raise SchemaTooNewError(f"(upgrade step {step})")
         conn.execute(
-            text(
-                'UPDATE SETTINGS SET "VALUE" = :rev '
-                "WHERE NAME = 'SCHEMA_UPGRADE_STEP'"
-            ),
-            {"rev": LEGACY_REVISIONS[step]},
+            update(SettingRow)
+            .where(SettingRow.name == UPGRADE_STEP)
+            .values(value=LEGACY_REVISIONS[step])
         )
         conn.commit()
     _stamp(conn, context, script, LEGACY_REVISIONS[version])
@@ -139,19 +141,21 @@ def _stamp_legacy(
 
 
 def _legacy_setting(conn: Connection, name: str) -> int | None:
-    value = conn.execute(
-        text('SELECT "VALUE" FROM SETTINGS WHERE NAME = :name'), {"name": name}
-    ).scalar()
+    value = _setting(conn, name)
     return None if value is None else int(value)
+
+
+def _setting(conn: Connection, name: str) -> str | None:
+    return conn.execute(
+        select(SettingRow.value).where(SettingRow.name == name)
+    ).scalar()
 
 
 def _finish_interrupted(
     conn: Connection, context: MigrationContext, script: ScriptDirectory
 ) -> None:
     """Roll back the revision a crash or a failed rollback left halfway, if any."""
-    marked = conn.execute(
-        text("SELECT \"VALUE\" FROM SETTINGS WHERE NAME = 'SCHEMA_UPGRADE_STEP'")
-    ).scalar()
+    marked = _setting(conn, UPGRADE_STEP)
     conn.commit()
     if marked is None:
         return
@@ -179,7 +183,7 @@ def _apply(
         _roll_back(conn, context, revision)
         raise
     _stamp(conn, context, script, revision.revision, commit=False)
-    conn.execute(text("DELETE FROM SETTINGS WHERE NAME = 'SCHEMA_UPGRADE_STEP'"))
+    _clear_marker(conn)
     conn.commit()
     logger.info("Revision %s applied", revision.revision)
 
@@ -188,19 +192,18 @@ def _roll_back(conn: Connection, context: MigrationContext, revision: Script) ->
     """Undo a revision; if this fails, it stays marked and the next run tries again."""
     with Operations.context(context):
         revision.module.downgrade()
-    conn.execute(text("DELETE FROM SETTINGS WHERE NAME = 'SCHEMA_UPGRADE_STEP'"))
+    _clear_marker(conn)
     conn.commit()
     logger.info("Revision %s rolled back", revision.revision)
 
 
 def _set_marker(conn: Connection, revision: str) -> None:
-    conn.execute(
-        text(
-            "INSERT INTO SETTINGS (NAME, \"VALUE\") VALUES ('SCHEMA_UPGRADE_STEP', :rev)"
-        ),
-        {"rev": revision},
-    )
+    conn.execute(insert(SettingRow).values(name=UPGRADE_STEP, value=revision))
     conn.commit()
+
+
+def _clear_marker(conn: Connection) -> None:
+    conn.execute(delete(SettingRow).where(SettingRow.name == UPGRADE_STEP))
 
 
 def _stamp(

@@ -12,6 +12,7 @@ from flask import Flask
 from raw_db import RawConnection, raw
 from sqlalchemy import Connection as SAConnection
 from sqlalchemy import bindparam, text
+from sqlalchemy.exc import DBAPIError
 
 from bookshelf.db import get_engine, get_session
 from bookshelf.db.catalog import column_exists
@@ -433,6 +434,40 @@ def test_a_second_init_db_waits_for_the_first(app: Flask, other_conn, race):
 
     # Firebird waits to lock the row; PostgreSQL earlier, adding it if missing.
     race(lambda _session: _init(), "SETTINGS", commit=False)
+
+
+@pytest.mark.parametrize("commit", [True, False])
+def test_init_db_adds_the_lock_another_run_is_adding(
+    app: Flask, other_conn, race, commit: bool
+):
+    """
+    A first run on a database without the lock row: another run's insert of
+    it is not committed yet. Committed, this run uses it; rolled back, this
+    run adds it.
+    """
+    with app.app_context():
+        _init()
+        _run("DELETE FROM SETTINGS WHERE NAME = 'SCHEMA_UPGRADE_LOCK'")
+    with other_conn.cursor() as cur:
+        cur.execute(
+            'INSERT INTO SETTINGS (NAME, "VALUE") '
+            "VALUES ('SCHEMA_UPGRADE_LOCK', 'init-db')"
+        )
+
+    race(lambda _session: _init(), "SETTINGS", commit=commit)
+
+    with app.app_context():
+        assert _setting(_conn(), "SCHEMA_UPGRADE_LOCK") == "init-db"
+
+
+def test_init_db_passes_on_other_errors_adding_the_lock(app: Flask, fail_statement):
+    with app.app_context():
+        _init()
+        _run("DELETE FROM SETTINGS WHERE NAME = 'SCHEMA_UPGRADE_LOCK'")
+        fail_statement("INSERT INTO SETTINGS")
+
+        with pytest.raises(DBAPIError, match="deadlock"):
+            _init()
 
 
 # Requests

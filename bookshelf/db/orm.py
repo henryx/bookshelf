@@ -1,8 +1,8 @@
 """
-The ORM mapping of the schema: one `*Row` class per table the models use
-(not SETTINGS, which only init_db writes, with its own SQL), mirroring the
-DDL of the migrations (bookshelf/migrations/), which alone create and change
-the schema; this metadata never does.
+The ORM mapping of the schema: one `*Row` class per table (SETTINGS: only
+init_db uses it), mirroring the DDL of the migrations
+(bookshelf/migrations/), which alone create and change the schema; this
+metadata never does.
 
 Names are lower case: SQLAlchemy's Firebird dialect writes them unquoted,
 which Firebird reads as the upper-case names of the DDL. Column types carry
@@ -25,6 +25,7 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.sql.elements import quoted_name
 from sqlalchemy.types import TypeEngine
 from sqlalchemy_firebird.types import FBBINARY
 
@@ -36,6 +37,7 @@ __all__ = [
     "BookRow",
     "CollectionBookRow",
     "LoginFailureRow",
+    "SettingRow",
     "UUIDType",
     "UserRow",
 ]
@@ -177,3 +179,16 @@ class CollectionBookRow(Base):
     is_read: Mapped[bool] = mapped_column(Boolean, server_default=text("FALSE"))
     # The user's score of the book, 1 to 5; None until they score it.
     score: Mapped[int | None] = mapped_column(SmallInteger)
+
+
+class SettingRow(Base):
+    """
+    init_db's settings: the upgrade lock and marker, PostgreSQL's search
+    language, and, on databases from before 1.5.0, SCHEMA_VERSION.
+    """
+
+    __tablename__ = "settings"
+
+    name: Mapped[str] = mapped_column(String(64), primary_key=True)
+    # VALUE is a reserved word: the DDL quotes it, upper case, so this does too.
+    value: Mapped[str] = mapped_column(quoted_name("VALUE", quote=True), String(255))

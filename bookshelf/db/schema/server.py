@@ -1,9 +1,11 @@
 """What init_db needs of the server: PostgreSQL 18+, and its search language."""
 
 from sqlalchemy import Connection, text
+from sqlalchemy.dialects.postgresql import insert
 
 from bookshelf.config import DatabaseBackend
 from bookshelf.db import backend_of
+from bookshelf.db.orm import SettingRow
 
 __all__ = [
     "UnknownSearchLanguageError",
@@ -37,11 +39,11 @@ def set_search_language(conn: Connection, language: str) -> None:
     if known is None:
         raise UnknownSearchLanguageError(language)
     conn.execute(
-        text(
-            "INSERT INTO SETTINGS (NAME, \"VALUE\") VALUES ('SEARCH_LANGUAGE', :language) "
-            'ON CONFLICT (NAME) DO UPDATE SET "VALUE" = EXCLUDED."VALUE"'
-        ),
-        {"language": language},
+        insert(SettingRow)
+        .values(name="SEARCH_LANGUAGE", value=language)
+        .on_conflict_do_update(
+            index_elements=[SettingRow.name], set_={SettingRow.value: language}
+        )
     )
     conn.commit()
 

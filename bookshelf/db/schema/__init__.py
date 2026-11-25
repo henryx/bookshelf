@@ -6,12 +6,13 @@ checks the server and records PostgreSQL's search language. README
 "Migrations" has the design.
 """
 
-from sqlalchemy import Connection, Engine, text
+from sqlalchemy import Connection, Engine, exists, insert, select, update
+from sqlalchemy.exc import DBAPIError
 
 from bookshelf.config import DEFAULT_SEARCH_LANGUAGE, DatabaseBackend
-from bookshelf.db import backend_of
+from bookshelf.db import backend_of, is_unique_violation
 from bookshelf.db.baseline import create_settings
-from bookshelf.db.changes import Sql, statement
+from bookshelf.db.orm import SettingRow
 from bookshelf.db.schema.functions import FUNCTIONS, create_functions
 from bookshelf.db.schema.revisions import SchemaTooNewError, schema_behind, upgrade
 from bookshelf.db.schema.server import (
@@ -29,6 +30,10 @@ __all__ = [
     "init_db",
     "schema_behind",
 ]
+
+
+# The setting each run updates, uncommitted, to keep the others waiting.
+UPGRADE_LOCK = "SCHEMA_UPGRADE_LOCK"
 
 
 def init_db(engine: Engine, *, search_language: str = DEFAULT_SEARCH_LANGUAGE) -> None:
@@ -56,10 +61,9 @@ def init_db(engine: Engine, *, search_language: str = DEFAULT_SEARCH_LANGUAGE) -
         # Written nowhere else: holding it keeps other runs waiting until
         # this one ends. Always rolled back.
         lock.execute(
-            text(
-                'UPDATE SETTINGS SET "VALUE" = "VALUE" '
-                "WHERE NAME = 'SCHEMA_UPGRADE_LOCK'"
-            )
+            update(SettingRow)
+            .where(SettingRow.name == UPGRADE_LOCK)
+            .values(value=SettingRow.value)
         )
         try:
             upgrade(conn)
@@ -71,17 +75,19 @@ def init_db(engine: Engine, *, search_language: str = DEFAULT_SEARCH_LANGUAGE) -
 
 
 def _add_lock(conn: Connection) -> None:
-    sql: Sql = {
-        DatabaseBackend.FIREBIRD: (
-            "MERGE INTO SETTINGS s USING RDB$DATABASE "
-            "ON s.NAME = 'SCHEMA_UPGRADE_LOCK' "
-            'WHEN NOT MATCHED THEN INSERT (NAME, "VALUE") '
-            "VALUES ('SCHEMA_UPGRADE_LOCK', 'init-db')"
-        ),
-        DatabaseBackend.POSTGRESQL: (
-            'INSERT INTO SETTINGS (NAME, "VALUE") '
-            "VALUES ('SCHEMA_UPGRADE_LOCK', 'init-db') ON CONFLICT (NAME) DO NOTHING"
-        ),
-    }
-    conn.execute(text(statement(conn, sql)))
+    """
+    Add the lock's row, unless there is one: another run may be adding it
+    meanwhile, and then this insert waits for it and, once it is committed,
+    fails as a duplicate, which is fine.
+    """
+    if conn.execute(select(exists().where(SettingRow.name == UPGRADE_LOCK))).scalar():
+        conn.rollback()
+        return
+    try:
+        conn.execute(insert(SettingRow).values(name=UPGRADE_LOCK, value="init-db"))
+    except DBAPIError as e:
+        conn.rollback()
+        if not is_unique_violation(e):
+            raise
+        return
     conn.commit()
