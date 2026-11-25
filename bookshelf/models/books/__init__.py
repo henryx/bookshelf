@@ -18,6 +18,11 @@ from bookshelf.models.books.editing import (
     unique_categories,
     update_book,
 )
+from bookshelf.models.books.finding import (
+    find_book,
+    find_book_by_isbn,
+    find_book_details,
+)
 from bookshelf.models.books.isbn import (
     code_label,
     format_code,
@@ -26,13 +31,7 @@ from bookshelf.models.books.isbn import (
     issue_of,
     normalise_isbn,
 )
-from bookshelf.models.books.listing import (
-    find_book,
-    find_book_by_isbn,
-    find_book_details,
-    list_books,
-    list_collection,
-)
+from bookshelf.models.books.listing import list_books, list_collection
 from bookshelf.models.books.lookup import BookLookupError, FoundBook, look_up_isbn
 from bookshelf.models.books.model import (
     CATEGORY_MAX_LENGTH,
