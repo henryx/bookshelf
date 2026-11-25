@@ -759,7 +759,7 @@ Decisions:
 
 Technical details:
 
- - `bookshelf/models/authors.py`: `list_authors`, `find_author` and `rename_author`, which runs in its own
+ - `bookshelf/models/authors/`: `list_authors`, `find_author` (`listing.py`) and `rename_author` (`renaming.py`), which runs in its own
    read-committed transaction (as `add_book`), so an author with the new name committed by someone else meanwhile
    is seen: the rename then becomes a merge into that author.
  - A merge first deletes the renamed author's links to books that already have the other author, then points the

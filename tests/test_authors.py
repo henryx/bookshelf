@@ -16,7 +16,6 @@ from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
 from bookshelf.db import get_session
-from bookshelf.models import authors as authors_model
 from bookshelf.models.authors import (
     AuthorEntry,
     Renamed,
@@ -25,6 +24,7 @@ from bookshelf.models.authors import (
     list_authors,
     rename_author,
 )
+from bookshelf.models.authors import renaming as authors_model
 from bookshelf.models.books import (
     SEARCH_MAX_LENGTH,
     Author,
