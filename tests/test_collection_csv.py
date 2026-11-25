@@ -377,7 +377,7 @@ def test_import_ignores_unknown_columns(db_app, user):
 
 
 def test_import_refuses_too_many_rows(db_app, user, monkeypatch):
-    monkeypatch.setattr("bookshelf.models.collection_csv.MAX_ROWS", 2)
+    monkeypatch.setattr("bookshelf.models.collection_csv.importing.MAX_ROWS", 2)
 
     with pytest.raises(CsvFileError, match="more than 2 books"):
         _import(db_app, user, "title\nA\nB\nC\n")
