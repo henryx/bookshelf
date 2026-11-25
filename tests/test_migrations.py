@@ -17,11 +17,11 @@ from bookshelf.db import get_engine, get_session
 from bookshelf.db.catalog import column_exists
 from bookshelf.db.orm import UUIDType
 from bookshelf.db.schema import (
-    MIGRATIONS,
     SchemaTooNewError,
     init_db,
     schema_behind,
 )
+from bookshelf.db.schema.revisions import MIGRATIONS
 
 type Migrations = Callable[..., None]
 

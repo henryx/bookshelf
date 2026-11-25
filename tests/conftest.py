@@ -468,7 +468,7 @@ def migrations(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Callable[...,
     per step given (t001, t002, ...), each running that step's upgrade and
     rollback.
     """
-    real = ScriptDirectory(str(schema.MIGRATIONS))
+    real = ScriptDirectory(str(schema.revisions.MIGRATIONS))
     registry = types.ModuleType("test_revision_steps")
     steps_by_revision: dict[str, MigrationStep] = {}
     registry.__dict__["STEPS"] = steps_by_revision
@@ -492,6 +492,6 @@ def migrations(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Callable[...,
                 _TEST_REVISION.format(revision=revision, down_revision=previous)
             )
             previous = revision
-        monkeypatch.setattr(schema, "MIGRATIONS", versions.parent)
+        monkeypatch.setattr(schema.revisions, "MIGRATIONS", versions.parent)
 
     return use

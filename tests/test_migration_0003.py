@@ -14,7 +14,8 @@ from sqlalchemy.exc import DBAPIError
 
 from bookshelf.db import get_engine, get_session
 from bookshelf.db.catalog import column_type
-from bookshelf.db.schema import MIGRATIONS, init_db
+from bookshelf.db.schema import init_db
+from bookshelf.db.schema.revisions import MIGRATIONS
 
 REVISION: ModuleType = ScriptDirectory(str(MIGRATIONS)).get_revision("0003").module
 

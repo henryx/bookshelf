@@ -4,7 +4,7 @@ Revision ID: ${up_revision}
 Revises: ${down_revision | comma,n}
 Create Date: ${create_date}
 
-Applied by init_db (bookshelf/db/schema.py), one change at a time: each
+Applied by init_db (bookshelf/db/schema/), one change at a time: each
 SchemaChange commits on its own and is skipped when already made, so
 upgrade and downgrade can both run again after failing halfway. downgrade
 must undo upgrade from wherever it stopped. Never change a released revision.

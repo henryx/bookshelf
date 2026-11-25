@@ -424,14 +424,14 @@ it, and a test checks that every mapped table and column is in the schema the mi
 - **Constraints.** `TABLES` holds only columns, with their types, `NOT NULL` and defaults. Every table constraint
   (primary key, unique, check, foreign key) is a named `ALTER TABLE … ADD CONSTRAINT` in `CONSTRAINTS`, never
   written inside `CREATE TABLE`; a test fails if one is. Later revisions name theirs too.
-- **Functions.** `FUNCTIONS` in `bookshelf/db/schema.py` (`BOOK_MATCHES`, the book lists' search) are
+- **Functions.** `FUNCTIONS` in `bookshelf/db/schema/functions.py` (`BOOK_MATCHES`, the book lists' search) are
   `CREATE OR ALTER`ed on every `init-db`, after the revisions, so a change to one reaches existing databases with
   no revision.
-- **Applied by `init-db`, not `alembic upgrade`.** `init_db` in `bookshelf/db/schema.py` uses Alembic's
+- **Applied by `init-db`, not `alembic upgrade`.** `init_db` in `bookshelf/db/schema/` uses Alembic's
   revisions and version table (`ALEMBIC_VERSION`), but applies them itself, one at a time: Alembic's own runner
   would wrap each revision in one transaction, which Firebird's DDL cannot use, and knows nothing of the
   rollbacks and lock below. `alembic upgrade` refuses; `alembic history` and `alembic revision` work (from
-  `alembic.ini`). sqlalchemy-firebird has no Alembic support of its own: `FirebirdImpl` in `schema.py` gives it
+  `alembic.ini`). sqlalchemy-firebird has no Alembic support of its own: `FirebirdImpl` in `schema/revisions.py` gives it
   Alembic's defaults.
 - **Rollback on failure.** When a revision fails, `init-db` rolls back what it left uncommitted, runs its
   `downgrade`, and stops with the error: the database is back at the previous revision, still working with the
@@ -497,7 +497,7 @@ it, and a test checks that every mapped table and column is in the schema the mi
   PostgreSQL it is full-text: each word of the text, stemmed by `APP_SEARCH_LANGUAGE`, starts a word of the title
   and the authors' names (in any order: "herbert dune"); ISBNs still contain their digits. The functions
   `BOOK_MATCHES` and, on PostgreSQL, `SEARCH_MATCHES` hold the conditions (`FUNCTIONS` and `POSTGRESQL_HELPERS`
-  in `bookshelf/db/schema.py`). Suggestions (title, author, publisher, category) start with the text on both.
+  in `bookshelf/db/schema/functions.py`). Suggestions (title, author, publisher, category) start with the text on both.
 - `FirebirdDialect` (`bookshelf/db/__init__.py`, URL `firebird+bookshelf://`) fixes what sqlalchemy-firebird gets
   wrong with firebird-driver 2.x: closing (`do_terminate`) and checking (`do_ping`) pooled connections.
 - Column types carry no collation: the dialect repeats a column's type in each parameter's `CAST`, and Firebird

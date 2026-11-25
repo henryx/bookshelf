@@ -69,7 +69,7 @@ def _matches(search: str, author_id: UUID | None) -> ColumnElement[bool]:
     """
     The search: title, any author's "name surname" or ISBN contains the
     text, ignoring case, and, with `author_id`, only that author's books. The
-    BOOK_MATCHES function (db/schema.py) holds the condition.
+    BOOK_MATCHES function (db/schema/functions.py) holds the condition.
     """
     isbn, isbn_13 = isbn_searches(search)
     return func.book_matches(

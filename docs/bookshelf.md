@@ -679,7 +679,7 @@ Decisions:
    reload only the list, and the address bar keeps the search, order and page so they can be bookmarked.
    Without JavaScript the search is a plain form and the page links are plain links.
  - A page number out of range shows the nearest page.
- - The search condition lives in one place, the `BOOK_MATCHES` PSQL function (`bookshelf/db/schema.py`, created
+ - The search condition lives in one place, the `BOOK_MATCHES` PSQL function (`bookshelf/db/schema/functions.py`, created
    or replaced by `init_db`), called by every list and count query of the catalogue and the collection.
  - Each list query also counts the books matching the search (`COUNT(*) OVER ()`), so a page is one scan. The
    separate count query runs only for a page past the last, to find the last one.

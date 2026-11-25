@@ -40,7 +40,7 @@ class matches_search(FunctionElement[bool]):
     """
     `expr` matches the search `text`, ignoring case: on Firebird it contains
     the text as typed; on PostgreSQL each of its words starts a word of
-    `expr`, after stemming (SEARCH_MATCHES, db/schema.py).
+    `expr`, after stemming (SEARCH_MATCHES, db/schema/functions.py).
     """
 
     type = Boolean()

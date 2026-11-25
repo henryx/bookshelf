@@ -12,7 +12,8 @@ from flask import Flask
 from raw_db import RawConnection, raw, table_columns
 
 from bookshelf.db import get_engine, get_session
-from bookshelf.db.schema import MIGRATIONS, init_db
+from bookshelf.db.schema import init_db
+from bookshelf.db.schema.revisions import MIGRATIONS
 
 REVISION: ModuleType = ScriptDirectory(str(MIGRATIONS)).get_revision("0004").module
 
