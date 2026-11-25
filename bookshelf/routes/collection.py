@@ -27,14 +27,14 @@ from bookshelf.models.books import (
     set_read,
 )
 from bookshelf.routes import htmx_redirect, is_htmx
-from bookshelf.routes.forms import BookForm, CopiesForm, ReadForm
-from bookshelf.routes.main import (
+from bookshelf.routes.book_lists import (
     author_filter,
     book_list_endpoint,
     list_state,
     list_url,
-    render_catalogue,
 )
+from bookshelf.routes.forms import BookForm, CopiesForm, ReadForm
+from bookshelf.routes.main.catalogue import render_catalogue
 
 __all__ = ["collection_route"]
 

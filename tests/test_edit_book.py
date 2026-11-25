@@ -481,7 +481,7 @@ def test_save_copies_of_a_book_that_left_the_collection_meanwhile(
         remove_from_collection(session, user_id, book_id)
         return set_copies(session, user_id, book_id, copies)
 
-    monkeypatch.setattr("bookshelf.routes.main.set_copies", removed_first)
+    monkeypatch.setattr("bookshelf.routes.main.edit_book.set_copies", removed_first)
 
     with caplog.at_level(logging.INFO):
         rv = client.post(
@@ -588,7 +588,9 @@ def test_save_refuses_an_isbn_set_meanwhile(
     book_id = _book(db_app, user, DUNE)
     _update(db_app, book_id, volume="1", isbn=DUNE_ISBN)
     stale = BookDetails(id=book_id, title="Dune")
-    monkeypatch.setattr("bookshelf.routes.main.find_book_details", lambda *_args: stale)
+    monkeypatch.setattr(
+        "bookshelf.routes.main.edit_book.find_book_details", lambda *_args: stale
+    )
 
     rv = client.post(_url(book_id), data={"isbn": EMMA_ISBN}, headers=HTMX)
 
@@ -601,7 +603,9 @@ def test_save_of_a_book_deleted_meanwhile_is_not_found(
 ):
     """The dialog was opened, then an admin deleted the book."""
     gone = BookDetails(id=uuid4(), title="Gone")
-    monkeypatch.setattr("bookshelf.routes.main.find_book_details", lambda *_args: gone)
+    monkeypatch.setattr(
+        "bookshelf.routes.main.edit_book.find_book_details", lambda *_args: gone
+    )
 
     with caplog.at_level(logging.INFO):
         rv = client.post(_url(gone.id), data={"volume": "2"})

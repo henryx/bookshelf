@@ -797,7 +797,7 @@ Technical details:
 
  - The filter is the `AUTHOR_FILTER` argument of `BOOK_MATCHES` (NULL for every book), so the list and count
    queries are unchanged; `list_books` and `list_collection` take `author_id`, and `author_filter()` in
-   `routes/main.py` reads it from a list's query string or form.
+   `routes/book_lists.py` reads it from a list's query string or form.
  - The book list queries also read each author's ID, for the links: `Author` has an optional `id`, which plays
    no part in comparing authors (still by name and surname).
 
