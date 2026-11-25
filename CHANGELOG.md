@@ -4,6 +4,24 @@ All notable changes to Bookshelf, newest first. Each version is released as the 
 `quay.io/enricobianchi/bookshelf:<version>` and, from 1.0.2, as the Helm chart
 `oci://quay.io/enricobianchi/bookshelf-chart --version <version>`.
 
+## 1.7.0 (2026-11-25)
+
+### New
+
+- **Scores:** score the books in your collection from 1 to 5 stars, with the five stars under each book; clicking
+  the star of your score again clears it. The catalogue shows each book's median score from every user, in whole
+  and half stars (3 and 4 give 3.5), with how many scored it. Removing a book from your collection removes your
+  score. The schema revision `0005` adds `COLLECTION_BOOKS.SCORE`, applied by `init-db` as usual; 1.6.0 still
+  runs on the upgraded database.
+- **CSV:** the collection's export has a `score` column (1 to 5, blank for none), which the import reads too.
+- **Copying a collection** (admin area and `flask copy-collection`): copied books take the first user's score;
+  the books the other user already has keep theirs.
+
+### Fixes
+
+- PostgreSQL: two `init-db` runs at once on a database without its upgrade lock (the first after installing or
+  upgrading to 1.5.0 or later) could fail with "could not serialize access due to concurrent update".
+
 ## 1.6.0 (2026-11-25)
 
 ### New

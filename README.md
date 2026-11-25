@@ -3,7 +3,7 @@
 A self-hosted web app to manage a book library, built with Flask, HTMX and Firebird or PostgreSQL.
 Requirements and decisions are in [docs/bookshelf.md](docs/bookshelf.md).
 
-![Your collection: the books you own, with their authors, year, copies and whether you have read them](docs/screenshots/collection.png)
+![Your collection: the books you own, with their authors, year, your score in stars, copies and whether you have read them](docs/screenshots/collection.png)
 
 ## Requirements
 
@@ -128,7 +128,9 @@ Clicking a book's title opens it in a dialog to edit every field but the title; 
 book has none, and only admins can change or remove one already set. Admins can also delete a book from that
 dialog, once it is in nobody's collection. A book can belong to a series, with its volume in it, and has a plot.
 "Your collection" is the first page, shown after login and by the "Bookshelf" title: it lists your own books, with
-their copies (changed in each book's dialog) and a "Read" checkbox (books start as not read). The catalogue is "Catalogue" in the account menu.
+their copies (changed in each book's dialog), a "Read" checkbox (books start as not read) and five stars to score
+them from 1 to 5 (clicking the star of your score again clears it). The catalogue, "Catalogue" in the account
+menu, shows each book's median score from every user, in whole and half stars, with how many scored it.
 "Your account" (in the account menu) also exports your collection to a CSV file ("Export CSV") and imports a CSV
 file into it ("Import"): each row is matched to the catalogue by ISBN, or by title and authors without one, and
 added to the catalogue when it is not there; books already in your collection are skipped, and rows that cannot be
@@ -205,7 +207,7 @@ schema additions are created before its pods serve; if it fails, the upgrade fai
 With Firebird in the cluster:
 
 ```sh
-helm install bookshelf oci://quay.io/enricobianchi/bookshelf-chart --version 1.6.0 \
+helm install bookshelf oci://quay.io/enricobianchi/bookshelf-chart --version 1.7.0 \
   -n bookshelf --create-namespace \
   --set firebird.enabled=true \
   --set ingress.enabled=true,ingress.host=books.example.com \
