@@ -1,10 +1,11 @@
-"""Reading one imported row: a book, with the user's copies and whether they read it."""
+"""Reading one imported row: a book, with the user's copies, read and score."""
 
 import re
 from dataclasses import dataclass
 
 from bookshelf.models.books import (
     CATEGORY_MAX_LENGTH,
+    MAX_SCORE,
     Author,
     InvalidIsbnError,
     IsbnLostDigitsError,
@@ -42,6 +43,7 @@ class Row:
     book: NewBook
     copies: int
     read: bool
+    score: int | None = None
 
 
 def _text(row: dict[str, str], column: str) -> str | None:
@@ -123,8 +125,18 @@ def _isbn(text: str | None) -> str | None:
         raise RowError(f"not a valid ISBN ({text}).") from e
 
 
+def _score(text: str | None) -> int | None:
+    """The user's score: None when blank; RowError when not 1 to MAX_SCORE."""
+    if text is None:
+        return None
+    score = _number(text, 1, MAX_SCORE)
+    if score is None:
+        raise RowError(f"the score must be a whole number from 1 to {MAX_SCORE}.")
+    return score
+
+
 def parse_row(row: dict[str, str]) -> Row:
-    """A CSV row as a book with the user's copies and read; RowError if invalid."""
+    """A CSV row as a book with the user's copies, read and score; RowError if invalid."""
     title = _text(row, "title")
     if title is None:
         raise RowError("the title is required.")
@@ -136,6 +148,7 @@ def parse_row(row: dict[str, str]) -> Row:
     read = (_text(row, "read") or "").casefold()
     if read not in _YES | _NO:
         raise RowError("read must be yes or no.")
+    score = _score(_text(row, "score"))
     book = NewBook(
         title=title,
         authors=_authors(_text(row, "authors")),
@@ -147,4 +160,4 @@ def parse_row(row: dict[str, str]) -> Row:
         plot=_text(row, "plot"),
         categories=_categories(_text(row, "categories")),
     )
-    return Row(book, copies, read in _YES)
+    return Row(book, copies, read in _YES, score)

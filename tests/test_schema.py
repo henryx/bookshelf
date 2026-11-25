@@ -277,12 +277,14 @@ def _assert_complete_schema(conn: RawConnection) -> None:
         "BOOK_ID",
         "COPIES",
         "IS_READ",
+        "SCORE",
     ]
     assert _domain(conn, "COLLECTION_BOOKS", "USER_ID") == "UUID"
     assert _domain(conn, "COLLECTION_BOOKS", "BOOK_ID") == "UUID"
     assert _constraints(conn, "COLLECTION_BOOKS") == {
         "PK_COLLECTION_BOOKS": "PRIMARY KEY",
         "CHK_COLLECTION_BOOKS_COPIES": "CHECK",
+        "CHK_COLLECTION_BOOKS_SCORE": "CHECK",
         "FK_COLLECTION_BOOKS_USER": "FOREIGN KEY",
         "FK_COLLECTION_BOOKS_BOOK": "FOREIGN KEY",
     }

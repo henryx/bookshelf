@@ -44,6 +44,7 @@ def _insert_book(
     isbn: str | None,
     copies: int,
     read: bool,
+    score: int | None,
 ) -> None:
     try:
         try_change(
@@ -69,7 +70,11 @@ def _insert_book(
     execute_change(
         session,
         insert(CollectionBookRow).values(
-            user_id=user_id, book_id=book_id, copies=copies, is_read=read
+            user_id=user_id,
+            book_id=book_id,
+            copies=copies,
+            is_read=read,
+            score=score,
         ),
     )
 
@@ -81,10 +86,12 @@ def add_book(
     copies: int = 1,
     *,
     read: bool = False,
+    score: int | None = None,
 ) -> UUID:
     """
     Add a book to the catalogue and to the user's collection with `copies`
-    copies, marked as `read` or not, in one transaction. Authors are picked by name and surname, or
+    copies, marked as `read` or not, with the user's `score` (or none), in
+    one transaction. Authors are picked by name and surname, or
     created; one with a name but no surname is refused by the database.
     Raises InvalidIsbnError for a bad ISBN and BookExistsError if the ISBN
     is already in the catalogue.
@@ -95,7 +102,7 @@ def add_book(
     isbn = normalise_isbn(book.isbn) if book.isbn else None
     book_id = uuid4()
     with read_committed(session):
-        _insert_book(session, user_id, book_id, book, isbn, copies, read)
+        _insert_book(session, user_id, book_id, book, isbn, copies, read, score)
         session.commit()
     return book_id
 

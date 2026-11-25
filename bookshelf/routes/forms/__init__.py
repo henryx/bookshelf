@@ -15,6 +15,7 @@ from bookshelf.routes.forms.collection import (
     CopyCollectionForm,
     ImportForm,
     ReadForm,
+    ScoreForm,
 )
 from bookshelf.routes.forms.users import (
     AccountForm,
@@ -38,6 +39,7 @@ __all__ = [
     "NewUserForm",
     "ReadForm",
     "RenameAuthorForm",
+    "ScoreForm",
     "SetupForm",
     "UserForm",
 ]

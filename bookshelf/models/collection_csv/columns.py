@@ -4,7 +4,7 @@ __all__ = ["COLUMNS", "SEPARATOR", "guard", "unguard"]
 
 # The export's columns, in order; an import may have any of them, in any
 # order, but needs title. authors ("Name Surname", or "Surname" alone) and
-# categories are separated by ", ". read: yes or no.
+# categories are separated by ", ". read: yes or no. score: 1 to 5, or blank.
 COLUMNS = (
     "title",
     "authors",
@@ -17,6 +17,7 @@ COLUMNS = (
     "categories",
     "copies",
     "read",
+    "score",
 )
 # Between authors and between categories alike.
 SEPARATOR = ","

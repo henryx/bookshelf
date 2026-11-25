@@ -10,6 +10,7 @@ from bookshelf.models.books.collection import (
     remove_from_collection,
     set_copies,
     set_read,
+    set_score,
 )
 from bookshelf.models.books.editing import add_book, delete_book, update_book
 from bookshelf.models.books.finding import (
@@ -31,6 +32,7 @@ from bookshelf.models.books.lookup import BookLookupError, FoundBook, look_up_is
 from bookshelf.models.books.model import (
     CATEGORY_MAX_LENGTH,
     MAX_COPIES,
+    MAX_SCORE,
     PAGE_SIZE,
     PAGE_SIZES,
     SEARCH_MAX_LENGTH,
@@ -64,6 +66,7 @@ from bookshelf.models.books.suggestions import (
 __all__ = [
     "CATEGORY_MAX_LENGTH",
     "MAX_COPIES",
+    "MAX_SCORE",
     "PAGE_SIZE",
     "PAGE_SIZES",
     "SEARCH_MAX_LENGTH",
@@ -107,6 +110,7 @@ __all__ = [
     "remove_from_collection",
     "set_copies",
     "set_read",
+    "set_score",
     "suggest_authors",
     "suggest_books",
     "suggest_categories",

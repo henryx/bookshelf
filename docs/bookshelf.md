@@ -197,7 +197,8 @@ Closing the dialog discards unsaved changes.
 
 **Copying a collection.** The details dialog also has a "Copy collection" form: the admin chooses another user and
 what happens to the books that user already has, then confirms. The copied books keep how many copies the first
-user owns, and start unread: what someone has read is their own. The first user's collection does not change. For
+user owns and their score, and start unread: what someone has read is their own. The books the other user
+already has keep their score. The first user's collection does not change. For
 the books the other user already has, the admin chooses one of:
 
  - *Keep theirs* (the default): only the books they lack are added; theirs stay as they are, so copying twice
@@ -315,15 +316,15 @@ Each user exports and imports only their own collection.
 Decisions:
 
  - Columns: `title`, `authors`, `isbn`, `publisher`, `year`, `series`, `volume`, `plot`, `categories`,
-   `copies`, `read`. Authors ("Name Surname", or "Surname" alone, as for "Homer") and categories are both
-   separated by ", "; read is `yes` or `no`. On import the last word of an author is the surname,
+   `copies`, `read`, `score`. Authors ("Name Surname", or "Surname" alone, as for "Homer") and categories are both
+   separated by ", "; read is `yes` or `no`; score is 1 to 5, or blank for none. On import the last word of an author is the surname,
    and a `year` holding a whole date ("1991-05-12", "12/05/1991", "May 12, 1991") gives its year (its only
    four-digit number); a year that cannot be told ("12/05/91", "1991-2001") is a bad row. An ISBN tolerates
    what spreadsheets and copying do to it, as in the forms (see Books); one in scientific notation
    ("9.78886E+12") has lost its digits, so the row is refused saying so. The export is UTF-8 with a byte order
    mark (so spreadsheets read it as UTF-8), ordered by title.
  - An import needs a header with `title`; the other columns are optional and in any order (missing ones are
-   empty, copies 1 and not read). Other columns are ignored, and named in the import's summary ("Ignored 2
+   empty, copies 1, not read and no score). Other columns are ignored, and named in the import's summary ("Ignored 2
    columns: colour, shelf.") so that a misspelt one is noticed. A repeated column, an empty file, a file that is
    not UTF-8 or not CSV, or one with more than 1000 books refuses the whole file. Blank rows are skipped.
  - Each row matches a catalogue book: by ISBN when it has one (ISBN-10 converted); without one, by title and
@@ -333,9 +334,9 @@ Decisions:
    catalogue, with the same rules as the add-book form.
  - Import and export are in the account area, not on the collection page: they are occasional tasks on the
    whole collection, and the collection page stays the list.
- - A book already in the collection is skipped, its copies and read left as they are; a book repeated in the
+ - A book already in the collection is skipped, its copies, read and score left as they are; a book repeated in the
    file is added once.
- - Rows are imported one by one: a bad row (no title, invalid ISBN, year, copies or read, a value too
+ - Rows are imported one by one: a bad row (no title, invalid ISBN, year, copies, read or score, a value too
    long) is reported with its row number as in a spreadsheet (the header is row 1), and
    the others are still imported. An invalid ISBN is quoted as written ("Row 4: not a valid ISBN (123)."), so
    it can be found in the file. The card shows the count added (and new to the catalogue) and skipped, and
@@ -670,6 +671,11 @@ Decisions:
    links to their books (see "One author's books"); in "Your collection", to their books in the collection.
  - Under that, a book in the user's collection shows a stamp, "In your collection · 2" (the copies), linking to
    their collection; any other book an "Add to collection" button, which adds it with one copy.
+ - Between the authors and that, each row shows the median of every user's score of the book (see "Your
+   collection"), as five stars, whole and half (a median between two scores is a half: 3 and 4 give 3.5), then
+   the median and the number of scores ("3.5 · 2"); "No scores" when nobody scored it. The stars are one image
+   for screen readers ("Median score 3.5 of 5, from 2 scores"). The median, not the mean, so one extreme score
+   moves it less. It is computed for the page's books only, after the page's query.
  - Sorting by author uses each book's first author (surname, then name), then the title; books without
    authors come last. Date added sorts newest first.
  - The search ignores case and spaces around it. An author matches on name, surname or both ("Frank
@@ -696,8 +702,9 @@ Status: built at `/`, linked from the account menu; the first page, shown after 
 "Bookshelf" title.
 
 The books the user owns, from the shared catalogue: the same list as the main page (search, order, pages of 10, 50 or 100),
-showing only their books. Each row shows the number of copies ("Copies · 2", read-only: they are changed in
-the book's dialog, see "Editing a book"), a "Read" checkbox and a "Remove" button.
+showing only their books. Each row shows the user's score of the book (five stars), the number of copies
+("Copies · 2", read-only: they are changed in the book's dialog, see "Editing a book"), a "Read" checkbox and a
+"Remove" button.
 It can be limited to one author's books (`/?author=<id>`, see "One author's books").
 
 Decisions:
@@ -724,7 +731,14 @@ Decisions:
    read, also when it is added to a collection. With htmx, ticking or unticking the checkbox saves it at once and
    the list reloads with "“Dune” marked as read." (or "not read"). Without JavaScript the row has a Save button
    for it, inside `<noscript>` so it is never shown otherwise. The catalogue shows no read status.
- - With htmx, the rows' buttons (add, remove) and the read checkbox reload only the list, keeping its search, order and page,
+ - The score is the user's own too (`COLLECTION_BOOKS.SCORE`, 1 to 5, `NULL` until scored; the database checks
+   the range): only books in their collection can be scored, and removing a book removes its score. A book
+   starts unscored. The five stars under the authors are submit buttons (`name="score"`, `value` 1 to 5,
+   `aria-pressed` on the score's), so they work without JavaScript too; clicking one sets that score ("“Dune”
+   scored 4 of 5."), clicking the star of the current score clears it ("Score of “Dune” cleared."). Pointing at a
+   star previews that score in stamp ink (CSS only). The catalogue shows every user's median instead (see "Main
+   page").
+ - With htmx, the rows' buttons (add, remove, the stars) and the read checkbox reload only the list, keeping its search, order and page,
    with a message above it. Without JavaScript they are plain forms, and the server redirects back to the list
    with the same search, order and page and the message shown on it.
  - "Date added" orders the collection by when each book entered the catalogue: the collection does not record

@@ -1,4 +1,4 @@
-"""A user's collection: adding a catalogue book, copies, read, removing."""
+"""A user's collection: adding a catalogue book, copies, read, score, removing."""
 
 from uuid import UUID
 
@@ -29,6 +29,7 @@ from bookshelf.db.orm import CollectionBookRow, UUIDType
 from bookshelf.db.sql import least
 from bookshelf.models.books.model import (
     MAX_COPIES,
+    MAX_SCORE,
     CopiedCollection,
     CopyMode,
     UnknownBookError,
@@ -42,10 +43,11 @@ def add_to_collection(
     copies: int = 1,
     *,
     read: bool = False,
+    score: int | None = None,
 ) -> bool:
     """
     Add a catalogue book to the user's collection with `copies` copies,
-    marked as `read` or not.
+    marked as `read` or not, with the user's `score` (or none).
     False, changing nothing, when it is already there; UnknownBookError when
     the catalogue has no such book.
     """
@@ -53,7 +55,11 @@ def add_to_collection(
         try_change(
             session,
             insert(CollectionBookRow).values(
-                user_id=user_id, book_id=book_id, copies=copies, is_read=read
+                user_id=user_id,
+                book_id=book_id,
+                copies=copies,
+                is_read=read,
+                score=score,
             ),
         )
     except DBAPIError as e:
@@ -82,6 +88,22 @@ def set_read(session: Session, user_id: UUID, book_id: UUID, *, read: bool) -> b
     )
 
 
+def set_score(
+    session: Session, user_id: UUID, book_id: UUID, score: int | None
+) -> bool:
+    """
+    Set the user's score of a book in their collection, 1 to MAX_SCORE, or
+    clear it (None); False if it is not in their collection. ValueError for
+    a score out of range.
+    """
+    if score is not None and not 1 <= score <= MAX_SCORE:
+        raise ValueError(f"A score is from 1 to {MAX_SCORE}, not {score}.")
+    return _change_entry(
+        session,
+        update(CollectionBookRow).where(_entry(user_id, book_id)).values(score=score),
+    )
+
+
 def remove_from_collection(session: Session, user_id: UUID, book_id: UUID) -> bool:
     """
     Remove a book from the user's collection, leaving it in the catalogue.
@@ -104,7 +126,8 @@ def copy_collection(
     """
     Copy the books of one user's collection, with their copies, into
     another's; `mode` says what happens to the books the target already has.
-    Copied books start unread: what someone has read is their own. The
+    Copied books start unread (what someone has read is their own) and take
+    the source's score; the books the target keeps keep the target's. The
     source's collection is unchanged. ValueError when both are the same user.
 
     One read committed transaction of its own, as in _change_entry: all of it
@@ -143,17 +166,18 @@ def copy_collection(
                     ).rowcount
                 case CopyMode.KEEP:
                     pass
-            # The source's books the target does not have, unread.
+            # The source's books the target does not have, unread, with their score.
             owned = aliased(CollectionBookRow)
             added = execute_change(
                 session,
                 insert(target).from_select(
-                    ["user_id", "book_id", "copies", "is_read"],
+                    ["user_id", "book_id", "copies", "is_read", "score"],
                     select(
                         literal(target_id, UUIDType),
                         source.book_id,
                         source.copies,
                         false(),
+                        source.score,
                     ).where(
                         source.user_id == source_id,
                         ~exists().where(

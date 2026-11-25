@@ -39,6 +39,7 @@ def export_collection(session: Session, user_id: UUID) -> str:
             BookRow.plot,
             CollectionBookRow.copies,
             CollectionBookRow.is_read,
+            CollectionBookRow.score,
         )
         .join(BookRow, BookRow.id == CollectionBookRow.book_id)
         .where(owned)
@@ -79,6 +80,7 @@ def export_collection(session: Session, user_id: UUID) -> str:
         plot,
         copies,
         read,
+        score,
     ) in books:
         values = (
             title,
@@ -92,6 +94,7 @@ def export_collection(session: Session, user_id: UUID) -> str:
             f"{SEPARATOR} ".join(categories.get(book_id, [])),
             str(copies),
             "yes" if read else "no",
+            "" if score is None else str(score),
         )
         writer.writerow([guard(v) for v in values])
     return out.getvalue()

@@ -17,6 +17,7 @@ from bookshelf.models.books import (
     find_book_details,
     list_collection,
     set_read,
+    set_score,
 )
 from bookshelf.models.collection_csv import (
     CsvFileError,
@@ -26,7 +27,10 @@ from bookshelf.models.collection_csv import (
 from bookshelf.models.users import User, create_user
 
 HTMX = {"HX-Request": "true"}
-HEADER = "title,authors,isbn,publisher,year,series,volume,plot,categories,copies,read\n"
+HEADER = (
+    "title,authors,isbn,publisher,year,series,volume,plot,categories,copies,read,"
+    "score\n"
+)
 
 
 @pytest.fixture
@@ -87,6 +91,7 @@ def test_export_writes_every_field_of_the_users_books(db_app, user, other):
             copies=2,
         )
         set_read(session, user.id, book_id, read=True)
+        set_score(session, user.id, book_id, 4)
         add_book(session, other.id, NewBook("Emma"))
         text = export_collection(session, user.id)
 
@@ -104,6 +109,7 @@ def test_export_writes_every_field_of_the_users_books(db_app, user, other):
             "categories": "fantasy, humour",
             "copies": "2",
             "read": "yes",
+            "score": "4",
         }
     ]
 
@@ -142,7 +148,36 @@ def test_export_then_import_round_trips(db_app, user, other):
     assert _collection(db_app, other) == [("=Sum", 1, False), ("Dune", 3, False)]
 
 
+def test_export_leaves_the_score_of_an_unscored_book_blank(db_app, user):
+    with db_app.app_context():
+        add_book(get_session(), user.id, NewBook("Emma"))
+        text = export_collection(get_session(), user.id)
+
+    assert _rows(text)[0]["score"] == ""
+
+
 # Import
+
+
+def test_import_reads_the_scores(db_app, user, other):
+    with db_app.app_context():
+        add_book(get_session(), other.id, NewBook("Dune", isbn="9780441013593"))
+
+    report = _import(
+        db_app, user, "title,isbn,score\nDune,9780441013593,5\nEmma,,2\nUlysses,,\n"
+    )
+
+    assert (report.added, report.errors) == (3, [])
+    with db_app.app_context():
+        books = list_collection(get_session(), user.id).books
+    assert {b.title: b.score for b in books} == {"Dune": 5, "Emma": 2, "Ulysses": None}
+
+
+@pytest.mark.parametrize("score", ["0", "6", "4.5", "good"])
+def test_import_refuses_a_score_out_of_range(db_app, user, score):
+    report = _import(db_app, user, f"title,score\nDune,{score}\n")
+
+    assert report.errors == ["Row 2: the score must be a whole number from 1 to 5."]
 
 
 def test_import_creates_books_missing_from_the_catalogue(db_app, user):

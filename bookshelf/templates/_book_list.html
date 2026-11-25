@@ -51,6 +51,29 @@
           {%- endfor -%}
         </span>{% endif %}
         {% if book.publication_year %}<span class="book-year">{{ book.publication_year }}</span>{% endif %}
+        {% if in_collection %}
+          {# The user's score: a star per point; clicking the star of the score clears it. #}
+          {% call row_form(url_for("collection.score", book_id=book.id), "book-score score-form") %}
+            {% for n in range(1, max_score + 1) %}
+              <button type="submit" name="score" value="{{ n }}"
+                      class="star{% if book.score and n <= book.score %} on{% endif %}"
+                      aria-pressed="{{ 'true' if book.score == n else 'false' }}"
+                      aria-label="{{ n }} of {{ max_score }} stars for {{ book.title }}">★</button>
+            {% endfor %}
+          {% endcall %}
+        {% elif book.median_score is not none %}
+          {# Every user's scores: their median, in whole and half stars. #}
+          {% set median = book.median_score %}
+          <p class="book-score median-score" role="img"
+             aria-label="Median score {{ '%g' % median }} of {{ max_score }}, from {{ book.scores }} score{{ '' if book.scores == 1 else 's' }}">
+            {%- for n in range(1, max_score + 1) -%}
+              <span class="star {{ 'full' if median >= n else 'half' if median >= n - 0.5 else 'empty' }}">★</span>
+            {%- endfor -%}
+            <span class="score-figure">{{ '%g' % median }} · {{ book.scores }}</span>
+          </p>
+        {% else %}
+          <p class="book-score hint">No scores</p>
+        {% endif %}
         <div class="book-actions">
           {% if in_collection %}
             {# Changed in the book's dialog. #}

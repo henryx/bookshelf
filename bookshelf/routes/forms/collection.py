@@ -1,14 +1,14 @@
-"""A user's collection: copies, read, CSV import, and copying it to another user."""
+"""A user's collection: copies, read, score, CSV import, and copying it to another user."""
 
 from flask_wtf import FlaskForm
 from flask_wtf.file import FileAllowed, FileField, FileRequired
-from wtforms import BooleanField, RadioField, SelectChoice, SelectField
-from wtforms.validators import InputRequired
+from wtforms import BooleanField, IntegerField, RadioField, SelectChoice, SelectField
+from wtforms.validators import InputRequired, NumberRange
 
-from bookshelf.models.books import CopyMode
+from bookshelf.models.books import MAX_SCORE, CopyMode
 from bookshelf.routes.forms.fields import copies_field
 
-__all__ = ["CopiesForm", "CopyCollectionForm", "ImportForm", "ReadForm"]
+__all__ = ["CopiesForm", "CopyCollectionForm", "ImportForm", "ReadForm", "ScoreForm"]
 
 
 class CopiesForm(FlaskForm):
@@ -21,6 +21,18 @@ class ReadForm(FlaskForm):
     """Whether the current user has read a book in their collection."""
 
     read = BooleanField("Read")
+
+
+class ScoreForm(FlaskForm):
+    """The star the current user clicked to score a book in their collection."""
+
+    score = IntegerField(
+        "Score",
+        validators=[
+            InputRequired("Choose a score."),
+            NumberRange(1, MAX_SCORE, f"A score is from 1 to {MAX_SCORE}."),
+        ],
+    )
 
 
 class ImportForm(FlaskForm):

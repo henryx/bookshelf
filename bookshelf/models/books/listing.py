@@ -1,7 +1,9 @@
 """The catalogue and collection lists: a page of books, searched and sorted."""
 
 from collections.abc import Callable
+from dataclasses import replace
 from datetime import datetime
+from statistics import median
 from uuid import UUID
 
 from sqlalchemy import (
@@ -27,13 +29,19 @@ from bookshelf.db.orm import (
 )
 from bookshelf.models.books.finding import books_from_rows
 from bookshelf.models.books.isbn import isbn_searches
-from bookshelf.models.books.model import PAGE_SIZE, SEARCH_MAX_LENGTH, BookPage, Sort
+from bookshelf.models.books.model import (
+    PAGE_SIZE,
+    SEARCH_MAX_LENGTH,
+    Book,
+    BookPage,
+    Sort,
+)
 
 # A list page's query: BookListRow's columns, then the total. The author's
 # columns are None for a book without authors (an outer join), which their
 # types cannot tell.
 type _PageQuery = Select[
-    UUID, str, int | None, int | None, bool | None, str, str, UUID, int
+    UUID, str, int | None, int | None, bool | None, int | None, str, str, UUID, int
 ]
 # A column a list is sorted by, and one in its order.
 type _SortColumn = (
@@ -143,7 +151,9 @@ def _list_query(
         if collection:
             page_query = (
                 page_query.add_columns(
-                    CollectionBookRow.copies, CollectionBookRow.is_read
+                    CollectionBookRow.copies,
+                    CollectionBookRow.is_read,
+                    CollectionBookRow.score,
                 )
                 .join(CollectionBookRow, CollectionBookRow.book_id == BookRow.id)
                 .where(CollectionBookRow.user_id == user_id)
@@ -163,10 +173,14 @@ def _list_query(
             .limit(page_size)
             .cte("p")
         )
-        copies, is_read = (
-            (page.c.copies, page.c.is_read)
+        copies, is_read, score = (
+            (page.c.copies, page.c.is_read, page.c.score)
             if collection
-            else (CollectionBookRow.copies, CollectionBookRow.is_read)
+            else (
+                CollectionBookRow.copies,
+                CollectionBookRow.is_read,
+                CollectionBookRow.score,
+            )
         )
         rows = select(
             page.c.id,
@@ -174,6 +188,7 @@ def _list_query(
             page.c.publication_year,
             copies,
             is_read,
+            score,
             AuthorRow.name,
             AuthorRow.surname,
             AuthorRow.id,
@@ -232,6 +247,24 @@ def _book_page(
     return BookPage(books_from_rows([row[:-1] for row in rows]), total, page, page_size)
 
 
+def _with_medians(session: Session, books: list[Book]) -> list[Book]:
+    """The books with the median of every user's score of each, and their number."""
+    scores: dict[UUID, list[int]] = {}
+    for book_id, score in session.execute(
+        select(CollectionBookRow.book_id, CollectionBookRow.score).where(
+            CollectionBookRow.book_id.in_([book.id for book in books])
+        )
+    ):
+        if score is not None:
+            scores.setdefault(book_id, []).append(score)
+    return [
+        replace(book, median_score=median(found), scores=len(found))
+        if (found := scores.get(book.id))
+        else book
+        for book in books
+    ]
+
+
 def list_books(
     session: Session,
     user_id: UUID,
@@ -246,9 +279,13 @@ def list_books(
     One page of the catalogue, filtered by `search` (title, author or ISBN,
     ignoring case) and, when given, to the books of the author `author_id`,
     with the copies `user_id` owns of each book. A page out of range gives
-    the nearest existing page.
+    the nearest existing page. Each book has the median of every user's
+    score of it.
     """
-    return _list(session, user_id, search, sort, page, author_id, page_size, False)
+    books = _list(session, user_id, search, sort, page, author_id, page_size, False)
+    if not books.books:
+        return books
+    return replace(books, books=_with_medians(session, books.books))
 
 
 def list_collection(

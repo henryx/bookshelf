@@ -130,12 +130,12 @@ def _import_row(
     else:
         found = _find_by_title(session, user_id, book)
     if found is None:
-        add_book(session, user_id, book, row.copies, read=row.read)
+        add_book(session, user_id, book, row.copies, read=row.read, score=row.score)
         report.added += 1
         report.created += 1
         return
     if found.copies is None and add_to_collection(
-        session, user_id, found.id, row.copies, read=row.read
+        session, user_id, found.id, row.copies, read=row.read, score=row.score
     ):
         report.added += 1
         return

@@ -15,6 +15,8 @@ CATEGORY_MAX_LENGTH = 64
 SEARCH_MAX_LENGTH = 255
 # Copies of a book one user may record owning.
 MAX_COPIES = 999
+# The scores a user may give a book in their collection: 1 to MAX_SCORE stars.
+MAX_SCORE = 5
 
 
 class CopyMode(StrEnum):
@@ -151,7 +153,10 @@ class Book:
     """
     A book as shown in the book lists. copies: how many the current user
     owns, or None when the book is not in their collection; read: whether
-    they have read it (False when it is not in their collection).
+    they have read it (False when it is not in their collection); score:
+    their score of it, 1 to MAX_SCORE, or None. In the catalogue only:
+    median_score, the median of every user's score (a half between two
+    scores), None when nobody scored it, and scores, how many did.
     """
 
     id: UUID
@@ -160,6 +165,9 @@ class Book:
     publication_year: int | None
     copies: int | None = None
     read: bool = False
+    score: int | None = None
+    median_score: float | None = None
+    scores: int = 0
 
 
 @dataclass(frozen=True)

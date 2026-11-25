@@ -175,3 +175,5 @@ class CollectionBookRow(Base):
     )
     copies: Mapped[int] = mapped_column(SmallInteger, server_default=text("1"))
     is_read: Mapped[bool] = mapped_column(Boolean, server_default=text("FALSE"))
+    # The user's score of the book, 1 to 5; None until they score it.
+    score: Mapped[int | None] = mapped_column(SmallInteger)

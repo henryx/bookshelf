@@ -11,7 +11,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from bookshelf import cli, db
 from bookshelf.config import Config
 from bookshelf.logging_config import logging_config
-from bookshelf.models.books import code_label, format_code
+from bookshelf.models.books import MAX_SCORE, code_label, format_code
 from bookshelf.routes import is_htmx
 from bookshelf.routes.account import account_route
 from bookshelf.routes.admin import admin_route
@@ -72,7 +72,8 @@ def create_app(overrides: Mapping[str, object] | None = None) -> Flask:
     app.url_map.strict_slashes = False
     # Shown in the about dialog, which the top bar of every page holds.
     app_version = version("bookshelf")
-    app.context_processor(lambda: {"app_version": app_version})
+    # max_score: a book's score is 1 to max_score stars.
+    app.context_processor(lambda: {"app_version": app_version, "max_score": MAX_SCORE})
     if cfg.trusted_proxies:
         # Client IP, scheme and host from X-Forwarded-*, set by that many proxies.
         # Flask's documented pattern.

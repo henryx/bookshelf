@@ -18,20 +18,28 @@ __all__ = [
     "find_book_details",
 ]
 
-# A book list's row: ID, TITLE, PUBLICATION_YEAR, the user's COPIES and
-# IS_READ, then one author's NAME, SURNAME, ID (all None for a book without
+# A book list's row: ID, TITLE, PUBLICATION_YEAR, the user's COPIES, IS_READ
+# and SCORE, then one author's NAME, SURNAME, ID (all None for a book without
 # authors).
 type BookListRow = tuple[
-    UUID, str, int | None, int | None, bool | None, str | None, str | None, UUID | None
+    UUID,
+    str,
+    int | None,
+    int | None,
+    bool | None,
+    int | None,
+    str | None,
+    str | None,
+    UUID | None,
 ]
 
 
 def books_from_rows(rows: Iterable[BookListRow]) -> list[Book]:
     """Group the per-author rows into books, keeping their order."""
     books: dict[UUID, Book] = {}
-    for book_id, title, year, copies, read, name, surname, author_id in rows:
+    for book_id, title, year, copies, read, score, name, surname, author_id in rows:
         book = books.get(book_id) or Book(
-            book_id, title, (), year, copies, read=bool(read)
+            book_id, title, (), year, copies, read=bool(read), score=score
         )
         if surname is not None and author_id is not None:
             author = Author(name or "", surname, id=author_id)
@@ -51,6 +59,7 @@ def _one_book(
             BookRow.publication_year,
             CollectionBookRow.copies,
             CollectionBookRow.is_read,
+            CollectionBookRow.score,
             AuthorRow.name,
             AuthorRow.surname,
             AuthorRow.id,

@@ -80,6 +80,9 @@
   --shade: rgb(11 31 22 / 0.35);
   --error: #a3201a;
   --error-wash: #f8e3e1;
+  /* Stars: a score's in bright cloth, the rest as faint as a rule. */
+  --star-on: var(--cloth-bright);
+  --star-off: var(--rule);
 
   --font-display: "Fraunces", Georgia, serif;
   --font-body: "Bricolage Grotesque", "Trebuchet MS", sans-serif;
@@ -96,6 +99,7 @@
     --shade: rgb(0 0 0 / 0.5);
     --error: #f2a9a3;
     --error-wash: #3a1513;
+    --star-on: var(--sage);
   }
 }
 
@@ -699,6 +703,7 @@ a.button.secondary,
   grid-template-areas:
     "title leader year"
     "authors authors authors"
+    "score score score"
     "actions actions actions";
   column-gap: 0.5rem;
   align-items: baseline;
@@ -760,6 +765,83 @@ a.author-name:focus-visible {
   font-family: var(--font-mono);
   font-size: 0.9375rem;
   color: var(--ink-muted);
+}
+
+/* Under the authors: the user's score in the collection, the median in the catalogue. */
+.book-score {
+  grid-area: score;
+  display: flex;
+  align-items: center;
+  gap: 0.125rem;
+  margin: 0.25rem 0 0;
+  font-size: 1.375rem;
+  line-height: 1;
+}
+
+.book-score .star {
+  color: var(--star-off);
+}
+
+.book-score .star.on,
+.book-score .star.full {
+  color: var(--star-on);
+}
+
+/* Half a star: its left half inked. */
+.book-score .star.half {
+  background: linear-gradient(90deg, var(--star-on) 50%, var(--star-off) 50%);
+  background-clip: text;
+  color: transparent;
+}
+
+.score-form .star {
+  padding: 0 0.0625rem;
+  border: 0;
+  background: none;
+  font: inherit;
+  cursor: pointer;
+  transition: color 120ms ease-out, transform 120ms ease-out;
+}
+
+/* Pointing at a star previews that score in stamp ink; the stars after it fade.
+   Not on disabled stars (an offline copy, a request running). */
+.score-form:has(.star:enabled:hover) .star {
+  color: var(--star-off);
+}
+
+/* :is() matches the specificity of the rule above, which it follows. */
+.score-form .star:is(:enabled:hover, :has(~ .star:enabled:hover)) {
+  color: var(--stamp);
+}
+
+.score-form .star:enabled:hover {
+  transform: scale(1.2);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .score-form .star {
+    transition: none;
+  }
+
+  .score-form .star:enabled:hover {
+    transform: none;
+  }
+}
+
+.score-form .star:focus-visible {
+  outline: 2px solid var(--stamp);
+  outline-offset: 1px;
+}
+
+.score-figure {
+  margin-left: 0.5rem;
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  color: var(--ink-muted);
+}
+
+.book-score.hint {
+  font-size: 0.875rem;
 }
 
 /* A row's collection controls, on their own line under the authors. */

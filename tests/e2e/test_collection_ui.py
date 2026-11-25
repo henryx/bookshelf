@@ -103,6 +103,32 @@ def test_tick_read_on_the_collection_page(reader_page: Page, live_server: str, d
     expect(reader_page.get_by_label("Dune read")).to_be_checked()
 
 
+@pytest.mark.parametrize("stars", [1, 4])
+def test_score_with_the_stars_then_clear_it(
+    reader_page: Page, live_server: str, dune, stars: int
+):
+    """The first star too: it is the one disabled while the request runs."""
+    reader_page.goto(f"{live_server}/")
+    star = f"{stars} of 5 stars for Dune"
+
+    reader_page.get_by_role("button", name=star).click()
+
+    expect(reader_page.locator("#book-list")).to_contain_text(
+        f"“Dune” scored {stars} of 5."
+    )
+    expect(reader_page.get_by_role("button", name=star)).to_have_attribute(
+        "aria-pressed", "true"
+    )
+    expect(reader_page.locator(".score-form .star.on")).to_have_count(stars)
+
+    reader_page.get_by_role("button", name=star).click()
+
+    expect(reader_page.locator("#book-list")).to_contain_text(
+        "Score of “Dune” cleared."
+    )
+    expect(reader_page.locator(".score-form .star.on")).to_have_count(0)
+
+
 def test_csv_import_shows_its_report_on_the_account_page(
     reader_page: Page, live_server: str, dune
 ):

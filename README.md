@@ -185,7 +185,7 @@ characters long (12 by default).
 | `promote-user EMAIL` / `demote-user EMAIL` | Give or remove the admin role |
 | `lock-user EMAIL` / `unlock-user EMAIL` | Block or allow a user's login; locking ends open sessions |
 | `delete-user EMAIL [--yes]` | Permanently delete a user (asks for confirmation) |
-| `copy-collection SOURCE TARGET [--mode keep\|add\|replace] [--yes]` | Copy a user's collection into another user's; for books the target already has, `keep` theirs (the default), `add` the copies, or `replace` their whole collection (asks for confirmation). Copied books start unread |
+| `copy-collection SOURCE TARGET [--mode keep\|add\|replace] [--yes]` | Copy a user's collection into another user's; for books the target already has, `keep` theirs (the default), `add` the copies, or `replace` their whole collection (asks for confirmation). Copied books start unread, with their score |
 
 All commands except `init-db`, `prune-login-failures` and `create-admin` require admin credentials
 (`--admin-email`, or prompted, plus the admin password). Admins cannot lock, demote or
@@ -401,7 +401,8 @@ it, and a test checks that every mapped table and column is in the schema the mi
 - **Revisions.** `0001` is the frozen 1.0.0 schema (`bookshelf/db/baseline.py`: `DOMAINS`, `TABLES`,
   `CONSTRAINTS`, `INDEXES`), creating whatever of it is missing; `0002` is the 1.2.0 change of how users log in;
   `0003` widens `BOOKS.ISBN` to `VARCHAR(18)` for serials' codes (see "Serials (ISSN)" in docs/bookshelf.md);
-  `0004` adds `USERS.LAST_LOGIN_AT`, when each user last logged in (UTC).
+  `0004` adds `USERS.LAST_LOGIN_AT`, when each user last logged in (UTC); `0005` adds `COLLECTION_BOOKS.SCORE`,
+  each user's score (1 to 5) of the books in their collection.
   The same DDL runs on PostgreSQL, but for what `POSTGRESQL_COLLATIONS` and `POSTGRESQL_INDEXES` replace (a
   `UNICODE_CI` collation instead of the `UUID` domain, PostgreSQL having a UUID type; the descending index's
   syntax). A `SchemaChange`'s SQL can be one statement for both or one per backend (`bookshelf/db/changes.py`),

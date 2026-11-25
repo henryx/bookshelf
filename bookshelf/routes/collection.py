@@ -14,6 +14,7 @@ from werkzeug.wrappers import Response as BaseResponse
 
 from bookshelf.db import get_session
 from bookshelf.models.books import (
+    MAX_SCORE,
     PAGE_SIZE,
     PAGE_SIZES,
     SEARCH_MAX_LENGTH,
@@ -25,6 +26,7 @@ from bookshelf.models.books import (
     list_collection,
     remove_from_collection,
     set_read,
+    set_score,
 )
 from bookshelf.routes import htmx_redirect, is_htmx
 from bookshelf.routes.book_lists import (
@@ -33,7 +35,7 @@ from bookshelf.routes.book_lists import (
     list_state,
     list_url,
 )
-from bookshelf.routes.forms import BookForm, CopiesForm, ReadForm
+from bookshelf.routes.forms import BookForm, CopiesForm, ReadForm, ScoreForm
 from bookshelf.routes.main.catalogue import render_catalogue
 
 __all__ = ["collection_route"]
@@ -164,6 +166,28 @@ def read(book_id: UUID) -> BaseResponse | str:
         )
     state = "read" if is_read else "not read"
     return _collection_response(f"“{book.title}” marked as {state}.")
+
+
+@collection_route.post("/collection/books/<uuid:book_id>/score")
+@login_required
+def score(book_id: UUID) -> BaseResponse | str:
+    """
+    Score a book in the user's collection with the star clicked; clicking
+    the star of its score again clears it.
+    """
+    book = _book_or_404(book_id)
+    form = ScoreForm()
+    if not form.validate_on_submit():
+        abort(400, description=" ".join(form.score.errors))
+    clicked = form.score.data
+    new_score = None if clicked == book.score else clicked
+    if not set_score(get_session(), current_user.id, book.id, new_score):
+        return _collection_response(
+            f"“{book.title}” is not in your collection.", error=True
+        )
+    if new_score is None:
+        return _collection_response(f"Score of “{book.title}” cleared.")
+    return _collection_response(f"“{book.title}” scored {new_score} of {MAX_SCORE}.")
 
 
 @collection_route.post("/collection/books/<uuid:book_id>/remove")
