@@ -149,3 +149,10 @@ def test_min_password_length_below_12_fails(monkeypatch, value):
 
     with pytest.raises(RuntimeError, match="APP_MIN_PASSWORD_LENGTH"):
         create_app()
+
+
+def test_unknown_db_backend_fails(monkeypatch):
+    monkeypatch.setenv("APP_DB_BACKEND", "mysql")
+
+    with pytest.raises(RuntimeError, match="APP_DB_BACKEND .*'mysql'"):
+        create_app()

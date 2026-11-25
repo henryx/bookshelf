@@ -875,6 +875,18 @@ def test_record_login_waits_for_a_concurrent_change(
     assert saved.name == "Ada" and saved.last_login_at is not None
 
 
+def test_record_login_passes_on_unexpected_database_errors(
+    db_app: Flask, user: User, fail_statement: Callable[[str], None]
+):
+    """Not taken for a concurrent change: not run again, no login recorded."""
+    fail_statement("UPDATE USERS")
+
+    with db_app.app_context(), pytest.raises(DBAPIError, match="deadlock"):
+        record_login(get_session(), user.id)
+
+    assert _last_login(db_app, user) is None
+
+
 def test_record_login_of_a_user_deleted_meanwhile(
     db_app: Flask, user: User, other_conn: RawConnection, race
 ):

@@ -1,12 +1,18 @@
 import pytest
 from flask import Flask
 from raw_db import BACKEND, RawConnection, raw, table_columns
+from sqlalchemy import Connection, event
 
 from bookshelf.config import DatabaseBackend
 from bookshelf.db import get_engine, get_session
 from bookshelf.db.baseline import CONSTRAINTS, TABLES
+from bookshelf.db.catalog import column_type, table_exists
 from bookshelf.db.orm import Base
-from bookshelf.db.schema import UnknownSearchLanguageError, init_db
+from bookshelf.db.schema import (
+    UnknownSearchLanguageError,
+    UnsupportedServerError,
+    init_db,
+)
 from bookshelf.models.books import NewBook, add_book, list_books
 from bookshelf.models.users import create_user
 
@@ -403,3 +409,44 @@ def test_init_db_refuses_an_unknown_search_language(empty_db_app: Flask):
         pytest.raises(UnknownSearchLanguageError, match="klingon"),
     ):
         init_db(get_engine(), search_language="klingon")
+
+
+def _version_17(
+    conn: Connection,
+    cursor: object,
+    statement: str,
+    parameters: object,
+    context: object,
+    executemany: bool,
+) -> tuple[str, object]:
+    """Make the server report PostgreSQL 17."""
+    if statement == "SHOW server_version_num":
+        return "SELECT '170006'", parameters
+    return statement, parameters
+
+
+@pytest.mark.postgresql
+def test_init_db_refuses_postgresql_before_18(empty_db_app: Flask):
+    """A PostgreSQL 17 server: nothing is created."""
+    with empty_db_app.app_context():
+        engine = get_engine()
+        event.listen(engine, "before_cursor_execute", _version_17, retval=True)
+        try:
+            with pytest.raises(UnsupportedServerError, match="server is 170006"):
+                init_db(engine)
+        finally:
+            event.remove(engine, "before_cursor_execute", _version_17)
+
+        with engine.connect() as conn:
+            assert not table_exists(conn, "SETTINGS")
+
+
+@pytest.mark.parametrize(
+    ("column", "expected"),
+    [("TITLE", "VARCHAR(255)"), ("PUBLICATION_YEAR", None), ("NO_SUCH_COLUMN", None)],
+)
+def test_column_type_of_text_columns_only(
+    db_app: Flask, column: str, expected: str | None
+):
+    with db_app.app_context():
+        assert column_type(get_session().connection(), "BOOKS", column) == expected
