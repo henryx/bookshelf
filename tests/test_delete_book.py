@@ -110,15 +110,15 @@ def test_delete_a_book_deleted_after_it_was_looked_up(
 ):
     """Another request deletes it between the lookup and the delete."""
     dune = _book(db_app, user, NewBook("Dune"))
-    author_ids = editing._author_ids
+    real_author_ids = editing.author_ids
 
     def deleted_meanwhile(cur, book_id):
         with other_conn.cursor() as other:
             other.execute("DELETE FROM BOOKS WHERE ID = ?", (book_id,))
         other_conn.commit()
-        return author_ids(cur, book_id)
+        return real_author_ids(cur, book_id)
 
-    monkeypatch.setattr(editing, "_author_ids", deleted_meanwhile)
+    monkeypatch.setattr(editing, "author_ids", deleted_meanwhile)
 
     with db_app.app_context(), pytest.raises(UnknownBookError):
         delete_book(get_session(), dune)

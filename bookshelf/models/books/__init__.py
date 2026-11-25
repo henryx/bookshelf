@@ -11,13 +11,7 @@ from bookshelf.models.books.collection import (
     set_copies,
     set_read,
 )
-from bookshelf.models.books.editing import (
-    add_book,
-    delete_book,
-    unique_authors,
-    unique_categories,
-    update_book,
-)
+from bookshelf.models.books.editing import add_book, delete_book, update_book
 from bookshelf.models.books.finding import (
     find_book,
     find_book_by_isbn,
@@ -31,6 +25,7 @@ from bookshelf.models.books.isbn import (
     issue_of,
     normalise_isbn,
 )
+from bookshelf.models.books.links import unique_authors, unique_categories
 from bookshelf.models.books.listing import list_books, list_collection
 from bookshelf.models.books.lookup import BookLookupError, FoundBook, look_up_isbn
 from bookshelf.models.books.model import (
