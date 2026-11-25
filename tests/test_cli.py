@@ -557,7 +557,10 @@ def test_demote_user_rejects_unknown_email(db_app: Flask, admin: User):
 
 def _skip_existence_check(monkeypatch: pytest.MonkeyPatch) -> None:
     """Simulate a user created by someone else after the CLI checked."""
-    monkeypatch.setattr("bookshelf.cli.find_by_email", lambda session, email: None)
+    for module in ("users", "setup"):
+        monkeypatch.setattr(
+            f"bookshelf.cli.{module}.find_by_email", lambda session, email: None
+        )
 
 
 def test_create_user_reports_user_created_concurrently(
@@ -711,7 +714,7 @@ def test_removing_the_only_admin_left_is_refused(
         other = create_user(
             get_session(), "second@example.com", password, role=Role.ADMIN
         )
-    monkeypatch.setattr(f"bookshelf.cli.{target}", _last_admin)
+    monkeypatch.setattr(f"bookshelf.cli.users.{target}", _last_admin)
 
     args = [command, other.email, "--admin-email", ADMIN_EMAIL]
     if command == "delete-user":
