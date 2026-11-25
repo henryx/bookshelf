@@ -5,7 +5,7 @@ from uuid import UUID
 
 import pytest
 from flask import Flask
-from playwright.sync_api import Page, expect
+from playwright.sync_api import Page, Route, expect
 
 from bookshelf.db import get_session
 from bookshelf.models.books import NewBook, add_book
@@ -127,6 +127,26 @@ def test_score_with_the_stars_then_clear_it(
         "Score of “Dune” cleared."
     )
     expect(reader_page.locator(".score-form .star.on")).to_have_count(0)
+
+
+def test_every_star_is_disabled_while_scoring(
+    reader_page: Page, live_server: str, dune
+):
+    """A second click meanwhile cannot send another score."""
+    reader_page.goto(f"{live_server}/")
+    held: list[Route] = []
+    reader_page.route("**/score", lambda route: held.append(route))
+
+    reader_page.get_by_role("button", name="3 of 5 stars for Dune").click()
+
+    stars = reader_page.locator(".score-form .star")
+    expect(stars).to_have_count(5)
+    for star in stars.all():
+        expect(star).to_be_disabled()
+    held[0].continue_()
+    expect(reader_page.locator("#book-list")).to_contain_text("“Dune” scored 3 of 5.")
+    for star in reader_page.locator(".score-form .star").all():
+        expect(star).to_be_enabled()
 
 
 def test_csv_import_shows_its_report_on_the_account_page(

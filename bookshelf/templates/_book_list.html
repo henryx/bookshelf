@@ -14,11 +14,12 @@
      hx-indicator="#book-pages-indicator">{{ label }}</a>
 {%- endmacro %}
 {# A row button's form: posts to url, keeping the list's search, order, page and size, so
-   the list comes back as it was (without JavaScript, the redirect keeps them). #}
-{% macro row_form(url, form_class="", trigger=None) -%}
+   the list comes back as it was (without JavaScript, the redirect keeps them). disabled: what
+   the request disables while it runs (htmx's `find` takes the first match only). #}
+{% macro row_form(url, form_class="", trigger=None, disabled="find button") -%}
   <form class="{{ form_class }}" method="post" action="{{ url }}"
         hx-post="{{ url }}" {% if trigger %}hx-trigger="{{ trigger }}" {% endif %}hx-target="#book-list" hx-swap="innerHTML"
-        hx-indicator="closest li" hx-disabled-elt="find button">
+        hx-indicator="closest li" hx-disabled-elt="{{ disabled }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     {% if author_id %}<input type="hidden" name="author" value="{{ author_id }}">{% endif %}
     <input type="hidden" name="q" value="{{ search }}">
@@ -52,14 +53,18 @@
         </span>{% endif %}
         {% if book.publication_year %}<span class="book-year">{{ book.publication_year }}</span>{% endif %}
         {% if in_collection %}
-          {# The user's score: a star per point; clicking the star of the score clears it. #}
-          {% call row_form(url_for("collection.score", book_id=book.id), "book-score score-form") %}
-            {% for n in range(1, max_score + 1) %}
-              <button type="submit" name="score" value="{{ n }}"
-                      class="star{% if book.score and n <= book.score %} on{% endif %}"
-                      aria-pressed="{{ 'true' if book.score == n else 'false' }}"
-                      aria-label="{{ n }} of {{ max_score }} stars for {{ book.title }}">★</button>
-            {% endfor %}
+          {# The user's score: a star per point; clicking the star of the score clears it. The
+             fieldset disables every star while a score is sent. #}
+          {% call row_form(url_for("collection.score", book_id=book.id), "book-score score-form",
+                           disabled="find fieldset") %}
+            <fieldset class="stars">
+              {% for n in range(1, max_score + 1) %}
+                <button type="submit" name="score" value="{{ n }}"
+                        class="star{% if book.score and n <= book.score %} on{% endif %}"
+                        aria-pressed="{{ 'true' if book.score == n else 'false' }}"
+                        aria-label="{{ n }} of {{ max_score }} stars for {{ book.title }}">★</button>
+              {% endfor %}
+            </fieldset>
           {% endcall %}
         {% elif book.median_score is not none %}
           {# Every user's scores: their median, in whole and half stars. #}

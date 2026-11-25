@@ -735,7 +735,8 @@ Decisions:
    the range): only books in their collection can be scored, and removing a book removes its score. A book
    starts unscored. The five stars under the authors are submit buttons (`name="score"`, `value` 1 to 5,
    `aria-pressed` on the score's), so they work without JavaScript too; clicking one sets that score ("“Dune”
-   scored 4 of 5."), clicking the star of the current score clears it ("Score of “Dune” cleared."). Pointing at a
+   scored 4 of 5."), clicking the star of the current score clears it ("Score of “Dune” cleared."). While a score is
+   sent, every star of the row is disabled, so a second click cannot send another. Pointing at a
    star previews that score in stamp ink (CSS only). The catalogue shows every user's median instead (see "Main
    page").
  - With htmx, the rows' buttons (add, remove, the stars) and the read checkbox reload only the list, keeping its search, order and page,

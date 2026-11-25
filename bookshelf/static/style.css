@@ -782,6 +782,16 @@ a.author-name:focus-visible {
   color: var(--star-off);
 }
 
+/* The score form's stars, in a row with no frame. */
+.score-form .stars {
+  display: flex;
+  gap: 0.125rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-inline-size: 0;
+}
+
 .book-score .star.on,
 .book-score .star.full {
   color: var(--star-on);
